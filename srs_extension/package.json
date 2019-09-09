@@ -1,0 +1,45 @@
+{
+	"name": "ReqDocExt",
+	"displayName": "Azure IoT SDKs Requirement Documents Extension",
+	"description": "Generate requirement tags for the Azure IoT SDKs requirement documents",
+	"version": "0.0.6",
+	"publisher": "pierreca",
+	"engines": {
+		"vscode": "^0.10.1"
+	},
+	"categories": [
+		"Other"
+	],
+	"activationEvents": [
+		"onLanguage:markdown"
+	],
+	"main": "./extension",
+	"contributes": {
+		"commands": [{
+			"command": "extension.insertReqCommand",
+			"title": "Insert Next Requirement Tag"
+		},{
+			"command": "extension.surroundBackticks",
+			"title": "Surround selection with backticks"
+		},{
+            "command": "extension.changeDevId",
+			"title": "Change Developer ID"
+		},{
+			"command": "extension.changeReqPrefix",
+			"title": "Change Requirement Tag Prefix"
+		}],
+        "keybindings": [
+            {
+                "command": "extension.insertReqCommand",
+                "key": "Alt+F8"
+            },{
+                "command": "extension.surroundBackticks",
+                "key": "Ctrl+`",
+                "mac": "Cmd+`"
+            }
+        ]
+	},
+	"devDependencies": {
+		"vscode": "0.10.x"
+	}
+}
