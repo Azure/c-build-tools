@@ -60,6 +60,7 @@ namespace TraceabilityTool
             int totalMissingTest = ReportGenerator.missingTestCoverage.Count;
             errorCount += totalMissingCode;
             errorCount += ReportGenerator.invalidRequirements.Count;
+            errorCount += ReportGenerator.repeatingRequirements.Count;
             errorCount += totalMissingTest;
 
             int newRequirementCount = 0;
@@ -83,6 +84,14 @@ namespace TraceabilityTool
                             requirementsToFix.Add(entry.Key, entry.Value);
                         }
                     }
+                }
+            }
+
+            foreach (var entry in ReportGenerator.repeatingRequirements)
+            {
+                if (!requirementsToFix.ContainsKey(entry.Key))
+                {
+                    requirementsToFix.Add(entry.Key, entry.Value.First());
                 }
             }
 
@@ -118,6 +127,7 @@ namespace TraceabilityTool
             sb.AppendLine("Total invalid requirements found in code and tests," + ReportGenerator.invalidRequirements.Count.ToString());
             sb.AppendLine("Total unimplemented requirements," + ReportGenerator.missingCodeCoverage.Count.ToString());
             sb.AppendLine("Total untested requirements," + ReportGenerator.missingTestCoverage.Count.ToString());
+            sb.AppendLine("Total repeating requirements," + ReportGenerator.repeatingRequirements.Count.ToString());
             sb.AppendLine("Total requirements missing both implementation and tests," + count.ToString());
             sb.AppendLine("New requirements excluded," + newRequirementCount.ToString());
             sb.AppendLine("Total failing (minus new requirement exclusion)," + errorCount.ToString());
