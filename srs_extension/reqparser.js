@@ -1,5 +1,3 @@
-const matchAll = require('string.prototype.matchall');
-
 // Reference regex: /SRS_[0-9A-Z_]+_\d{2}_\d{3}/g
 var getAllReqTags = function (text, prefix, devId) {
     if (!text) return;
@@ -43,7 +41,6 @@ var getPrefixes = function (text) {
     // This will match (prefix as group 1_)(devId_reqId)
     // Then we can strip off the dev ID and requirement ID, but we allow numbers in the prefix
     var regex = /(SRS_[0-9A-Z_]+_)([0-9]{2}_[0-9]{3})/g;
-    matchAll.shim();
     var prefixes = Array.from(text.matchAll(regex));
     var dedupedPrefixes = null;
 

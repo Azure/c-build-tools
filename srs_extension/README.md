@@ -21,7 +21,7 @@ or
 or
 - in the command line: `code PATH_TO_VSIX_FILE.vsix`
 
-## Quickstart
+## Quick start
 
 Once installed, the extension becomes active whenever a markdown file is opened.
 At first it'll ask for a Developer ID, it's used to create requirement tags.
@@ -47,16 +47,3 @@ these two commands do not have shortcut keys (doesn't feel useful for now).
 1. Install the vsce module: `npm install -g vsce`
 2. Open a command prompt and navigate to the folder where the extension source code is
 3. type `vsce package` and witness the appearance of the vsix file
-
-## This is the README for your extension "reqcodes" 
-You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on OSX or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+CMD+V` on OSX or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux) or `Cmd+Space` (OSX) to see a list of Markdown snippets
-
-### For more information
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-** Enjoy!**
