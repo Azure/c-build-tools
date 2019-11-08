@@ -47,5 +47,8 @@
         "mocha": "^6.2.2",
         "typescript": "^3.6.4",
         "vscode-test": "^1.2.2"
+    },
+    "scripts": {
+        "test": "node ./test/runTest.js"
     }
 }
