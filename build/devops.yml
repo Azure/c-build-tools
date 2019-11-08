@@ -30,3 +30,16 @@ phases:
       configuration: Release
       maximumCpuCount: true
 
+  - task: Npm@1
+    displayName: 'npm install for srs_extension'
+    inputs:
+      command: install
+      workingDir: srs_extension
+
+  - task: Npm@1
+    displayName: 'npm run tests for srs_extension'
+    inputs:
+      command: custom
+      customCommand: 'run test'
+      workingDir: srs_extension
+

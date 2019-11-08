@@ -104,33 +104,7 @@ function activate(context) {
             });
         }
     };
-    
-    var surroundBackTicks = function () {
 
-        var editor = vscode.window.activeTextEditor;
-        var startSnippet = '`';
-        var endSnippet = '`';
-        editor.edit(function (e) {
-            // insert start snippet
-            e.insert(editor.selection.start, startSnippet);
-        }).then(function(status) {
-            if(status) {
-                // insert end snippet
-                return editor.edit(function(e) {
-                    e.insert(editor.selection.end, endSnippet);
-                });
-            }
-            
-            return status;
-        }).then(function(status) {
-            if(status) {
-                // move caret to end of line before endSnippet
-                var pos = editor.selection.end.translate(0, -1 * endSnippet.length);
-                editor.selection = new vscode.Selection(pos, pos);
-            }
-        });
-    };
-    
     var insertReqCommand = vscode.commands.registerCommand('extension.insertReqCommand', function () {
         if (devId === "") {
             askDevId().then(setDevId)
@@ -145,11 +119,7 @@ function activate(context) {
             }
         }
     });
-    
-    var surroundBackTicksCommand = vscode.commands.registerCommand('extension.surroundBackticks', function () {
-        surroundBackTicks();
-    });
-    
+
     var changeDevIdCommand = vscode.commands.registerCommand('extension.changeDevId', function () {
         askDevId().then(setDevId);
     });

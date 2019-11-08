@@ -1,4 +1,4 @@
-// Reference regex: /SRS_[A-Z_]+_\d{2}_\d{3}/g
+// Reference regex: /SRS_[0-9A-Z_]+_\d{2}_\d{3}/g
 var getAllReqTags = function (text, prefix, devId) {
     if (!text) return;
 
@@ -6,7 +6,7 @@ var getAllReqTags = function (text, prefix, devId) {
     if (prefix) {
         regexStr = prefix;
     } else {
-        regexStr = "SRS_[A-Z_]+_";
+        regexStr = "SRS_[0-9A-Z_]+_";
     }
 
     if (devId) {
@@ -38,11 +38,19 @@ function zeroFill(number, width) {
 
 
 var getPrefixes = function (text) {
-    var regex = /SRS_[A-Z_]+_/g;
-    var prefixes = text.match(regex);
+    // This will match (prefix as group 1_)(devId_reqId)
+    // Then we can strip off the dev ID and requirement ID, but we allow numbers in the prefix
+    var regex = /(SRS_[0-9A-Z_]+_)([0-9]{2}_[0-9]{3})/g;
+    var prefixes = Array.from(text.matchAll(regex));
     var dedupedPrefixes = null;
 
-    if(prefixes != null) {
+    if (prefixes != null) {
+        // First strip the dev ID and requirement ID's (first array item in regex match is everything, second is the first group that we want, index 1)
+        prefixes = prefixes.map(function (item){
+            return item[1];
+        });
+
+        // Then de-duplicate
         dedupedPrefixes = prefixes.filter(function (item, pos, self) {
             return self.indexOf(item) == pos;
         });

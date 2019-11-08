@@ -10,7 +10,8 @@ There are 2 ways to install this extension: either directly using the source cod
 - Clone this repository in `C:\users\<username>\.vscode\extensions`.
 or
 - Clone this repo anywhere and copy the files to `C:\users\<username>\.vscode\extensions`
-	
+- Run `npm install` in this directory
+
 ### Using the vsix package:
 in short, just open the extension in Visual Studio Code (don't double-click, it won't work since it'll try to install on Visual Studio instead).
 Your choice:
@@ -20,16 +21,16 @@ or
 or
 - in the command line: `code PATH_TO_VSIX_FILE.vsix`
 
-## Quickstart
+## Quick start
 
 Once installed, the extension becomes active whenever a markdown file is opened.
 At first it'll ask for a Developer ID, it's used to create requirement tags.
 To insert a new requirement tag:
 1. Select the text of the requirement 
 2. Press `Alt+F8`. It'll read all the tags in the document and insert the next one using your Dev ID. 
-	- If it hasn't yet it will prompt you for your Dev ID.
-	- if there are multiple requirement tags in the document with different prefixes, it'll ask you once to pick which prefix to use.
-	- if there are no requirements in the document, you'll have to create the first one yourself manually (see below for requirement tags format).
+    - If it hasn't yet it will prompt you for your Dev ID.
+    - if there are multiple requirement tags in the document with different prefixes, it'll ask you once to pick which prefix to use.
+    - if there are no requirements in the document, you'll have to create the first one yourself manually (see below for requirement tags format).
 
 All requirement tags use the following syntax: `SRS_SOMESTRING_<DEVID>_<REQID>`
 
@@ -46,16 +47,3 @@ these two commands do not have shortcut keys (doesn't feel useful for now).
 1. Install the vsce module: `npm install -g vsce`
 2. Open a command prompt and navigate to the folder where the extension source code is
 3. type `vsce package` and witness the appearance of the vsix file
-
-## This is the README for your extension "reqcodes" 
-You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on OSX or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+CMD+V` on OSX or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux) or `Cmd+Space` (OSX) to see a list of Markdown snippets
-
-### For more information
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-** Enjoy!**

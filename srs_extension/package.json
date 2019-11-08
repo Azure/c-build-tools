@@ -1,45 +1,54 @@
 {
-	"name": "ReqDocExt",
-	"displayName": "Azure IoT SDKs Requirement Documents Extension",
-	"description": "Generate requirement tags for the Azure IoT SDKs requirement documents",
-	"version": "0.0.6",
-	"publisher": "pierreca",
-	"engines": {
-		"vscode": "^0.10.1"
-	},
-	"categories": [
-		"Other"
-	],
-	"activationEvents": [
-		"onLanguage:markdown"
-	],
-	"main": "./extension",
-	"contributes": {
-		"commands": [{
-			"command": "extension.insertReqCommand",
-			"title": "Insert Next Requirement Tag"
-		},{
-			"command": "extension.surroundBackticks",
-			"title": "Surround selection with backticks"
-		},{
-            "command": "extension.changeDevId",
-			"title": "Change Developer ID"
-		},{
-			"command": "extension.changeReqPrefix",
-			"title": "Change Requirement Tag Prefix"
-		}],
+    "name": "azure-req-doc-ext",
+    "displayName": "Azure SRS Requirement Documents Extension",
+    "description": "Generate requirement tags for SRS requirement documents",
+    "version": "0.0.7",
+    "publisher": "microsoft",
+    "repository": "https://github.com/Azure/azure-c-build-tools/tree/master/srs_extension",
+    "engines": {
+        "vscode": "^1.39.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onLanguage:markdown"
+    ],
+    "main": "./extension",
+    "contributes": {
+        "commands": [
+            {
+                "command": "extension.insertReqCommand",
+                "title": "Insert Next Requirement Tag"
+            },
+            {
+                "command": "extension.changeDevId",
+                "title": "Change Developer ID"
+            },
+            {
+                "command": "extension.changeReqPrefix",
+                "title": "Change Requirement Tag Prefix"
+            }
+        ],
         "keybindings": [
             {
                 "command": "extension.insertReqCommand",
                 "key": "Alt+F8"
-            },{
-                "command": "extension.surroundBackticks",
-                "key": "Ctrl+`",
-                "mac": "Cmd+`"
             }
         ]
-	},
-	"devDependencies": {
-		"vscode": "0.10.x"
-	}
+    },
+    "devDependencies": {
+        "@types/glob": "^7.1.1",
+        "@types/mocha": "^5.2.7",
+        "@types/node": "^12.11.7",
+        "@types/vscode": "^1.39.0",
+        "eslint": "^6.6.0",
+        "glob": "^7.1.5",
+        "mocha": "^6.2.2",
+        "typescript": "^3.6.4",
+        "vscode-test": "^1.2.2"
+    },
+    "scripts": {
+        "test": "node ./test/runTest.js"
+    }
 }
