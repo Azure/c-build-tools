@@ -1,6 +1,18 @@
 #Copyright (c) Microsoft. All rights reserved.
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+function(target_link_libraries_with_arg_prefix arg_prefix whatIsBuilding lib)
+    if(${arg_prefix} STREQUAL "debug")
+        target_link_libraries(${whatIsBuilding} debug ${lib})
+    elseif(${arg_prefix} STREQUAL "optimized")
+        target_link_libraries(${whatIsBuilding} optimized ${lib})
+    elseif(${arg_prefix} STREQUAL "general")
+        target_link_libraries(${whatIsBuilding} general ${lib})
+    else()
+        target_link_libraries(${whatIsBuilding} ${lib})
+    endif()
+endfunction()
+
 function(c_windows_tests_add_dll whatIsBuilding folder)
     link_directories(${whatIsBuilding}_dll $ENV{VCInstallDir}UnitTest/lib)
 
@@ -266,13 +278,7 @@ function(build_c_tests whatIsBuilding use_gballoc folder)
     endif()
 
     #setting logging_files
-    if(DEFINED SHARED_UTIL_SRC_FOLDER)
-        set(logging_files ${XLOGGING_C_FILE} ${LOGGING_C_FILE})
-    elseif(DEFINED SHARED_UTIL_FOLDER)
-        set(logging_files ${XLOGGING_C_FILE} ${LOGGING_C_FILE})
-    else()
-        message(WARNING "No Shared Utility folder defined, no logging file compiled in.")
-    endif()
+    set(logging_files ${XLOGGING_C_FILE} ${LOGGING_C_FILE})
 
     #setting output type
     if(WIN32)
