@@ -344,3 +344,8 @@ function(build_c_tests whatIsBuilding use_gballoc folder)
         endif()
     endif()
 endfunction()
+
+#use _CRT_SECURE_NO_WARNINGS by default
+if(MSVC)
+     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+endif()
