@@ -1,6 +1,38 @@
 #Copyright (c) Microsoft. All rights reserved.
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+include(CheckSymbolExists)
+function(detect_architecture symbol arch)
+    if (NOT DEFINED ARCHITECTURE OR ARCHITECTURE STREQUAL "")
+        set(CMAKE_REQUIRED_QUIET 1)
+        check_symbol_exists("${symbol}" "" ARCHITECTURE_${arch})
+        unset(CMAKE_REQUIRED_QUIET)
+
+        # The output variable needs to be unique across invocations otherwise
+        # CMake's crazy scope rules will keep it defined
+        if (ARCHITECTURE_${arch})
+            set(ARCHITECTURE "${arch}" CACHE INTERNAL "target architecture" FORCE)
+            set(ARCHITECTURE_${arch} 1 CACHE INTERNAL "target architecture" FORCE)
+            add_definitions(-DARCHITECTURE_${arch}=1)
+        endif()
+    endif()
+endfunction()
+
+if (MSVC)
+    detect_architecture("_M_AMD64" x86_64)
+    detect_architecture("_M_IX86" x86)
+    detect_architecture("_M_ARM" ARM)
+else()
+    detect_architecture("__x86_64__" x86_64)
+    detect_architecture("__i386__" x86)
+    detect_architecture("__arm__" ARM)
+endif()
+if (NOT DEFINED ARCHITECTURE OR ARCHITECTURE STREQUAL "")
+    set(ARCHITECTURE "GENERIC" CACHE INTERNAL "target architecture" FORCE)
+endif()
+
+message(STATUS "target architecture: ${ARCHITECTURE}")
+
 function(target_link_libraries_with_arg_prefix arg_prefix whatIsBuilding lib)
     if(${arg_prefix} STREQUAL "debug")
         target_link_libraries(${whatIsBuilding} debug ${lib})
