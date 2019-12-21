@@ -5,6 +5,8 @@ cmake_minimum_required(VERSION 2.8.11)
 
 project(azure_c_build_tools)
 
+add_custom_target(azure_c_build_tools)
+
 option(run_unittests "set run_unittests to ON to build unittests (default is OFF)" OFF)
 option(run_e2e_tests "set run_e2e_tests to ON to build e2e tests (default is OFF)." OFF)
 option(run_int_tests "set run_int_tests to ON to build integration tests (default is OFF)." OFF)
