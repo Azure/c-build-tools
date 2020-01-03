@@ -6,7 +6,9 @@ using System.Windows.Forms;  // Used for Application class
 using System.IO;             // Used for StreamWriter class
 using System.Runtime.InteropServices;  // Used for DllImport
 using System.Diagnostics;    // Used for Process class
-
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace TraceabilityTool
 {
@@ -19,7 +21,7 @@ namespace TraceabilityTool
         // Directory to place reports into.
         public static string outputDir = "";
         // directories to exclude
-        public static string[] exclusionDirs = null;
+        public static IList<string> exclusionDirs = new List<string>();
         // Exit program with code 0 if correct parameters were supplied.
         public static int exitCode = 0;
 
@@ -63,11 +65,12 @@ namespace TraceabilityTool
         {
             bool inputDirValid = false;
             bool outputDirValid = false;
-            bool exclusionDirsValid = false;
             bool buildCheck = false;
             bool optionGUI = false;
             // Command line interface can be enabled as a command line option
             bool consoleEnabled = false;
+
+            exclusionDirs = new List<string>();
 
             if (args.Length > 0)
             {
@@ -109,14 +112,17 @@ namespace TraceabilityTool
                     if (args[i].Equals("-e", StringComparison.OrdinalIgnoreCase) && (i < args.Length - 1))
                     {
                         string[] dirs = args[i + 1].Split(';');
-                        exclusionDirsValid = true;
                         foreach (string d in dirs)
                         {
-                            exclusionDirsValid &= Directory.Exists(d);
-                        }
-                        if (exclusionDirsValid)
-                        {
-                            exclusionDirs = dirs;
+                            string backSlashDir = d.Replace("/", "\\");
+                            if (!Directory.Exists(backSlashDir))
+                            {
+                                Console.WriteLine($"Invalid exclusion directory specified: {d}");
+                            }
+                            else
+                            {
+                                exclusionDirs.Add(backSlashDir);
+                            }
                         }
                     }
                 }
@@ -165,7 +171,7 @@ namespace TraceabilityTool
                 else
                 {
                     // The minimum required parameters were correctly specified.  Run the reports in CLI mode
-                    exitCode = ReportGenerator.GenerateReport(inputDir, outputDir, exclusionDirs, null);
+                    exitCode = ReportGenerator.GenerateReport(inputDir, outputDir, exclusionDirs.ToArray(), null);
                     Console.WriteLine();
                     if (outputDirValid)
                     {
