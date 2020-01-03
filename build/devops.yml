@@ -17,15 +17,16 @@ phases:
       filename: '"c:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\Common7\Tools\VsDevCmd.bat"'
       modifyEnvironment: true
 
-  - task: NuGetCommand@2
-    displayName: 'NuGet restore'
+  - task: CMake@1
+    displayName: 'CMake ..'
     inputs:
-      restoreSolution: traceabilitytool/traceabilitytool.sln
+      workingDirectory: 'build'
+      cmakeArgs: '..'
 
   - task: VSBuild@1
-    displayName: 'Build solution traceabilitytool/traceabilitytool.sln'
+    displayName: 'Build solution build\*.sln'
     inputs:
-      solution: traceabilitytool/traceabilitytool.sln
+      solution: 'build\*.sln'
       platform: 'Any CPU'
       configuration: Release
       maximumCpuCount: true
