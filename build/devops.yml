@@ -17,6 +17,9 @@ phases:
       filename: '"c:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\Common7\Tools\VsDevCmd.bat"'
       modifyEnvironment: true
 
+  - task: NuGetToolInstaller@0
+    displayName: 'Use NuGet 4.3.0 (required for .NET core assemblies)'
+
   - task: CMake@1
     displayName: 'CMake ..'
     inputs:
