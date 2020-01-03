@@ -14,3 +14,4 @@ option(run_perf_tests "set run_int_tests to ON to build performance tests (defau
 
 add_subdirectory(test_build_functions)
 add_subdirectory(test_projects)
+add_subdirectory(traceabilitytool)
