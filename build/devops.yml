@@ -2,9 +2,9 @@ name: $(BuildID)_$(BuildDefinitionName)_$(SourceBranchName)_$(Date:yyyyMMdd)$(Re
 resources:
 - repo: self
   clean: true
-phases:
-- phase: Build
-  queue:
+jobs:
+- job: Build_Windows_x64
+  pool:
     name: Hosted VS2017
     demands:
     - Cmd
@@ -47,3 +47,29 @@ phases:
       customCommand: 'run test'
       workingDir: srs_extension
 
+- job: linuxubuntu
+  displayName: 'Build Linux Ubuntu 16.04'
+  pool:
+    name: Hosted Ubuntu 1604
+  steps:
+  - bash: |
+      sudo apt-get update
+      sudo apt-get install curl build-essential pkg-config libcurl4-openssl-dev git cmake libssl-dev uuid-dev valgrind
+    displayName: 'Bash Script'
+
+  - bash: |
+     pushd $(Build.Repository.LocalPath)
+     git submodule update --init
+     git submodule foreach --recursive "git clean -xdff"
+     git clean -xdff
+     popd
+    workingDirectory: '$(Build.Repository.LocalPath)'
+    displayName: 'git submodule update and clean'
+
+  - task: Bash@3
+    displayName: 'Build and run tests'
+    inputs:
+      targetType: filePath
+      filePath: './build/linux/build_linux.sh'
+      arguments: '$(Build.Repository.LocalPath)'
+      workingDirectory: '$(Build.Repository.LocalPath)'
