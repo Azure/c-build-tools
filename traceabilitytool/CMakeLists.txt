@@ -5,12 +5,12 @@ if(NOT NUGET)
     message(FATAL "CMake could not find the nuget command line tool. Please install it!")
 else()
     add_custom_target(traceabilitytool-nuget-restore
-        COMMAND ${NUGET} restore ${CMAKE_SOURCE_DIR}/traceabilitytool/traceability_tool/packages.config -PackagesDirectory ${CMAKE_SOURCE_DIR}/traceabilitytool/packages -Verbosity detailed
+        COMMAND ${NUGET} restore ${CMAKE_CURRENT_LIST_DIR}/traceability_tool/packages.config -PackagesDirectory ${CMAKE_CURRENT_LIST_DIR}/packages -Verbosity detailed
     )
 endif()
 
 include_external_msproject(
-    traceabilitytool ${CMAKE_SOURCE_DIR}/traceabilitytool/traceability_tool/traceabilitytool.csproj
+    traceabilitytool ${CMAKE_CURRENT_LIST_DIR}/traceability_tool/traceabilitytool.csproj
     TYPE FAE04EC0-301F-11D3-BF4B-00C04F79EFBC)
 
 add_dependencies(traceabilitytool traceabilitytool-nuget-restore)
