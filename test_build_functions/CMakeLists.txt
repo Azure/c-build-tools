@@ -268,7 +268,7 @@ function(c_linux_tests_add_exe whatIsBuilding folder)
     if (TARGET testrunnerswitcher)
         target_link_libraries(${whatIsBuilding}_exe testrunnerswitcher)
     endif()
-    target_link_libraries(${whatIsBuilding}_exe umock_c ctest m)
+    target_link_libraries(${whatIsBuilding}_exe m)
 
     add_test(NAME ${whatIsBuilding} COMMAND $<TARGET_FILE:${whatIsBuilding}_exe>)
 
