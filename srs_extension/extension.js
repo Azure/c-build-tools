@@ -105,6 +105,80 @@ function activate(context) {
         }
     };
 
+    var insertReqTags = function () {
+        var text = loadText();
+
+        if (text) {
+            var nextReqTag = reqParser.getNextReq(text, reqPrefix, devId);
+
+            var editor = vscode.window.activeTextEditor;
+            var document = editor.document;
+
+            var endSnippet = ' **]**';
+
+            var rangesToEdit = new Array();
+            var positionIterator = editor.selection.start;
+            var stopLine = editor.selection.end.line;
+            while (positionIterator.line <= stopLine) {
+                var line = document.lineAt(positionIterator);
+                console.log("checking line: " + line.text);
+                // Attempt to add requirement to each line
+                if (!line.isEmptyOrWhitespace) {
+                    // Skip markdown list and white space around it
+                    var startOffset = line.firstNonWhitespaceCharacterIndex;
+                    while (line.text.charAt(startOffset) == '-' || line.text.charAt(startOffset) == ' ') {
+                        startOffset++;
+                        console.log("skipping over - or ' '");
+                    }
+                    if (line.text.charAt(startOffset) != '\n' && line.text.charAt(startOffset) != '\r') {
+                        var lineStart = positionIterator.translate(0, startOffset);
+                        rangesToEdit.push(lineStart);
+                    } else {
+                        console.log("line was empty after skipping characters")
+                    }
+                }
+                positionIterator = positionIterator.with(positionIterator.line + 1, 0);
+            }
+
+            var task = null;
+
+            rangesToEdit.forEach(function (value, index, array){
+                var doInsertStart = function (e) {
+                    // insert start snippet
+                    console.log("insert start at " + value.line + ", " + value.character );
+                    var startSnippet = '**' + nextReqTag + ': [** ';
+                    nextReqTag = reqParser.getNextReq(nextReqTag, reqPrefix, devId);
+                    e.insert(value, startSnippet);
+                };
+
+                var doInsertEnd = function (e) {
+                    var line = document.lineAt(value);
+                    var lineEnd = value.with(value.line, line.text.length);
+                    console.log("insert end at " + lineEnd.line + ", " + lineEnd.character );
+                    e.insert(lineEnd, endSnippet);
+                };
+                
+                if (task == null) {
+                    task = editor.edit(doInsertStart);
+                } else {
+                    task = task.then(function(status) {
+                        if (status) {
+                            return editor.edit(doInsertStart);
+                        }
+                        return status;
+                    });
+                }
+                task = task.then(function(status) {
+                    if (status) {
+                        // insert end snippet
+                        return editor.edit(doInsertEnd);
+                    }
+                    return status;
+                });
+            });
+        }
+    };
+
     var insertReqCommand = vscode.commands.registerCommand('extension.insertReqCommand', function () {
         if (devId === "") {
             askDevId().then(setDevId)
@@ -116,6 +190,21 @@ function activate(context) {
                 prefixPromise.then(insertReqTag);
             } else {
                 insertReqTag();
+            }
+        }
+    });
+
+    var insertReqsCommand = vscode.commands.registerCommand('extension.insertReqsCommand', function () {
+        if (devId === "") {
+            askDevId().then(setDevId)
+                      .then(lookupReqPrefix)
+                      .then(insertReqTags);
+        } else {
+            var prefixPromise = lookupReqPrefix();
+            if (prefixPromise) {
+                prefixPromise.then(insertReqTags);
+            } else {
+                insertReqTags();
             }
         }
     });
@@ -133,6 +222,7 @@ function activate(context) {
     });
 
     context.subscriptions.push(insertReqCommand);
+    context.subscriptions.push(insertReqsCommand);
     context.subscriptions.push(changeDevIdCommand);
     context.subscriptions.push(changeReqPrefixCommand);
 }
