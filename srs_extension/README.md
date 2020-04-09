@@ -34,7 +34,7 @@ To insert a new requirement tag:
 
 All requirement tags use the following syntax: `SRS_SOMESTRING_<DEVID>_<REQID>`
 
-You may also insert requirement tags for the currently selected text b y pressing `Alt+F9`. This will:
+You may also insert requirement tags for the currently selected text by pressing `Alt+F9`. This will:
  - Tag all non-empty (white space only) lines
  - Preserve unordered list markdown (i.e. skip over combinations of `-` and space)
 

@@ -18,26 +18,32 @@ function activate(context) {
         if(id && id.trim().length > 0) {
             devId = id;
             saveDevId(id);
+            return true;
         }
+        return false;
     };
 
     var setReqPrefix = function (prefix) {
         if(!!prefix) {
             if(prefix === ADD_NEW_PREFIX) {
-                vscode.window.showInputBox({
+                return vscode.window.showInputBox({
                     placeHolder: 'New requirement prefix',
                     prompt: 'Enter the new requirement prefix to use'
                 })
                 .then(function(newPrefix) {
                     if(!!newPrefix) {
                         reqPrefix = newPrefix;
+                        return true;
                     }
+                    return false;
                 });
             }
             else {
                 reqPrefix = prefix;
+                return true;
             }
         }
+        return false;
     };
     
     var askDevId = function () {
@@ -83,7 +89,7 @@ function activate(context) {
             var editor = vscode.window.activeTextEditor;
             var startSnippet = '**' + reqTag + ': [** ';
             var endSnippet = ' **]**';
-            editor.edit(function (e) {
+            return editor.edit(function (e) {
                 // insert start snippet
                 e.insert(editor.selection.start, startSnippet);
             }).then(function(status) {
@@ -101,7 +107,10 @@ function activate(context) {
                     var pos = editor.selection.end.translate(0, -1 * endSnippet.length);
                     editor.selection = new vscode.Selection(pos, pos);
                 }
+                return status;
             });
+        } else {
+            return editor.edit(function (e) {}).then(function(status) { return status; });
         }
     };
 
@@ -121,20 +130,16 @@ function activate(context) {
             var stopLine = editor.selection.end.line;
             while (positionIterator.line <= stopLine) {
                 var line = document.lineAt(positionIterator);
-                console.log("checking line: " + line.text);
                 // Attempt to add requirement to each line
                 if (!line.isEmptyOrWhitespace) {
                     // Skip markdown list and white space around it
                     var startOffset = line.firstNonWhitespaceCharacterIndex;
                     while (line.text.charAt(startOffset) == '-' || line.text.charAt(startOffset) == ' ') {
                         startOffset++;
-                        console.log("skipping over - or ' '");
                     }
                     if (line.text.charAt(startOffset) != '\n' && line.text.charAt(startOffset) != '\r') {
                         var lineStart = positionIterator.translate(0, startOffset);
                         rangesToEdit.push(lineStart);
-                    } else {
-                        console.log("line was empty after skipping characters")
                     }
                 }
                 positionIterator = positionIterator.with(positionIterator.line + 1, 0);
@@ -145,19 +150,19 @@ function activate(context) {
             rangesToEdit.forEach(function (value, index, array){
                 var doInsertStart = function (e) {
                     // insert start snippet
-                    console.log("insert start at " + value.line + ", " + value.character );
                     var startSnippet = '**' + nextReqTag + ': [** ';
                     nextReqTag = reqParser.getNextReq(nextReqTag, reqPrefix, devId);
                     e.insert(value, startSnippet);
                 };
 
                 var doInsertEnd = function (e) {
+                    // recompute line end (after inserting start) and insert end
                     var line = document.lineAt(value);
                     var lineEnd = value.with(value.line, line.text.length);
-                    console.log("insert end at " + lineEnd.line + ", " + lineEnd.character );
                     e.insert(lineEnd, endSnippet);
                 };
                 
+                // Insert start
                 if (task == null) {
                     task = editor.edit(doInsertStart);
                 } else {
@@ -168,43 +173,52 @@ function activate(context) {
                         return status;
                     });
                 }
+
+                // Insert end
                 task = task.then(function(status) {
                     if (status) {
-                        // insert end snippet
                         return editor.edit(doInsertEnd);
                     }
                     return status;
                 });
             });
+            
+            if (task == null) {
+                return editor.edit(function (e) {}).then(function(status) { return status; });
+            } else {
+                return task.then(function(status) { return status; });
+            }
+        } else {
+            return editor.edit(function (e) {}).then(function(status) { return status; });
         }
     };
 
     var insertReqCommand = vscode.commands.registerCommand('extension.insertReqCommand', function () {
         if (devId === "") {
-            askDevId().then(setDevId)
+            return askDevId().then(setDevId)
                       .then(lookupReqPrefix)
                       .then(insertReqTag);
         } else {
             var prefixPromise = lookupReqPrefix();
             if (prefixPromise) {
-                prefixPromise.then(insertReqTag);
+                return prefixPromise.then(insertReqTag);
             } else {
-                insertReqTag();
+                return insertReqTag();
             }
         }
     });
 
     var insertReqsCommand = vscode.commands.registerCommand('extension.insertReqsCommand', function () {
         if (devId === "") {
-            askDevId().then(setDevId)
+            return askDevId().then(setDevId)
                       .then(lookupReqPrefix)
                       .then(insertReqTags);
         } else {
             var prefixPromise = lookupReqPrefix();
             if (prefixPromise) {
-                prefixPromise.then(insertReqTags);
+                return prefixPromise.then(insertReqTags);
             } else {
-                insertReqTags();
+                return insertReqTags();
             }
         }
     });
@@ -221,10 +235,22 @@ function activate(context) {
                      .then(setReqPrefix);
     });
 
+    // Test hook
+    var forceSetDevIdCommand = vscode.commands.registerCommand('extension.forceSetDevId', function (id) {
+        setDevId(id);
+    });
+    var forceSetReqPrefixCommand = vscode.commands.registerCommand('extension.forceSetReqPrefix', function (prefix) {
+        setReqPrefix(prefix);
+    });
+
     context.subscriptions.push(insertReqCommand);
     context.subscriptions.push(insertReqsCommand);
     context.subscriptions.push(changeDevIdCommand);
     context.subscriptions.push(changeReqPrefixCommand);
+
+    // Expose commands for test that don't need UI
+    context.subscriptions.push(forceSetDevIdCommand);
+    context.subscriptions.push(forceSetReqPrefixCommand);
 }
 
 // from: http://stackoverflow.com/a/9081436
@@ -236,11 +262,11 @@ function saveDevId(devid) {
     var settingsPath = path.join(getUserHome(), '.reqdocs');
     var settings = {};
     if(FS.existsSync(settingsPath)) {
-        settings = FS.readFileSync(settingsPath, {
+        var settingString = FS.readFileSync(settingsPath, {
             encoding: 'utf8'
         });
-        if(settings) {
-            settings = JSON.parse(settings);
+        if(settingString) {
+            settings = JSON.parse(settingString);
         }
     }
     settings.devid = devid;
