@@ -1,16 +1,32 @@
 #Copyright (C) Microsoft Corporation. All rights reserved.
 
-find_program(NUGET nuget)
-if(NOT NUGET)
-    message(FATAL "CMake could not find the nuget command line tool. Please install it!")
-else()
-    add_custom_target(traceabilitytool-nuget-restore
-        COMMAND ${NUGET} restore ${CMAKE_CURRENT_LIST_DIR}/traceability_tool/packages.config -PackagesDirectory ${CMAKE_CURRENT_LIST_DIR}/packages -Verbosity detailed
-    )
-endif()
+enable_language(CSharp)
 
-include_external_msproject(
-    traceabilitytool ${CMAKE_CURRENT_LIST_DIR}/traceability_tool/traceabilitytool.csproj
-    TYPE FAE04EC0-301F-11D3-BF4B-00C04F79EFBC)
+set(CMAKE_CSharp_FLAGS "/langversion:latest")
 
-add_dependencies(traceabilitytool traceabilitytool-nuget-restore)
+add_executable(traceabilitytool assemblyinfo.cs
+consolereportwriter.cs
+csvreportwriter.cs
+filefinder.cs
+invalidreqdictionary.cs
+mainform.cs
+mainform.designer.cs
+program.cs
+reportgenerator.cs
+reportwriter.cs
+reqpathmatrix.cs
+resources.designer.cs
+settings.designer.cs
+)
+
+set_property(TARGET traceabilitytool
+    PROPERTY VS_PACKAGE_REFERENCES "DocumentFormat.OpenXml_2.9.1"
+)
+
+set_property(TARGET traceabilitytool
+    PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.5"
+)
+
+set_property(TARGET BlockStorageMsi
+    PROPERTY VS_PROJECT_IMPORT $ENV{Build_SourcesDirectory}/Directory.Build.props
+)
