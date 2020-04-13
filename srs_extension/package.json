@@ -2,7 +2,7 @@
     "name": "azure-req-doc-ext",
     "displayName": "Azure SRS Requirement Documents Extension",
     "description": "Generate requirement tags for SRS requirement documents",
-    "version": "0.0.7",
+    "version": "0.0.8",
     "publisher": "microsoft",
     "repository": "https://github.com/Azure/azure-c-build-tools/tree/master/srs_extension",
     "engines": {
@@ -34,6 +34,10 @@
             {
                 "command": "extension.insertReqCommand",
                 "key": "Alt+F8"
+            },
+            {
+                "command": "extension.insertReqsCommand",
+                "key": "Alt+F9"
             }
         ]
     },
