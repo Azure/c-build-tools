@@ -5,18 +5,18 @@ enable_language(CSharp)
 set(CMAKE_CSharp_FLAGS "/langversion:latest")
 
 add_executable(traceabilitytool assemblyinfo.cs
-consolereportwriter.cs
-csvreportwriter.cs
-filefinder.cs
-invalidreqdictionary.cs
-mainform.cs
-mainform.designer.cs
-program.cs
-reportgenerator.cs
-reportwriter.cs
-reqpathmatrix.cs
-resources.designer.cs
-settings.designer.cs
+    consolereportwriter.cs
+    csvreportwriter.cs
+    filefinder.cs
+    invalidreqdictionary.cs
+    mainform.cs
+    mainform.designer.cs
+    program.cs
+    reportgenerator.cs
+    reportwriter.cs
+    reqpathmatrix.cs
+    resources.designer.cs
+    settings.designer.cs
 )
 
 set_property(TARGET traceabilitytool
@@ -29,4 +29,13 @@ set_property(TARGET traceabilitytool
 
 set_property(TARGET traceabilitytool
     PROPERTY VS_PROJECT_IMPORT $ENV{Build_SourcesDirectory}/Directory.Build.props
+)
+
+set_property(TARGET traceabilitytool PROPERTY VS_DOTNET_REFERENCES
+    "Microsoft.CSharp"
+    "System"
+    "System.Core"
+    "System.Data"
+    "System.Drawing"
+    "System.Windows.Forms"
 )
