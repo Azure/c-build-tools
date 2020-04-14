@@ -27,6 +27,6 @@ set_property(TARGET traceabilitytool
     PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.5"
 )
 
-set_property(TARGET BlockStorageMsi
+set_property(TARGET traceabilitytool
     PROPERTY VS_PROJECT_IMPORT $ENV{Build_SourcesDirectory}/Directory.Build.props
 )
