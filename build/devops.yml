@@ -32,6 +32,7 @@ jobs:
       solution: 'build_x64\*.sln'
       platform: x64
       configuration: Debug
+      msbuildArgs: '/t:restore /t:build'
       maximumCpuCount: true
 
   - task: Npm@1
