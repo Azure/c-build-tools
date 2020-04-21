@@ -4,6 +4,8 @@ enable_language(CSharp)
 
 set(CMAKE_CSharp_FLAGS "/langversion:latest")
 
+remove_definitions(-DBUILD_CONFIG=$<CONFIG>)
+
 add_executable(traceabilitytool assemblyinfo.cs
     consolereportwriter.cs
     csvreportwriter.cs
