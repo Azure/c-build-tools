@@ -1,6 +1,8 @@
 #Copyright (c) Microsoft. All rights reserved.
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+set(build_c_tests_internal_dir ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
+
 include(CheckSymbolExists)
 function(detect_architecture symbol arch)
     if (NOT DEFINED ARCHITECTURE OR ARCHITECTURE STREQUAL "")
@@ -69,14 +71,14 @@ function(c_windows_tests_add_dll whatIsBuilding folder)
         ${${whatIsBuilding}_cpp_files}
         ${${whatIsBuilding}_h_files}
         ${${whatIsBuilding}_c_files}
-        ${logging_files}
+        ${build_c_tests_internal_dir}/nothing.cpp
     )
 
     set_target_properties(${whatIsBuilding}_dll
                PROPERTIES
                FOLDER ${folder})
 
-    set_source_files_properties(${${whatIsBuilding}_c_files} ${logging_files}
+    set_source_files_properties(${${whatIsBuilding}_c_files}
                PROPERTIES
                COMPILE_FLAGS /TC)
 
@@ -84,6 +86,9 @@ function(c_windows_tests_add_dll whatIsBuilding folder)
                PROPERTIES
                COMPILE_FLAGS /TP)
 
+    if (TARGET azure_c_logging)
+        target_link_libraries(${whatIsBuilding}_dll azure_c_logging)
+    endif()
     if (TARGET umock_c)
         target_link_libraries(${whatIsBuilding}_dll umock_c)
     endif()
@@ -148,7 +153,6 @@ function(c_windows_tests_add_exe whatIsBuilding folder)
         ${${whatIsBuilding}_h_files}
         ${${whatIsBuilding}_c_files}
         ${CMAKE_CURRENT_LIST_DIR}/main.c
-        ${logging_files}
     )
     set_target_properties(${whatIsBuilding}_exe
                PROPERTIES
@@ -156,6 +160,9 @@ function(c_windows_tests_add_exe whatIsBuilding folder)
 
     target_compile_definitions(${whatIsBuilding}_exe PUBLIC -DUSE_CTEST)
     target_include_directories(${whatIsBuilding}_exe PUBLIC ${sharedutil_include_directories})
+    if (TARGET azure_c_logging)
+        target_link_libraries(${whatIsBuilding}_exe azure_c_logging)
+    endif()
     if (TARGET umock_c)
         target_link_libraries(${whatIsBuilding}_exe umock_c)
     endif()
@@ -211,7 +218,6 @@ function(c_linux_tests_add_exe whatIsBuilding folder)
         ${${whatIsBuilding}_h_files}
         ${${whatIsBuilding}_c_files}
         ${CMAKE_CURRENT_LIST_DIR}/main.c
-        ${logging_files}
     )
     set_target_properties(${whatIsBuilding}_exe
                PROPERTIES
@@ -259,6 +265,9 @@ function(c_linux_tests_add_exe whatIsBuilding folder)
 
     endforeach()
 
+    if (TARGET azure_c_logging)
+        target_link_libraries(${whatIsBuilding}_exe azure_c_logging)
+    endif()
     if (TARGET umock_c)
         target_link_libraries(${whatIsBuilding}_exe umock_c)
     endif()
@@ -308,9 +317,6 @@ function(build_c_tests whatIsBuilding use_gballoc folder)
     else()
         include_directories(${sharedutil_include_directories})
     endif()
-
-    #setting logging_files
-    set(logging_files ${XLOGGING_C_FILE} ${LOGGING_C_FILE})
 
     #setting output type
     if(WIN32)
