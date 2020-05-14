@@ -351,23 +351,25 @@ function(build_c_tests whatIsBuilding use_gballoc folder)
     endif()
 endfunction()
 
-function(set_default_build_options)
-    #use _CRT_SECURE_NO_WARNINGS by default
-    if(MSVC)
-        add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-    endif()
-
+macro(set_default_build_options)
     # System-specific compiler flags
     if(MSVC)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
+        #use _CRT_SECURE_NO_WARNINGS by default
+        add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
+        # warning C4200: nonstandard extension used: zero-sized array in struct/union : looks very standard in C99 and it is called flexible array. Documentation-wise is a flexible array, but called "unsized" in Microsoft's docs
+        # https://msdn.microsoft.com/en-us/library/b6fae073.aspx
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /wd4200")
+
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
     elseif(UNIX) #LINUX OR APPLE
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
     endif()
 
     enable_testing()
-endfunction()
+endmacro()
 
 macro(compileAsC99)
   if (CMAKE_VERSION VERSION_LESS "3.1")
