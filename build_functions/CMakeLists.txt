@@ -366,6 +366,13 @@ macro(set_default_build_options)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
     endif()
 
+    if (WIN32)
+        if (${use_segment_heap})
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
+            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
+        endif()
+    endif()
+
     enable_testing()
 endmacro()
 
