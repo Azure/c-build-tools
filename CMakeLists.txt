@@ -10,7 +10,7 @@ add_custom_target(azure_c_build_tools)
 option(run_unittests "set run_unittests to ON to build unittests (default is OFF)" OFF)
 option(run_e2e_tests "set run_e2e_tests to ON to build e2e tests (default is OFF)." OFF)
 option(run_int_tests "set run_int_tests to ON to build integration tests (default is OFF)." OFF)
-option(run_perf_tests "set run_int_tests to ON to build performance tests (default is OFF)." OFF)
+option(run_perf_tests "set run_perf_tests to ON to build performance tests (default is OFF)." OFF)
 
 if(WIN32)
     # warning C4200: nonstandard extension used: zero-sized array in struct/union : looks very standard in C99 and it is called flexible array. Documentation-wise is a flexible array, but called "unsized" in Microsoft's docs
