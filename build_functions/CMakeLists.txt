@@ -1,6 +1,8 @@
 #Copyright (c) Microsoft. All rights reserved.
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+set(build_c_tests_internal_dir ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
+
 include(CheckSymbolExists)
 function(detect_architecture symbol arch)
     if (NOT DEFINED ARCHITECTURE OR ARCHITECTURE STREQUAL "")
@@ -69,14 +71,14 @@ function(c_windows_tests_add_dll whatIsBuilding folder)
         ${${whatIsBuilding}_cpp_files}
         ${${whatIsBuilding}_h_files}
         ${${whatIsBuilding}_c_files}
-        ${logging_files}
+        ${build_c_tests_internal_dir}/nothing.cpp
     )
 
     set_target_properties(${whatIsBuilding}_dll
                PROPERTIES
                FOLDER ${folder})
 
-    set_source_files_properties(${${whatIsBuilding}_c_files} ${logging_files}
+    set_source_files_properties(${${whatIsBuilding}_c_files}
                PROPERTIES
                COMPILE_FLAGS /TC)
 
@@ -84,6 +86,9 @@ function(c_windows_tests_add_dll whatIsBuilding folder)
                PROPERTIES
                COMPILE_FLAGS /TP)
 
+    if (TARGET azure_c_logging)
+        target_link_libraries(${whatIsBuilding}_dll azure_c_logging)
+    endif()
     if (TARGET umock_c)
         target_link_libraries(${whatIsBuilding}_dll umock_c)
     endif()
@@ -148,7 +153,6 @@ function(c_windows_tests_add_exe whatIsBuilding folder)
         ${${whatIsBuilding}_h_files}
         ${${whatIsBuilding}_c_files}
         ${CMAKE_CURRENT_LIST_DIR}/main.c
-        ${logging_files}
     )
     set_target_properties(${whatIsBuilding}_exe
                PROPERTIES
@@ -156,6 +160,9 @@ function(c_windows_tests_add_exe whatIsBuilding folder)
 
     target_compile_definitions(${whatIsBuilding}_exe PUBLIC -DUSE_CTEST)
     target_include_directories(${whatIsBuilding}_exe PUBLIC ${sharedutil_include_directories})
+    if (TARGET azure_c_logging)
+        target_link_libraries(${whatIsBuilding}_exe azure_c_logging)
+    endif()
     if (TARGET umock_c)
         target_link_libraries(${whatIsBuilding}_exe umock_c)
     endif()
@@ -211,7 +218,6 @@ function(c_linux_tests_add_exe whatIsBuilding folder)
         ${${whatIsBuilding}_h_files}
         ${${whatIsBuilding}_c_files}
         ${CMAKE_CURRENT_LIST_DIR}/main.c
-        ${logging_files}
     )
     set_target_properties(${whatIsBuilding}_exe
                PROPERTIES
@@ -259,6 +265,9 @@ function(c_linux_tests_add_exe whatIsBuilding folder)
 
     endforeach()
 
+    if (TARGET azure_c_logging)
+        target_link_libraries(${whatIsBuilding}_exe azure_c_logging)
+    endif()
     if (TARGET umock_c)
         target_link_libraries(${whatIsBuilding}_exe umock_c)
     endif()
@@ -309,9 +318,6 @@ function(build_c_tests whatIsBuilding use_gballoc folder)
         include_directories(${sharedutil_include_directories})
     endif()
 
-    #setting logging_files
-    set(logging_files ${XLOGGING_C_FILE} ${LOGGING_C_FILE})
-
     #setting output type
     if(WIN32)
         if(
@@ -345,23 +351,30 @@ function(build_c_tests whatIsBuilding use_gballoc folder)
     endif()
 endfunction()
 
-function(set_default_build_options)
-    #use _CRT_SECURE_NO_WARNINGS by default
-    if(MSVC)
-        add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-    endif()
-
+macro(set_default_build_options)
     # System-specific compiler flags
     if(MSVC)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
+        #use _CRT_SECURE_NO_WARNINGS by default
+        add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
+        # warning C4200: nonstandard extension used: zero-sized array in struct/union : looks very standard in C99 and it is called flexible array. Documentation-wise is a flexible array, but called "unsized" in Microsoft's docs
+        # https://msdn.microsoft.com/en-us/library/b6fae073.aspx
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX /wd4200")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX /wd4200")
     elseif(UNIX) #LINUX OR APPLE
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
     endif()
 
+    if (WIN32)
+        if (${use_segment_heap})
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
+            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
+        endif()
+    endif()
+
     enable_testing()
-endfunction()
+endmacro()
 
 macro(compileAsC99)
   if (CMAKE_VERSION VERSION_LESS "3.1")
@@ -380,26 +393,16 @@ macro(compileAsC99)
 endmacro(compileAsC99)
 
 macro(compileAsC11)
-  if (CXX_FLAG_CXX11)
     if (CMAKE_VERSION VERSION_LESS "3.1")
-      if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-        set (CMAKE_C_FLAGS "--std=c11 ${CMAKE_C_FLAGS}")
-        set (CMAKE_C_FLAGS "-D_POSIX_C_SOURCE=200112L ${CMAKE_C_FLAGS}")
-        set (CMAKE_CXX_FLAGS "--std=c++11 ${CMAKE_CXX_FLAGS}")
-      endif()
+        if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
+            set (CMAKE_C_FLAGS "--std=c11 ${CMAKE_C_FLAGS}")
+            set (CMAKE_C_FLAGS "-D_POSIX_C_SOURCE=200112L ${CMAKE_C_FLAGS}")
+            set (CMAKE_CXX_FLAGS "--std=c++11 ${CMAKE_CXX_FLAGS}")
+        endif()
     else()
-      set (CMAKE_C_STANDARD 11)
-      set (CMAKE_CXX_STANDARD 11)
+        set (CMAKE_C_STANDARD 11)
+        set (CMAKE_CXX_STANDARD 11)
     endif()
-  else()
-    if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-        set (CMAKE_C_FLAGS "--std=c99 ${CMAKE_C_FLAGS}")
-        set (CMAKE_CXX_FLAGS "--std=c++0x ${CMAKE_CXX_FLAGS}")
-    else()
-      set (CMAKE_C_STANDARD 11)
-      set (CMAKE_CXX_STANDARD 11)
-    endif()
-  endif()
 endmacro(compileAsC11)
 
 function(compileTargetAsC99 theTarget)
