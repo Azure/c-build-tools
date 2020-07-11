@@ -1,4 +1,17 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-static int some_variable_526900A4_3F36_48C7_9346_CBE8CC395C09;
+/*the below symbol (CPPUNITTEST_SYMBOL) is defined by testrunnerswitcher.h for the purpose of linking the .dll when compiling as C++. Here there's no testrunnerswitcher so it is defined by hand.*/
+/*it also serves (here) the purpose of not having an empty file*/
+/*this code should be removed when a real project is build from this template*/
+#ifdef CPPUNITTEST_SYMBOL
+#ifdef __cplusplus
+extern "C" {
+#endif
+    void CPPUNITTEST_SYMBOL(void) {}
+
+#ifdef __cplusplus
+}
+#endif
+#endif /*CPPUNITTEST_SYMBOL*/
+
