@@ -35,71 +35,264 @@ endif()
 
 message(STATUS "target architecture: ${ARCHITECTURE}")
 
-function(target_link_libraries_with_arg_prefix arg_prefix whatIsBuilding lib)
+function(target_link_libraries_with_arg_prefix arg_prefix whatisbuilding lib)
     if(${arg_prefix} STREQUAL "debug")
-        target_link_libraries(${whatIsBuilding} debug ${lib})
+        target_link_libraries(${whatisbuilding} debug ${lib})
     elseif(${arg_prefix} STREQUAL "optimized")
-        target_link_libraries(${whatIsBuilding} optimized ${lib})
+        target_link_libraries(${whatisbuilding} optimized ${lib})
     elseif(${arg_prefix} STREQUAL "general")
-        target_link_libraries(${whatIsBuilding} general ${lib})
+        target_link_libraries(${whatisbuilding} general ${lib})
     else()
-        target_link_libraries(${whatIsBuilding} ${lib})
+        target_link_libraries(${whatisbuilding} ${lib})
     endif()
 endfunction()
 
-function(c_windows_tests_add_dll whatIsBuilding folder)
-    link_directories(${whatIsBuilding}_dll $ENV{VCInstallDir}UnitTest/lib)
+########################################################################A
+########################################################################
+########################################################################
+########################################################################
+########################################################################
+########################################################################
 
-    add_library(${whatIsBuilding}_testsonly_lib STATIC
-            ${${whatIsBuilding}_test_files}
+function(build_lib whatisbuilding solution_folder)
+    #message("build_lib (CALLED) ${whatisbuilding} ${solution_folder} ${ARGN} whatisbuilding_c_files=${${whatisbuilding}_c_files} cpp=${${whatisbuilding}_cpp_files} " ) 
+    if(
+        ("${${whatisbuilding}_c_files}" STREQUAL "") AND
+        ("${${whatisbuilding}_cpp_files}" STREQUAL "")
+    )
+        #vld.h message("build_lib (CALLED) ${whatisbuilding} ${solution_folder} ${ARGN} whatisbuilding_c_files=${${whatisbuilding}_c_files} cpp=${${whatisbuilding}_cpp_files} ADDING NOTHING.C" ) 
+        #for those cases when there are 0 other files except the .c file containing the tests. This is a bit less than ideal because a lib is still created and it is still linked against. To be improved at a later time.
+        add_library(${whatisbuilding}_lib 
+            ${build_c_tests_internal_dir}/nothing.c
+        )
+        
+    else()
+        #vld.h message("build_lib (CALLED) ${whatisbuilding} ${solution_folder} ${ARGN} whatisbuilding_c_files=${${whatisbuilding}_c_files} cpp=${${whatisbuilding}_cpp_files}" ) 
+        add_library(${whatisbuilding}_lib 
+            ${${whatisbuilding}_c_files}
+            ${${whatisbuilding}_h_files}
+            ${${whatisbuilding}_cpp_files}
+        )
+        
+    endif()
+    
+    set_target_properties(${whatisbuilding}_lib
+           PROPERTIES
+           FOLDER ${solution_folder})
+           
+    set(PARSING_ADDITIONAL_LIBS OFF)
+    set(PARSING_VALGRIND_SUPPRESSIONS_FILE OFF)
+    set(VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER)
+    set(ARG_PREFIX "none")
+    foreach(f ${ARGN}) 
+        set(skip_to_next FALSE)
+        if(${f} STREQUAL "ADDITIONAL_LIBS")
+            SET(PARSING_ADDITIONAL_LIBS ON)
+            SET(PARSING_VALGRIND_SUPPRESSIONS_FILE OFF)
+            set(ARG_PREFIX "none")
+            #also unset all the other states
+            set(skip_to_next TRUE)
+        elseif(${f} STREQUAL "VALGRIND_SUPPRESSIONS_FILE")
+            SET(PARSING_ADDITIONAL_LIBS OFF)
+            SET(PARSING_VALGRIND_SUPPRESSIONS_FILE ON)
+            set(skip_to_next TRUE)
+        endif()
+
+        if(NOT skip_to_next)
+            if(PARSING_ADDITIONAL_LIBS)
+                if((${f} STREQUAL "debug") OR (${f} STREQUAL "optimized") OR (${f} STREQUAL "general"))
+                    SET(ARG_PREFIX ${f})
+                else()
+                    target_link_libraries_with_arg_prefix(${ARG_PREFIX} ${whatisbuilding}_lib ${f})
+                    set(ARG_PREFIX "none")
+                endif()
+            endif()
+        endif()
+
+    endforeach()
+endfunction()
+
+function(build_dll whatisbuilding solution_folder)
+
+    #lazily build _lib which is needed by both exe and dll
+    if(NOT TARGET ${whatisbuilding}_lib)
+        build_lib(${whatisbuilding} ${solution_folder} ${ARGN})
+    endif()
+    
+    #this is the .dll run by visual studio's test runner
+    add_library(${whatisbuilding}_dll SHARED
+        ${${whatisbuilding}_test_files}
+    )
+    
+    #make sure to compile the test file as C++!
+    set_source_files_properties(${${whatisbuilding}_test_files} PROPERTIES LANGUAGE CXX)
+    
+    #link with the common lib (exe an dll share the lib part)
+    target_link_libraries(${whatisbuilding}_dll ${whatisbuilding}_lib)
+    
+    link_directories(${whatisbuilding}_dll $ENV{VCInstallDir}UnitTest/lib)
+
+    target_include_directories(${whatisbuilding}_dll PUBLIC ${sharedutil_include_directories} $ENV{VCInstallDir}UnitTest/include)
+    target_compile_definitions(${whatisbuilding}_dll PUBLIC -DCPP_UNITTEST)
+    target_compile_options(${whatisbuilding}_dll PUBLIC /EHsc) #vld.h check if this is really needed...
+
+    set_target_properties(${whatisbuilding}_dll
+               PROPERTIES
+               FOLDER ${solution_folder})
+    
+    if (TARGET azure_c_logging)
+        target_link_libraries(${whatisbuilding}_dll azure_c_logging)
+    endif()
+    if (TARGET umock_c)
+        target_link_libraries(${whatisbuilding}_dll umock_c)
+    endif()
+    if (TARGET ctest)
+        target_link_libraries(${whatisbuilding}_dll ctest)
+    endif()
+    if (TARGET testrunnerswitcher)
+        target_link_libraries(${whatisbuilding}_dll testrunnerswitcher)
+    endif()
+    
+endfunction()
+
+function(build_exe whatisbuilding solution_folder)
+    
+    #lazily build _lib which is needed by both exe and dll
+    if(NOT TARGET ${whatisbuilding}_lib)
+        build_lib(${whatisbuilding} ${solution_folder} ${ARGN})
+    endif()
+    
+    #this is the exe run by ctest (or directly from visual studio)
+    add_executable(${whatisbuilding}_exe
+        ${${whatisbuilding}_test_files}
+        main.c
+    )
+    
+    #make sure to compile the test file as C!
+    set_source_files_properties(${whatisbuilding}_test_files PROPERTIES LANGUAGE C)
+    
+    #link with the common lib (exe an dll share the lib part)
+    target_link_libraries(${whatisbuilding}_exe ${whatisbuilding}_lib)
+    
+    set_target_properties(${whatisbuilding}_exe
+               PROPERTIES
+               FOLDER ${solution_folder})
+    
+    target_compile_definitions(${whatisbuilding}_exe PUBLIC -DUSE_CTEST)
+    target_include_directories(${whatisbuilding}_exe PUBLIC ${sharedutil_include_directories})
+    
+    if (TARGET azure_c_logging)
+        target_link_libraries(${whatisbuilding}_exe azure_c_logging)
+    endif()
+    if (TARGET umock_c)
+        target_link_libraries(${whatisbuilding}_exe umock_c)
+    endif()
+    if (TARGET ctest)
+        target_link_libraries(${whatisbuilding}_exe ctest)
+    endif()
+    if (TARGET testrunnerswitcher)
+        target_link_libraries(${whatisbuilding}_exe testrunnerswitcher)
+    endif()
+
+    #register the exe with ctest's list of tests
+    add_test(NAME ${whatisbuilding} COMMAND ${whatisbuilding}_exe)
+    
+endfunction()
+
+#drop in replacement for add_subdirectory :)
+function(build_test_folder test_folder)
+
+    set(building exe)
+    add_subdirectory(${test_folder} ${test_folder}/${building})
+
+    if (${use_cppunittest})
+        set(building dll)
+        add_subdirectory(${test_folder} ${test_folder}/${building})
+    endif()
+    
+endfunction()
+
+#drop in replacement for build_c_tests :)
+function(build_test_artefacts whatisbuilding use_gballoc solution_folder )
+    if(${use_gballoc})
+        add_definitions(-DGB_MEASURE_MEMORY_FOR_THIS -DGB_DEBUG_ALLOC)
+    endif()
+    
+    if(${building} STREQUAL "lib")
+        #vld.h message("build_lib (CALL) ${test_folder} ${solution_folder} ${ARGN}")
+        build_lib(${test_folder} ${solution_folder} ${ARGN})
+    elseif(${building} STREQUAL "dll")
+        #vld.h message("build_dll ${test_folder} ${solution_folder} ${ARGN}")
+        build_dll(${test_folder} ${solution_folder} ${ARGN})
+    elseif(${building} STREQUAL "exe")
+        #vld.h message("build_exe ${test_folder} ${solution_folder} ${ARGN}")
+        build_exe(${test_folder} ${solution_folder} ${ARGN})
+    else()
+        MESSAGE(FATAL_ERROR "nu e bine building=${building} test_folder=${test_folder} ARGN=${ARGN}")
+    endif()
+endfunction()
+
+########################################################################
+########################################################################
+########################################################################
+########################################################################
+########################################################################
+########################################################################
+
+
+function(c_windows_tests_add_dll whatisbuilding folder)
+    link_directories(${whatisbuilding}_dll $ENV{VCInstallDir}UnitTest/lib)
+
+    add_library(${whatisbuilding}_testsonly_lib STATIC
+            ${${whatisbuilding}_test_files}
     )
     SET(VAR 1)
-    foreach(file ${${whatIsBuilding}_test_files})
+    foreach(file ${${whatisbuilding}_test_files})
         set_source_files_properties(${file} PROPERTIES COMPILE_FLAGS -DCPPUNITTEST_SYMBOL=some_symbol_for_cppunittest_${VAR})
         MATH(EXPR VAR "${VAR}+1")
     endforeach()
 
-    set_target_properties(${whatIsBuilding}_testsonly_lib
+    set_target_properties(${whatisbuilding}_testsonly_lib
                PROPERTIES
                FOLDER ${folder} )
 
-    target_include_directories(${whatIsBuilding}_testsonly_lib PUBLIC ${sharedutil_include_directories} $ENV{VCInstallDir}UnitTest/include)
-    target_compile_definitions(${whatIsBuilding}_testsonly_lib PUBLIC -DCPP_UNITTEST)
-    target_compile_options(${whatIsBuilding}_testsonly_lib PUBLIC /TP /EHsc)
+    target_include_directories(${whatisbuilding}_testsonly_lib PUBLIC ${sharedutil_include_directories} $ENV{VCInstallDir}UnitTest/include)
+    target_compile_definitions(${whatisbuilding}_testsonly_lib PUBLIC -DCPP_UNITTEST)
+    target_compile_options(${whatisbuilding}_testsonly_lib PUBLIC /TP /EHsc)
 
-    add_library(${whatIsBuilding}_dll SHARED
-        ${${whatIsBuilding}_cpp_files}
-        ${${whatIsBuilding}_h_files}
-        ${${whatIsBuilding}_c_files}
+    add_library(${whatisbuilding}_dll SHARED
+        ${${whatisbuilding}_cpp_files}
+        ${${whatisbuilding}_h_files}
+        ${${whatisbuilding}_c_files}
         ${build_c_tests_internal_dir}/nothing.cpp
     )
 
-    set_target_properties(${whatIsBuilding}_dll
+    set_target_properties(${whatisbuilding}_dll
                PROPERTIES
                FOLDER ${folder})
 
-    set_source_files_properties(${${whatIsBuilding}_c_files}
+    set_source_files_properties(${${whatisbuilding}_c_files}
                PROPERTIES
                COMPILE_FLAGS /TC)
 
-    set_source_files_properties(${${whatIsBuilding}_cpp_files}
+    set_source_files_properties(${${whatisbuilding}_cpp_files}
                PROPERTIES
                COMPILE_FLAGS /TP)
 
     if (TARGET azure_c_logging)
-        target_link_libraries(${whatIsBuilding}_dll azure_c_logging)
+        target_link_libraries(${whatisbuilding}_dll azure_c_logging)
     endif()
     if (TARGET umock_c)
-        target_link_libraries(${whatIsBuilding}_dll umock_c)
+        target_link_libraries(${whatisbuilding}_dll umock_c)
     endif()
     if (TARGET ctest)
-        target_link_libraries(${whatIsBuilding}_dll ctest)
+        target_link_libraries(${whatisbuilding}_dll ctest)
     endif()
     if (TARGET testrunnerswitcher)
-        target_link_libraries(${whatIsBuilding}_dll testrunnerswitcher)
+        target_link_libraries(${whatisbuilding}_dll testrunnerswitcher)
     endif()
 
-    target_link_libraries(${whatIsBuilding}_dll ${whatIsBuilding}_testsonly_lib )
+    target_link_libraries(${whatisbuilding}_dll ${whatisbuilding}_testsonly_lib )
 
     set(PARSING_ADDITIONAL_LIBS OFF)
     set(PARSING_VALGRIND_SUPPRESSIONS_FILE OFF)
@@ -124,8 +317,8 @@ function(c_windows_tests_add_dll whatIsBuilding folder)
                 if((${f} STREQUAL "debug") OR (${f} STREQUAL "optimized") OR (${f} STREQUAL "general"))
                     SET(ARG_PREFIX ${f})
                 else()
-                    target_link_libraries_with_arg_prefix(${ARG_PREFIX} ${whatIsBuilding}_dll ${f})
-                    target_link_libraries_with_arg_prefix(${ARG_PREFIX} ${whatIsBuilding}_testsonly_lib ${f})
+                    target_link_libraries_with_arg_prefix(${ARG_PREFIX} ${whatisbuilding}_dll ${f})
+                    target_link_libraries_with_arg_prefix(${ARG_PREFIX} ${whatisbuilding}_testsonly_lib ${f})
                     set(ARG_PREFIX "none")
                 endif()
             endif()
@@ -135,42 +328,42 @@ function(c_windows_tests_add_dll whatIsBuilding folder)
 
     SET(SPACES " ")
     SET(VAR 1)
-    foreach(file ${${whatIsBuilding}_test_files})
+    foreach(file ${${whatisbuilding}_test_files})
         # for x64 the underscore is not needed
         if (ARCHITECTURE STREQUAL "x86_64" OR ARCHITECTURE STREQUAL "ARM")
-            set_property(TARGET ${whatIsBuilding}_dll APPEND_STRING PROPERTY LINK_FLAGS ${SPACES}/INCLUDE:"some_symbol_for_cppunittest_${VAR}")
+            set_property(TARGET ${whatisbuilding}_dll APPEND_STRING PROPERTY LINK_FLAGS ${SPACES}/INCLUDE:"some_symbol_for_cppunittest_${VAR}")
         else()
-            set_property(TARGET ${whatIsBuilding}_dll APPEND_STRING PROPERTY LINK_FLAGS ${SPACES}/INCLUDE:"_some_symbol_for_cppunittest_${VAR}")
+            set_property(TARGET ${whatisbuilding}_dll APPEND_STRING PROPERTY LINK_FLAGS ${SPACES}/INCLUDE:"_some_symbol_for_cppunittest_${VAR}")
         endif()
         MATH(EXPR VAR "${VAR}+1")
     endforeach()
 endfunction()
 
-function(c_windows_tests_add_exe whatIsBuilding folder)
-    add_executable(${whatIsBuilding}_exe
-        ${${whatIsBuilding}_test_files}
-        ${${whatIsBuilding}_cpp_files}
-        ${${whatIsBuilding}_h_files}
-        ${${whatIsBuilding}_c_files}
+function(c_windows_tests_add_exe whatisbuilding folder)
+    add_executable(${whatisbuilding}_exe
+        ${${whatisbuilding}_test_files}
+        ${${whatisbuilding}_cpp_files}
+        ${${whatisbuilding}_h_files}
+        ${${whatisbuilding}_c_files}
         ${CMAKE_CURRENT_LIST_DIR}/main.c
     )
-    set_target_properties(${whatIsBuilding}_exe
+    set_target_properties(${whatisbuilding}_exe
                PROPERTIES
                FOLDER ${folder})
 
-    target_compile_definitions(${whatIsBuilding}_exe PUBLIC -DUSE_CTEST)
-    target_include_directories(${whatIsBuilding}_exe PUBLIC ${sharedutil_include_directories})
+    target_compile_definitions(${whatisbuilding}_exe PUBLIC -DUSE_CTEST)
+    target_include_directories(${whatisbuilding}_exe PUBLIC ${sharedutil_include_directories})
     if (TARGET azure_c_logging)
-        target_link_libraries(${whatIsBuilding}_exe azure_c_logging)
+        target_link_libraries(${whatisbuilding}_exe azure_c_logging)
     endif()
     if (TARGET umock_c)
-        target_link_libraries(${whatIsBuilding}_exe umock_c)
+        target_link_libraries(${whatisbuilding}_exe umock_c)
     endif()
     if (TARGET ctest)
-        target_link_libraries(${whatIsBuilding}_exe ctest)
+        target_link_libraries(${whatisbuilding}_exe ctest)
     endif()
     if (TARGET testrunnerswitcher)
-        target_link_libraries(${whatIsBuilding}_exe testrunnerswitcher)
+        target_link_libraries(${whatisbuilding}_exe testrunnerswitcher)
     endif()
 
     set(PARSING_ADDITIONAL_LIBS OFF)
@@ -196,7 +389,7 @@ function(c_windows_tests_add_exe whatIsBuilding folder)
                 if((${f} STREQUAL "debug") OR (${f} STREQUAL "optimized") OR (${f} STREQUAL "general"))
                     SET(ARG_PREFIX ${f})
                 else()
-                    target_link_libraries_with_arg_prefix(${ARG_PREFIX} ${whatIsBuilding}_exe ${f})
+                    target_link_libraries_with_arg_prefix(${ARG_PREFIX} ${whatisbuilding}_exe ${f})
                     set(ARG_PREFIX "none")
                 endif()
             endif()
@@ -204,27 +397,27 @@ function(c_windows_tests_add_exe whatIsBuilding folder)
 
     endforeach()
 
-    add_test(NAME ${whatIsBuilding} COMMAND ${whatIsBuilding}_exe)
+    add_test(NAME ${whatisbuilding} COMMAND ${whatisbuilding}_exe)
 endfunction()
 
-#this function takes more than the 1 mandatory argument (whatIsBuilding)
+#this function takes more than the 1 mandatory argument (whatisbuilding)
 #the parameters are separated by "known" separators
 #for example, ADDITIONAL_LIBS starts a list of needed libraries
-function(c_linux_tests_add_exe whatIsBuilding folder)
+function(c_linux_tests_add_exe whatisbuilding folder)
 
-    add_executable(${whatIsBuilding}_exe
-        ${${whatIsBuilding}_test_files}
-        ${${whatIsBuilding}_cpp_files}
-        ${${whatIsBuilding}_h_files}
-        ${${whatIsBuilding}_c_files}
+    add_executable(${whatisbuilding}_exe
+        ${${whatisbuilding}_test_files}
+        ${${whatisbuilding}_cpp_files}
+        ${${whatisbuilding}_h_files}
+        ${${whatisbuilding}_c_files}
         ${CMAKE_CURRENT_LIST_DIR}/main.c
     )
-    set_target_properties(${whatIsBuilding}_exe
+    set_target_properties(${whatisbuilding}_exe
                PROPERTIES
                FOLDER ${folder})
 
-    target_compile_definitions(${whatIsBuilding}_exe PUBLIC -DUSE_CTEST)
-    target_include_directories(${whatIsBuilding}_exe PUBLIC ${sharedutil_include_directories})
+    target_compile_definitions(${whatisbuilding}_exe PUBLIC -DUSE_CTEST)
+    target_include_directories(${whatisbuilding}_exe PUBLIC ${sharedutil_include_directories})
 
     #this part detects
     #       - the additional libraries that might be needed.
@@ -255,7 +448,7 @@ function(c_linux_tests_add_exe whatIsBuilding folder)
                 if((${f} STREQUAL "debug") OR (${f} STREQUAL "optimized") OR (${f} STREQUAL "general"))
                     SET(ARG_PREFIX ${f})
                 else()
-                    target_link_libraries_with_arg_prefix(${ARG_PREFIX} ${whatIsBuilding}_exe ${f})
+                    target_link_libraries_with_arg_prefix(${ARG_PREFIX} ${whatisbuilding}_exe ${f})
                     set(ARG_PREFIX "none")
                 endif()
             elseif(PARSING_VALGRIND_SUPPRESSIONS_FILE)
@@ -266,34 +459,34 @@ function(c_linux_tests_add_exe whatIsBuilding folder)
     endforeach()
 
     if (TARGET azure_c_logging)
-        target_link_libraries(${whatIsBuilding}_exe azure_c_logging)
+        target_link_libraries(${whatisbuilding}_exe azure_c_logging)
     endif()
     if (TARGET umock_c)
-        target_link_libraries(${whatIsBuilding}_exe umock_c)
+        target_link_libraries(${whatisbuilding}_exe umock_c)
     endif()
     if (TARGET ctest)
-        target_link_libraries(${whatIsBuilding}_exe ctest)
+        target_link_libraries(${whatisbuilding}_exe ctest)
     endif()
     if (TARGET testrunnerswitcher)
-        target_link_libraries(${whatIsBuilding}_exe testrunnerswitcher)
+        target_link_libraries(${whatisbuilding}_exe testrunnerswitcher)
     endif()
-    target_link_libraries(${whatIsBuilding}_exe m)
+    target_link_libraries(${whatisbuilding}_exe m)
 
-    add_test(NAME ${whatIsBuilding} COMMAND $<TARGET_FILE:${whatIsBuilding}_exe>)
+    add_test(NAME ${whatisbuilding} COMMAND $<TARGET_FILE:${whatisbuilding}_exe>)
 
     if(${run_valgrind})
         find_program(VALGRIND_FOUND NAMES valgrind)
         if(${VALGRIND_FOUND} STREQUAL VALGRIND_FOUND-NOTFOUND)
             message(WARNING "run_valgrind was TRUE, but valgrind was not found - there will be no tests run under valgrind")
         else()
-            add_test(NAME ${whatIsBuilding}_valgrind COMMAND valgrind                 --gen-suppressions=all --num-callers=100 --error-exitcode=1 --leak-check=full --track-origins=yes ${VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER} $<TARGET_FILE:${whatIsBuilding}_exe>)
-            add_test(NAME ${whatIsBuilding}_helgrind COMMAND valgrind --tool=helgrind --gen-suppressions=all --num-callers=100 --error-exitcode=1 ${VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER} $<TARGET_FILE:${whatIsBuilding}_exe>)
-            add_test(NAME ${whatIsBuilding}_drd      COMMAND valgrind --tool=drd      --gen-suppressions=all --num-callers=100 --error-exitcode=1 ${VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER} $<TARGET_FILE:${whatIsBuilding}_exe>)
+            add_test(NAME ${whatisbuilding}_valgrind COMMAND valgrind                 --gen-suppressions=all --num-callers=100 --error-exitcode=1 --leak-check=full --track-origins=yes ${VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER} $<TARGET_FILE:${whatisbuilding}_exe>)
+            add_test(NAME ${whatisbuilding}_helgrind COMMAND valgrind --tool=helgrind --gen-suppressions=all --num-callers=100 --error-exitcode=1 ${VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER} $<TARGET_FILE:${whatisbuilding}_exe>)
+            add_test(NAME ${whatisbuilding}_drd      COMMAND valgrind --tool=drd      --gen-suppressions=all --num-callers=100 --error-exitcode=1 ${VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER} $<TARGET_FILE:${whatisbuilding}_exe>)
         endif()
     endif()
 endfunction()
 
-function(build_c_tests whatIsBuilding use_gballoc folder)
+function(build_c_tests whatisbuilding use_gballoc folder)
 
     #the first argument is what is building
     #the second argument is whether the tests should be build with gballoc #defines or not
@@ -321,32 +514,32 @@ function(build_c_tests whatIsBuilding use_gballoc folder)
     #setting output type
     if(WIN32)
         if(
-            (("${whatIsBuilding}" MATCHES ".*ut.*") AND ${run_unittests}) OR
-            (("${whatIsBuilding}" MATCHES ".*e2e.*") AND ${run_e2e_tests}) OR
-            (("${whatIsBuilding}" MATCHES ".*int.*") AND ${run_int_tests}) OR
-            (("${whatIsBuilding}" MATCHES ".*perf.*") AND ${run_perf_tests})
+            (("${whatisbuilding}" MATCHES ".*ut.*") AND ${run_unittests}) OR
+            (("${whatisbuilding}" MATCHES ".*e2e.*") AND ${run_e2e_tests}) OR
+            (("${whatisbuilding}" MATCHES ".*int.*") AND ${run_int_tests}) OR
+            (("${whatisbuilding}" MATCHES ".*perf.*") AND ${run_perf_tests})
         )
             if (${use_cppunittest})
-                c_windows_tests_add_dll(${whatIsBuilding} ${folder} ${ARGN})
+                c_windows_tests_add_dll(${whatisbuilding} ${folder} ${ARGN})
             endif()
-            c_windows_tests_add_exe(${whatIsBuilding} ${folder} ${ARGN})
+            c_windows_tests_add_exe(${whatisbuilding} ${folder} ${ARGN})
         else()
             if(
-                (("${whatIsBuilding}" MATCHES ".*e2e.*") AND ("${nuget_e2e_tests}" STREQUAL "ON"))
+                (("${whatisbuilding}" MATCHES ".*e2e.*") AND ("${nuget_e2e_tests}" STREQUAL "ON"))
             )
-                c_windows_tests_add_exe(${whatIsBuilding}_nuget ${folder} ${ARGN})
+                c_windows_tests_add_exe(${whatisbuilding}_nuget ${folder} ${ARGN})
             else()
                 #do nothing
             endif()
         endif()
     else()
         if(
-            (("${whatIsBuilding}" MATCHES ".*ut.*") AND ${run_unittests}) OR
-            (("${whatIsBuilding}" MATCHES ".*e2e.*") AND ${run_e2e_tests}) OR
-            (("${whatIsBuilding}" MATCHES ".*int.*") AND ${run_int_tests}) OR
-            (("${whatIsBuilding}" MATCHES ".*perf.*") AND ${run_perf_tests})
+            (("${whatisbuilding}" MATCHES ".*ut.*") AND ${run_unittests}) OR
+            (("${whatisbuilding}" MATCHES ".*e2e.*") AND ${run_e2e_tests}) OR
+            (("${whatisbuilding}" MATCHES ".*int.*") AND ${run_int_tests}) OR
+            (("${whatisbuilding}" MATCHES ".*perf.*") AND ${run_perf_tests})
         )
-            c_linux_tests_add_exe(${whatIsBuilding} ${folder} ${ARGN})
+            c_linux_tests_add_exe(${whatisbuilding} ${folder} ${ARGN})
         endif()
     endif()
 endfunction()
@@ -430,3 +623,5 @@ function(compileTargetAsC11 theTarget)
     set_target_properties(${theTarget} PROPERTIES CXX_STANDARD 11)
   endif()
 endfunction()
+
+
