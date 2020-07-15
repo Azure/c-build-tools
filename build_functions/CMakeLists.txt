@@ -47,7 +47,7 @@ function(target_link_libraries_with_arg_prefix arg_prefix whatIsBuilding lib)
     endif()
 endfunction()
 
-########################################################################A
+########################################################################
 ########################################################################
 ########################################################################
 ########################################################################
@@ -202,13 +202,21 @@ endfunction()
 #drop in replacement for add_subdirectory :)
 function(build_test_folder test_folder)
 
-    set(building exe)
-    add_subdirectory(${test_folder} ${test_folder}/${building})
-
-    if (${use_cppunittest})
-        set(building dll)
+    if(
+        (("${whatIsBuilding}" MATCHES ".*ut.*") AND ${run_unittests}) OR
+        (("${whatIsBuilding}" MATCHES ".*e2e.*") AND ${run_e2e_tests}) OR
+        (("${whatIsBuilding}" MATCHES ".*int.*") AND ${run_int_tests}) OR
+        (("${whatIsBuilding}" MATCHES ".*perf.*") AND ${run_perf_tests})
+    )
+        if (${use_cppunittest})
+            set(building dll)
+            add_subdirectory(${test_folder} ${test_folder}/${building})
+        endif()
+        
+        set(building exe)
         add_subdirectory(${test_folder} ${test_folder}/${building})
     endif()
+
     
 endfunction()
 
