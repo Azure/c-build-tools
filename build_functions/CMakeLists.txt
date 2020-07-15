@@ -201,10 +201,10 @@ endfunction()
 function(build_test_folder test_folder)
 
     if(
-        (("${whatIsBuilding}" MATCHES ".*ut.*") AND ${run_unittests}) OR
-        (("${whatIsBuilding}" MATCHES ".*e2e.*") AND ${run_e2e_tests}) OR
-        (("${whatIsBuilding}" MATCHES ".*int.*") AND ${run_int_tests}) OR
-        (("${whatIsBuilding}" MATCHES ".*perf.*") AND ${run_perf_tests})
+        (("${test_folder}" MATCHES ".*ut.*") AND ${run_unittests}) OR
+        (("${test_folder}" MATCHES ".*e2e.*") AND ${run_e2e_tests}) OR
+        (("${test_folder}" MATCHES ".*int.*") AND ${run_int_tests}) OR
+        (("${test_folder}" MATCHES ".*perf.*") AND ${run_perf_tests})
     )
         if (${use_cppunittest})
             set(building dll)
@@ -213,6 +213,8 @@ function(build_test_folder test_folder)
         
         set(building exe)
         add_subdirectory(${test_folder} ${test_folder}/${building})
+    else()
+        #message("test_folder is ${test_folder} NOT BUILDING")
     endif()
  
 endfunction()
