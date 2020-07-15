@@ -55,19 +55,17 @@ endfunction()
 ########################################################################
 
 function(build_lib whatIsBuilding solution_folder)
-    #message("build_lib (CALLED) ${whatIsBuilding} ${solution_folder} ${ARGN} whatIsBuilding_c_files=${${whatIsBuilding}_c_files} cpp=${${whatIsBuilding}_cpp_files} " ) 
+    
     if(
         ("${${whatIsBuilding}_c_files}" STREQUAL "") AND
         ("${${whatIsBuilding}_cpp_files}" STREQUAL "")
     )
-        #vld.h message("build_lib (CALLED) ${whatIsBuilding} ${solution_folder} ${ARGN} whatIsBuilding_c_files=${${whatIsBuilding}_c_files} cpp=${${whatIsBuilding}_cpp_files} ADDING NOTHING.C" ) 
         #for those cases when there are 0 other files except the .c file containing the tests. This is a bit less than ideal because a lib is still created and it is still linked against. To be improved at a later time.
         add_library(${whatIsBuilding}_lib 
             ${build_c_tests_internal_dir}/nothing.c
         )
         
     else()
-        #vld.h message("build_lib (CALLED) ${whatIsBuilding} ${solution_folder} ${ARGN} whatIsBuilding_c_files=${${whatIsBuilding}_c_files} cpp=${${whatIsBuilding}_cpp_files}" ) 
         add_library(${whatIsBuilding}_lib 
             ${${whatIsBuilding}_c_files}
             ${${whatIsBuilding}_h_files}
@@ -216,8 +214,7 @@ function(build_test_folder test_folder)
         set(building exe)
         add_subdirectory(${test_folder} ${test_folder}/${building})
     endif()
-
-    
+ 
 endfunction()
 
 #drop in replacement for build_c_tests :)
@@ -227,16 +224,13 @@ function(build_test_artefacts whatIsBuilding use_gballoc solution_folder )
     endif()
     
     if(${building} STREQUAL "lib")
-        #vld.h message("build_lib (CALL) ${test_folder} ${solution_folder} ${ARGN}")
         build_lib(${test_folder} ${solution_folder} ${ARGN})
     elseif(${building} STREQUAL "dll")
-        #vld.h message("build_dll ${test_folder} ${solution_folder} ${ARGN}")
         build_dll(${test_folder} ${solution_folder} ${ARGN})
     elseif(${building} STREQUAL "exe")
-        #vld.h message("build_exe ${test_folder} ${solution_folder} ${ARGN}")
         build_exe(${test_folder} ${solution_folder} ${ARGN})
     else()
-        MESSAGE(FATAL_ERROR "nu e bine building=${building} test_folder=${test_folder} ARGN=${ARGN}")
+        MESSAGE(FATAL_ERROR "not an expected value: building=${building} test_folder=${test_folder} ARGN=${ARGN}")
     endif()
 endfunction()
 
