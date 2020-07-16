@@ -132,7 +132,7 @@ function(build_dll whatIsBuilding solution_folder)
 
     target_include_directories(${whatIsBuilding}_dll PUBLIC ${sharedutil_include_directories} $ENV{VCInstallDir}UnitTest/include)
     target_compile_definitions(${whatIsBuilding}_dll PUBLIC -DCPP_UNITTEST)
-    target_compile_options(${whatIsBuilding}_dll PUBLIC /EHsc) #vld.h check if this is really needed...
+    target_compile_options(${whatIsBuilding}_dll PUBLIC /EHsc)
 
     set_target_properties(${whatIsBuilding}_dll
                PROPERTIES
@@ -206,7 +206,7 @@ function(build_test_folder test_folder)
         (("${test_folder}" MATCHES ".*int.*") AND ${run_int_tests}) OR
         (("${test_folder}" MATCHES ".*perf.*") AND ${run_perf_tests})
     )
-        if (${use_cppunittest})
+        if ((${use_cppunittest}) AND (WIN32))
             set(building dll)
             add_subdirectory(${test_folder} ${test_folder}/${building})
         endif()
