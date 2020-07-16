@@ -15,4 +15,4 @@ set(${theseTestsName}_c_files
 set(${theseTestsName}_h_files
 )
 
-build_c_tests(${theseTestsName} ON "tests/azure_c_build_tools")
+build_test_artifacts(${theseTestsName} ON "tests/azure_c_build_tools")
