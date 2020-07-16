@@ -206,13 +206,13 @@ function(build_test_folder test_folder)
         (("${test_folder}" MATCHES ".*int.*") AND ${run_int_tests}) OR
         (("${test_folder}" MATCHES ".*perf.*") AND ${run_perf_tests})
     )
+        set(building exe)
+        add_subdirectory(${test_folder} ${test_folder}/${building})
+        
         if (${use_cppunittest})
             set(building dll)
             add_subdirectory(${test_folder} ${test_folder}/${building})
         endif()
-        
-        set(building exe)
-        add_subdirectory(${test_folder} ${test_folder}/${building})
     else()
         #message("test_folder is ${test_folder} NOT BUILDING")
     endif()
