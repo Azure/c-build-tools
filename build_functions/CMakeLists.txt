@@ -54,6 +54,7 @@ endfunction()
 ########################################################################
 ########################################################################
 
+
 function(build_lib whatIsBuilding solution_folder)
     
     if(
@@ -220,7 +221,7 @@ function(build_test_folder test_folder)
 endfunction()
 
 #drop in replacement for build_c_tests :)
-function(build_test_artefacts whatIsBuilding use_gballoc solution_folder )
+function(build_test_artifacts whatIsBuilding use_gballoc solution_folder )
     if(${use_gballoc})
         add_definitions(-DGB_MEASURE_MEMORY_FOR_THIS -DGB_DEBUG_ALLOC)
     endif()
