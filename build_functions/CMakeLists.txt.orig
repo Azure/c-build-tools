@@ -206,10 +206,14 @@ function(build_test_folder test_folder)
         (("${test_folder}" MATCHES ".*int.*") AND ${run_int_tests}) OR
         (("${test_folder}" MATCHES ".*perf.*") AND ${run_perf_tests})
     )
+<<<<<<< HEAD
         set(building exe)
         add_subdirectory(${test_folder} ${test_folder}/${building})
         
+        if (${use_cppunittest})
+=======
         if ((${use_cppunittest}) AND (WIN32))
+>>>>>>> 289d34d
             set(building dll)
             add_subdirectory(${test_folder} ${test_folder}/${building})
         endif()
