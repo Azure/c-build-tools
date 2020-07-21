@@ -211,19 +211,14 @@ function(build_test_folder test_folder)
         set(BINARY_DIR) #BINARY_DIR is added to every target (because targets need to have different names).
         set(PARSING_BINARY_DIR OFF) #see https://cmake.org/cmake/help/latest/command/add_subdirectory.html for "binary_dir"
         
-        foreach(f ${ARGN}) 
-            set(skip_to_next FALSE)
+        foreach(f ${ARGN})
             if(${f} STREQUAL "BINARY_DIR")
-                SET(PARSING_BINARY_DIR ON)
-                set(skip_to_next TRUE)
+                set(PARSING_BINARY_DIR ON)
+            elseif(PARSING_BINARY_DIR)
+                set(BINARY_DIR ${f})
+                set(PARSING_BINARY_DIR OFF)
             endif()
-
-            if(NOT skip_to_next)
-                if(PARSING_BINARY_DIR)
-                    set(BINARY_DIR ${f})
-                    set(PARSING_BINARY_DIR OFF)
-                endif()
-            endif()
+            
         endforeach()
         
         set(building exe)
