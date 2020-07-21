@@ -207,12 +207,26 @@ function(build_test_folder test_folder)
         (("${test_folder}" MATCHES ".*int.*") AND ${run_int_tests}) OR
         (("${test_folder}" MATCHES ".*perf.*") AND ${run_perf_tests})
     )
+    
+        set(BINARY_DIR) #BINARY_DIR is added to every target (because targets need to have different names).
+        set(PARSING_BINARY_DIR OFF) #see https://cmake.org/cmake/help/latest/command/add_subdirectory.html for "binary_dir"
+        
+        foreach(f ${ARGN})
+            if(${f} STREQUAL "BINARY_DIR")
+                set(PARSING_BINARY_DIR ON)
+            elseif(PARSING_BINARY_DIR)
+                set(BINARY_DIR ${f})
+                set(PARSING_BINARY_DIR OFF)
+            endif()
+            
+        endforeach()
+        
         set(building exe)
-        add_subdirectory(${test_folder} ${test_folder}/${building})
+        add_subdirectory(${test_folder} ${test_folder}/${BINARY_DIR}/${building})
         
         if ((${use_cppunittest}) AND (WIN32))
             set(building dll)
-            add_subdirectory(${test_folder} ${test_folder}/${building})
+            add_subdirectory(${test_folder} ${test_folder}/${BINARY_DIR}/${building})
         endif()
     else()
         #message("test_folder is ${test_folder} NOT BUILDING")
@@ -227,11 +241,11 @@ function(build_test_artifacts whatIsBuilding use_gballoc solution_folder )
     endif()
     
     if(${building} STREQUAL "lib")
-        build_lib(${test_folder} ${solution_folder} ${ARGN})
+        build_lib(${whatIsBuilding} ${solution_folder} ${ARGN}) 
     elseif(${building} STREQUAL "dll")
-        build_dll(${test_folder} ${solution_folder} ${ARGN})
+        build_dll(${whatIsBuilding} ${solution_folder} ${ARGN})
     elseif(${building} STREQUAL "exe")
-        build_exe(${test_folder} ${solution_folder} ${ARGN})
+        build_exe(${whatIsBuilding} ${solution_folder} ${ARGN})
     else()
         MESSAGE(FATAL_ERROR "not an expected value: building=${building} test_folder=${test_folder} ARGN=${ARGN}")
     endif()
