@@ -571,8 +571,15 @@ macro(set_default_build_options)
 
         # warning C4200: nonstandard extension used: zero-sized array in struct/union : looks very standard in C99 and it is called flexible array. Documentation-wise is a flexible array, but called "unsized" in Microsoft's docs
         # https://msdn.microsoft.com/en-us/library/b6fae073.aspx
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX /wd4200")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX /wd4200")
+        # /WX is "treats all compiler warnings as error". (https://docs.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=vs-2019)
+        # /bigobj is "increase number of sections in .obj file" (https://docs.microsoft.com/en-us/cpp/build/reference/bigobj-increase-number-of-sections-in-dot-obj-file?view=vs-2019)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /WX /wd4200 /bigobj")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /WX /wd4200 /bigobj")
+        
+        # replace other warning levels (CMake will add by default /W3) with /W4 (warning level 4)
+        string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+        string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+        
     elseif(UNIX) #LINUX OR APPLE
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
@@ -580,8 +587,13 @@ macro(set_default_build_options)
 
     if (WIN32)
         if (${use_segment_heap})
-            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
-            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:EMBED /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
+            #link.exe complains in the presence of both /MANIFESTFILE and /MANIFESTINPUT
+            string(REGEX REPLACE "/MANIFESTFILE" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+            
+            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /MANIFEST:EMBED /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
+            #link.exe complains in the presence of both /MANIFESTFILE and /MANIFESTINPUT
+            string(REGEX REPLACE "/MANIFESTFILE" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
         endif()
     endif()
 
