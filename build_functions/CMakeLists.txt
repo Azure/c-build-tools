@@ -195,7 +195,19 @@ function(build_exe whatIsBuilding solution_folder)
 
     #register the exe with ctest's list of tests
     add_test(NAME ${whatIsBuilding} COMMAND ${whatIsBuilding}_exe)
-    
+
+    if(UNIX) #LINUX OR APPLE
+        if(${run_valgrind})
+            find_program(VALGRIND_FOUND NAMES valgrind)
+            if(${VALGRIND_FOUND} STREQUAL VALGRIND_FOUND-NOTFOUND)
+                message(WARNING "run_valgrind was TRUE, but valgrind was not found - there will be no tests run under valgrind")
+            else()
+                add_test(NAME ${whatIsBuilding}_valgrind COMMAND valgrind                 --gen-suppressions=all --num-callers=100 --error-exitcode=1 --leak-check=full --track-origins=yes ${VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER} $<TARGET_FILE:${whatIsBuilding}_exe>)
+                add_test(NAME ${whatIsBuilding}_helgrind COMMAND valgrind --tool=helgrind --gen-suppressions=all --num-callers=100 --error-exitcode=1 ${VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER} $<TARGET_FILE:${whatIsBuilding}_exe>)
+                add_test(NAME ${whatIsBuilding}_drd      COMMAND valgrind --tool=drd      --gen-suppressions=all --num-callers=100 --error-exitcode=1 ${VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER} $<TARGET_FILE:${whatIsBuilding}_exe>)
+            endif()
+        endif()
+    endif()
 endfunction()
 
 #drop in replacement for add_subdirectory :)
