@@ -607,6 +607,12 @@ macro(set_default_build_options)
             #link.exe complains in the presence of both /MANIFESTFILE and /MANIFESTINPUT
             string(REGEX REPLACE "/MANIFESTFILE" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
         endif()
+
+        set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075")
+        set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075")
+
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL")
     endif()
 
     enable_testing()
