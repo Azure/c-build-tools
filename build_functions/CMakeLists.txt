@@ -608,6 +608,11 @@ macro(set_default_build_options)
             string(REGEX REPLACE "/MANIFESTFILE" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
         endif()
 
+        foreach(config RELEASE RELWITHDEBINFO MINSIZEREL)
+            set(CMAKE_CXX_FLAGS_${config} "${CMAKE_CXX_FLAGS_${config}} /wd4702")
+            set(CMAKE_C_FLAGS_${config} "${CMAKE_C_FLAGS_${config}} /wd4702")
+        endforeach()
+ 
         set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075")
         set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075")
 
