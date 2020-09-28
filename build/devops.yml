@@ -21,7 +21,7 @@ jobs:
     displayName: 'Use NuGet 4.3.0 (required for .NET core assemblies)'
 
   - task: CMake@1
-    displayName: 'CMake .. -G "Visual Studio 16 2019 Win64"'
+    displayName: 'CMake .. -G "Visual Studio 16 2019"'
     inputs:
       workingDirectory: 'build_x64'
       cmakeArgs: '.. -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -G "Visual Studio 16 2019"'
