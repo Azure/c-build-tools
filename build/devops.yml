@@ -5,7 +5,7 @@ resources:
 jobs:
 - job: Build_Windows_x64
   pool:
-    name: Hosted VS2019
+    name: Hosted Windows 2019 with VS2019
     demands:
     - Cmd
     - msbuild
