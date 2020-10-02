@@ -26,6 +26,6 @@ option(use_segment_heap "Use segment heap on Windows as opposed to regular NT he
 
 add_subdirectory(build_functions)
 add_subdirectory(test_projects)
-if(WIN32)
+if((WIN32) AND ${run_traceability})
     add_subdirectory(traceabilitytool)
 endif()
