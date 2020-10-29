@@ -4,7 +4,7 @@
     "description": "Generate requirement tags for SRS requirement documents",
     "version": "0.0.8",
     "publisher": "microsoft",
-    "repository": "https://github.com/Azure/azure-c-build-tools/tree/master/srs_extension",
+    "repository": "https://github.com/Azure/c-build-tools/tree/master/srs_extension",
     "engines": {
         "vscode": "^1.39.0"
     },
