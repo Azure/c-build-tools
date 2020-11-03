@@ -604,8 +604,8 @@ macro(set_default_build_options)
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
         
     elseif(UNIX) #LINUX OR APPLE
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -g")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror -g")
     endif()
 
     if(${run_valgrind})
