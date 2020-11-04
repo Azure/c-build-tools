@@ -23,6 +23,9 @@ option(run_e2e_tests "set run_e2e_tests to ON to build e2e tests (default is OFF
 option(run_int_tests "set run_int_tests to ON to build integration tests (default is OFF)." OFF)
 option(run_perf_tests "set run_perf_tests to ON to build performance tests (default is OFF)." OFF)
 option(use_segment_heap "Use segment heap on Windows as opposed to regular NT heap (default is ON)." ON)
+option(run_valgrind "run valgrind on tests (Linux only) (default is ON)." ON)
+option(run_helgrind "run helgrind on tests (Linux only) (default is ON)." ON)
+option(run_drd "run DRD on tests (Linux only) (default is OFF)." OFF)
 
 add_subdirectory(build_functions)
 add_subdirectory(test_projects)
