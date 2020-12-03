@@ -47,14 +47,6 @@ function(target_link_libraries_with_arg_prefix arg_prefix whatIsBuilding lib)
     endif()
 endfunction()
 
-########################################################################
-########################################################################
-########################################################################
-########################################################################
-########################################################################
-########################################################################
-
-
 function(build_lib whatIsBuilding solution_folder)
     
     if(
@@ -111,6 +103,14 @@ function(build_lib whatIsBuilding solution_folder)
     endforeach()
 endfunction()
 
+function(set_output_folder_properties target_name)
+    foreach(config_iter DEBUG RELWITHDEBINFO RELEASE MINSIZEREL)
+        set_target_properties(${target_name}
+                PROPERTIES
+                RUNTIME_OUTPUT_DIRECTORY_${config_iter} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_iter}}/${target_name}")
+    endforeach()
+endfunction()
+
 function(build_dll whatIsBuilding solution_folder)
 
     #lazily build _lib which is needed by both exe and dll
@@ -138,6 +138,8 @@ function(build_dll whatIsBuilding solution_folder)
     set_target_properties(${whatIsBuilding}_dll
                PROPERTIES
                FOLDER ${solution_folder})
+
+    set_output_folder_properties(${whatIsBuilding}_dll)
     
     if (TARGET c_logging)
         target_link_libraries(${whatIsBuilding}_dll c_logging)
@@ -177,6 +179,8 @@ function(build_exe whatIsBuilding solution_folder)
                PROPERTIES
                FOLDER ${solution_folder})
     
+    set_output_folder_properties(${whatIsBuilding}_exe)
+
     target_compile_definitions(${whatIsBuilding}_exe PUBLIC -DUSE_CTEST)
     target_include_directories(${whatIsBuilding}_exe PUBLIC ${sharedutil_include_directories})
     
@@ -252,7 +256,9 @@ function(build_test_folder test_folder)
  
 endfunction()
 
-#drop in replacement for build_c_tests :)
+#this is the function used to add all the needed targets for one test project
+#(invoked from the CMakeLists where the test suite lives)
+# Note: the test folder has to be added by using build_test_folder, not add_subdirectory!
 function(build_test_artifacts whatIsBuilding use_gballoc solution_folder )
     if(${use_gballoc})
         add_definitions(-DGB_MEASURE_MEMORY_FOR_THIS -DGB_DEBUG_ALLOC)
@@ -268,13 +274,6 @@ function(build_test_artifacts whatIsBuilding use_gballoc solution_folder )
         MESSAGE(FATAL_ERROR "not an expected value: building=${building} test_folder=${test_folder} ARGN=${ARGN}")
     endif()
 endfunction()
-
-########################################################################
-########################################################################
-########################################################################
-########################################################################
-########################################################################
-########################################################################
 
 macro(set_default_build_options)
     # System-specific compiler flags
