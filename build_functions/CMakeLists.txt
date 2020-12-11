@@ -111,6 +111,12 @@ function(set_output_folder_properties target_name)
     endforeach()
 endfunction()
 
+function(copy_disable_vld_ini target output_directory)
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${build_c_tests_internal_dir}/disable_vld.ini" "${output_directory}/vld.ini" )
+endfunction()
+
 function(build_dll whatIsBuilding solution_folder)
 
     #lazily build _lib which is needed by both exe and dll
@@ -153,7 +159,8 @@ function(build_dll whatIsBuilding solution_folder)
     if (TARGET testrunnerswitcher)
         target_link_libraries(${whatIsBuilding}_dll testrunnerswitcher)
     endif()
-    
+
+    copy_disable_vld_ini(${whatIsBuilding}_dll $<TARGET_FILE_DIR:${whatIsBuilding}_dll>)
 endfunction()
 
 function(build_exe whatIsBuilding solution_folder)
