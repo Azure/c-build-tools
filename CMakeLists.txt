@@ -26,9 +26,12 @@ option(use_segment_heap "Use segment heap on Windows as opposed to regular NT he
 option(run_valgrind "run valgrind on tests (Linux only) (default is ON)." ON)
 option(run_helgrind "run helgrind on tests (Linux only) (default is ON)." ON)
 option(run_drd "run DRD on tests (Linux only) (default is OFF)." OFF)
+option(run_traceability "run traceability tool (default is ON)" ON)
 
 add_subdirectory(build_functions)
 add_subdirectory(test_projects)
 if(WIN32)
-    add_subdirectory(traceabilitytool)
+    if(${run_traceability})
+        add_subdirectory(traceabilitytool)
+    endif()
 endif()
