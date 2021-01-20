@@ -30,9 +30,7 @@ option(run_traceability "run traceability tool (default is ON)" ON)
 
 add_subdirectory(build_functions)
 add_subdirectory(test_projects)
-if(WIN32)
-    # Skip for Ninja which can't build the C# project
-    if (CMAKE_GENERATOR MATCHES "Visual Studio")
-        add_subdirectory(traceabilitytool)
-    endif()
+# Skip for Ninja which can't build the C# project
+if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
+    add_subdirectory(traceabilitytool)
 endif()
