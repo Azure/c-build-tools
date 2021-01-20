@@ -5,7 +5,7 @@ resources:
 jobs:
 - job: Build_Windows_x64
   pool:
-    name: Hosted Windows 2019 with VS2019
+    name: Azure-MessagingStore
     demands:
     - Cmd
     - msbuild
@@ -48,7 +48,9 @@ jobs:
 - job: linuxubuntu
   displayName: 'Build Linux Ubuntu 16.04'
   pool:
-    name: Hosted Ubuntu 1604
+    name: Azure-MessagingStore
+    demands:
+    - linux
   steps:
   - bash: |
       sudo apt-get update
