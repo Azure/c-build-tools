@@ -333,7 +333,7 @@ macro(set_default_build_options)
         add_definitions(-DUSE_VALGRIND)
     endif()
 
-    if (WIN32)
+    if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
         if (${use_segment_heap})
             set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:EMBED /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
             #link.exe complains in the presence of both /MANIFESTFILE and /MANIFESTINPUT
