@@ -48,34 +48,34 @@ function(target_link_libraries_with_arg_prefix arg_prefix whatIsBuilding lib)
 endfunction()
 
 function(build_lib whatIsBuilding solution_folder)
-    
+
     if(
         ("${${whatIsBuilding}_c_files}" STREQUAL "") AND
         ("${${whatIsBuilding}_cpp_files}" STREQUAL "")
     )
         #for those cases when there are 0 other files except the .c file containing the tests. This is a bit less than ideal because a lib is still created and it is still linked against. To be improved at a later time.
-        add_library(${whatIsBuilding}_lib 
+        add_library(${whatIsBuilding}_lib
             ${build_c_tests_internal_dir}/nothing.c
         )
-        
+
     else()
-        add_library(${whatIsBuilding}_lib 
+        add_library(${whatIsBuilding}_lib
             ${${whatIsBuilding}_c_files}
             ${${whatIsBuilding}_h_files}
             ${${whatIsBuilding}_cpp_files}
         )
-        
+
     endif()
-    
+
     set_target_properties(${whatIsBuilding}_lib
            PROPERTIES
            FOLDER ${solution_folder})
-           
+
     set(PARSING_ADDITIONAL_LIBS OFF)
     set(PARSING_VALGRIND_SUPPRESSIONS_FILE OFF)
     set(VALGRIND_SUPPRESSIONS_FILE_EXTRA_PARAMETER)
     set(ARG_PREFIX "none")
-    foreach(f ${ARGN}) 
+    foreach(f ${ARGN})
         set(skip_to_next FALSE)
         if(${f} STREQUAL "ADDITIONAL_LIBS")
             SET(PARSING_ADDITIONAL_LIBS ON)
@@ -123,18 +123,18 @@ function(build_dll whatIsBuilding solution_folder)
     if(NOT TARGET ${whatIsBuilding}_lib)
         build_lib(${whatIsBuilding} ${solution_folder} ${ARGN})
     endif()
-    
+
     #this is the .dll run by visual studio's test runner
     add_library(${whatIsBuilding}_dll SHARED
         ${${whatIsBuilding}_test_files}
     )
-    
+
     #make sure to compile the test file as C++!
     set_source_files_properties(${${whatIsBuilding}_test_files} PROPERTIES LANGUAGE CXX)
-    
+
     #link with the common lib (exe an dll share the lib part)
     target_link_libraries(${whatIsBuilding}_dll ${whatIsBuilding}_lib)
-    
+
     link_directories(${whatIsBuilding}_dll $ENV{VCInstallDir}UnitTest/lib)
 
     target_include_directories(${whatIsBuilding}_dll PUBLIC ${sharedutil_include_directories} $ENV{VCInstallDir}UnitTest/include)
@@ -146,7 +146,7 @@ function(build_dll whatIsBuilding solution_folder)
                FOLDER ${solution_folder})
 
     set_output_folder_properties(${whatIsBuilding}_dll)
-    
+
     if (TARGET c_logging)
         target_link_libraries(${whatIsBuilding}_dll c_logging)
     endif()
@@ -164,33 +164,33 @@ function(build_dll whatIsBuilding solution_folder)
 endfunction()
 
 function(build_exe whatIsBuilding solution_folder)
-    
+
     #lazily build _lib which is needed by both exe and dll
     if(NOT TARGET ${whatIsBuilding}_lib)
         build_lib(${whatIsBuilding} ${solution_folder} ${ARGN})
     endif()
-    
+
     #this is the exe run by ctest (or directly from visual studio)
     add_executable(${whatIsBuilding}_exe
         ${${whatIsBuilding}_test_files}
         main.c
     )
-    
+
     #make sure to compile the test file as C!
     set_source_files_properties(${whatIsBuilding}_test_files PROPERTIES LANGUAGE C)
-    
+
     #link with the common lib (exe an dll share the lib part)
     target_link_libraries(${whatIsBuilding}_exe ${whatIsBuilding}_lib)
-    
+
     set_target_properties(${whatIsBuilding}_exe
                PROPERTIES
                FOLDER ${solution_folder})
-    
+
     set_output_folder_properties(${whatIsBuilding}_exe)
 
     target_compile_definitions(${whatIsBuilding}_exe PUBLIC -DUSE_CTEST)
     target_include_directories(${whatIsBuilding}_exe PUBLIC ${sharedutil_include_directories})
-    
+
     if (TARGET c_logging)
         target_link_libraries(${whatIsBuilding}_exe c_logging)
     endif()
@@ -236,10 +236,10 @@ function(build_test_folder test_folder)
         (("${test_folder}" MATCHES ".*int.*") AND ${run_int_tests}) OR
         (("${test_folder}" MATCHES ".*perf.*") AND ${run_perf_tests})
     )
-    
+
         set(BINARY_DIR) #BINARY_DIR is added to every target (because targets need to have different names).
         set(PARSING_BINARY_DIR OFF) #see https://cmake.org/cmake/help/latest/command/add_subdirectory.html for "binary_dir"
-        
+
         foreach(f ${ARGN})
             if(${f} STREQUAL "BINARY_DIR")
                 set(PARSING_BINARY_DIR ON)
@@ -247,12 +247,12 @@ function(build_test_folder test_folder)
                 set(BINARY_DIR ${f})
                 set(PARSING_BINARY_DIR OFF)
             endif()
-            
+
         endforeach()
-        
+
         set(building exe)
         add_subdirectory(${test_folder} ${test_folder}/${BINARY_DIR}/${building})
-        
+
         if ((${use_cppunittest}) AND (WIN32))
             set(building dll)
             add_subdirectory(${test_folder} ${test_folder}/${BINARY_DIR}/${building})
@@ -260,7 +260,7 @@ function(build_test_folder test_folder)
     else()
         #message("test_folder is ${test_folder} NOT BUILDING")
     endif()
- 
+
 endfunction()
 
 #this is the function used to add all the needed targets for one test project
@@ -270,9 +270,9 @@ function(build_test_artifacts whatIsBuilding use_gballoc solution_folder )
     if(${use_gballoc})
         add_definitions(-DGB_MEASURE_MEMORY_FOR_THIS -DGB_DEBUG_ALLOC)
     endif()
-    
+
     if(${building} STREQUAL "lib")
-        build_lib(${whatIsBuilding} ${solution_folder} ${ARGN}) 
+        build_lib(${whatIsBuilding} ${solution_folder} ${ARGN})
     elseif(${building} STREQUAL "dll")
         build_dll(${whatIsBuilding} ${solution_folder} ${ARGN})
     elseif(${building} STREQUAL "exe")
@@ -283,6 +283,20 @@ function(build_test_artifacts whatIsBuilding use_gballoc solution_folder )
 endfunction()
 
 macro(set_default_build_options)
+    # Make sure we have a runtime output directory always set
+    if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/Debug)
+    endif()
+    if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/Release)
+    endif()
+    if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/RelWithDebInfo)
+    endif()
+    if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/MinSizeRel)
+    endif()
+
     # System-specific compiler flags
     if(MSVC)
         #use _CRT_SECURE_NO_WARNINGS by default
@@ -294,7 +308,7 @@ macro(set_default_build_options)
         # /bigobj is "increase number of sections in .obj file" (https://docs.microsoft.com/en-us/cpp/build/reference/bigobj-increase-number-of-sections-in-dot-obj-file?view=vs-2019)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /WX /wd4200 /bigobj")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /WX /wd4200 /bigobj")
-        
+
         if(${CMAKE_GENERATOR} STREQUAL "Visual Studio 15 2017")
             #do nothing about preprocesor - automatically for C/C++ the "traditional preprocessor will be used
         else()
@@ -304,12 +318,12 @@ macro(set_default_build_options)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:preprocessor /wd5105")
             set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Zc:preprocessor /wd5105")
         endif()
-        
-        
+
+
         # replace other warning levels (CMake will add by default /W3) with /W4 (warning level 4)
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-        
+
     elseif(UNIX) #LINUX OR APPLE
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -g")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror -g")
@@ -324,7 +338,7 @@ macro(set_default_build_options)
             set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:EMBED /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
             #link.exe complains in the presence of both /MANIFESTFILE and /MANIFESTINPUT
             string(REGEX REPLACE "/MANIFESTFILE" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
-            
+
             set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /MANIFEST:EMBED /MANIFESTINPUT:${build_c_tests_internal_dir}/manifest.xml")
             #link.exe complains in the presence of both /MANIFESTFILE and /MANIFESTINPUT
             string(REGEX REPLACE "/MANIFESTFILE" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
