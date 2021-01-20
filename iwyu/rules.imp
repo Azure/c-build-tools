@@ -7,5 +7,6 @@
     { include: [<processthreadsapi.h>, "private", "\"windows.h\"", "public"] },
     { include: [<errhandlingapi.h>, "private", "\"windows.h\"", "public"] },
     { include: [<libloaderapi.h>, "private", "\"windows.h\"", "public"] },
+    { include: [<handleapi.h>, "private", "\"windows.h\"", "public"] },
     { symbol: ["_pgmptr", "private", "\"windows.h\"", "public"] }
 ]
