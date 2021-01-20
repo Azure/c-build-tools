@@ -1,0 +1,8 @@
+[
+    { include: ["<vcruntime_string.h>", "private", "<string.h>", "public"] },
+    { include: [<basetsd.h>, "private", "\"windows.h\"", "public"] },
+    { include: [<minwindef.h>, "private", "\"windows.h\"", "public"] },
+    { include: [<processthreadsapi.h>, "private", "\"windows.h\"", "public"] },
+    { include: [<errhandlingapi.h>, "private", "\"windows.h\"", "public"] },
+    { include: [<libloaderapi.h>, "private", "\"windows.h\"", "public"] }
+]
