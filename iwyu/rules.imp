@@ -16,7 +16,12 @@
     { include: ["<minwinbase.h>", "public", "\"windows.h\"", "public"] },
     { include: ["<threadpoolapiset.h>", "public", "\"windows.h\"", "public"] },
     { include: ["<wtypes.h>", "public", "\"windows.h\"", "public"] },
+    { include: ["<rpcnterr.h>", "public", "\"rpc.h\"", "public"] },
     { symbol: ["wcscmp", "private", "<wchar.h>", "public"] },
     { symbol: ["_pgmptr", "private", "\"windows.h\"", "public"] },
-    { symbol: ["mbstate_t", "private", "<wchar.h>", "public"] }
+    { symbol: ["mbstate_t", "private", "<wchar.h>", "public"] },
+    { symbol: ["NULL", "private", "<stdlib.h>", "public"] },
+    { symbol: ["NULL", "private", "<wchar.h>", "public"] },
+    { symbol: ["NULL", "private", "<time.h>", "public"] },
+    { symbol: ["NULL", "private", "<stddef.h>", "public"] }
 ]
