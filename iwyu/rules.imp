@@ -1,5 +1,6 @@
 [
     { include: ["<vcruntime_string.h>", "private", "<string.h>", "public"] },
+    { include: ["<corecrt_wstring.h>", "private", "<wchar.h>", "public"] },
     { include: ["<basetsd.h>", "private", "\"windows.h\"", "public"] },
     { include: ["<minwindef.h>", "private", "\"windows.h\"", "public"] },
     { include: ["<synchapi.h>", "private", "\"windows.h\"", "public"] },
@@ -12,6 +13,10 @@
     { include: ["<processenv.h>", "private", "\"windows.h\"", "public"] },
     { include: ["<stdint.h>", "public", "<inttypes.h>", "public"] },
     { include: ["<winscard.h>", "public", "\"windows.h\"", "public"] },
+    { include: ["<minwinbase.h>", "public", "\"windows.h\"", "public"] },
+    { include: ["<threadpoolapiset.h>", "public", "\"windows.h\"", "public"] },
+    { include: ["<wtypes.h>", "public", "\"windows.h\"", "public"] },
     { symbol: ["wcscmp", "private", "<wchar.h>", "public"] },
-    { symbol: ["_pgmptr", "private", "\"windows.h\"", "public"] }
+    { symbol: ["_pgmptr", "private", "\"windows.h\"", "public"] },
+    { symbol: ["mbstate_t", "private", "<wchar.h>", "public"] }
 ]
