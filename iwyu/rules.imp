@@ -27,5 +27,7 @@
     { symbol: ["NULL", "private", "<time.h>", "public"] },
     { symbol: ["NULL", "private", "<stddef.h>", "public"] },
     { symbol: ["time_t", "private", "<time.h>", "public"] },
+    { symbol: ["timespec", "private", "<time.h>", "public"] },
+    { symbol: ["wchar_t", "private", "<wchar.h>", "public"] },
     { symbol: ["wcscmp", "private", "<wchar.h>", "public"] }
 ]
