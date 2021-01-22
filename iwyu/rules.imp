@@ -1,5 +1,7 @@
 [
     { include: ["<basetsd.h>", "private", "\"windows.h\"", "public"] },
+    { include: ["<bits/stdint-intn.h>", "private", "<stdint.h>", "public"] },
+    { include: ["<bits/stdint-uintn.h>", "private", "<stdint.h>", "public"] },
     { include: ["<consoleapi.h>", "private", "\"windows.h\"", "public"] },
     { include: ["<corecrt_wstring.h>", "private", "<wchar.h>", "public"] },
     { include: ["<errhandlingapi.h>", "private", "\"windows.h\"", "public"] },
