@@ -2,7 +2,7 @@
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 if(NOT DEFINED CMAKE_MINIMUM_REQUIRED_VERSION)
-  cmake_minimum_required(VERSION 3.19.2)
+    cmake_minimum_required(VERSION 3.18)
 endif()
 
 # canon way of using build_tools from another repo is below. It assumes the using repo has placed c-build-tools in "deps"
