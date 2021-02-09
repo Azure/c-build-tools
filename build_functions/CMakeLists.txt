@@ -306,8 +306,9 @@ macro(set_default_build_options)
         # https://msdn.microsoft.com/en-us/library/b6fae073.aspx
         # /WX is "treats all compiler warnings as error". (https://docs.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=vs-2019)
         # /bigobj is "increase number of sections in .obj file" (https://docs.microsoft.com/en-us/cpp/build/reference/bigobj-increase-number-of-sections-in-dot-obj-file?view=vs-2019)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /WX /wd4200 /bigobj")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /WX /wd4200 /bigobj")
+        # /W4 displays level 1, level 2, and level 3 warnings, and all level 4 (informational) warnings that aren't off by default. (https://docs.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=msvc-160)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX /wd4200 /bigobj")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX /wd4200 /bigobj")
 
         if(${CMAKE_GENERATOR} STREQUAL "Visual Studio 15 2017")
             #do nothing about preprocesor - automatically for C/C++ the "traditional preprocessor will be used
@@ -320,7 +321,7 @@ macro(set_default_build_options)
         endif()
 
 
-        # replace other warning levels (CMake will add by default /W3) with /W4 (warning level 4)
+        # replace other warning levels (just in case - CMake used to add /W3 in previous versions, in 3.18 magically has /W1 for projects) with /W4 (warning level 4)
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
