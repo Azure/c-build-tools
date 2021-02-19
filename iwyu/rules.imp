@@ -15,6 +15,7 @@
     { include: ["<rpcnterr.h>", "public", "\"rpc.h\"", "public"] },
     { include: ["<securitybaseapi.h>", "public", "\"windows.h\"", "public"] },
     { include: ["<stdint.h>", "public", "<inttypes.h>", "public"] },
+    { include: ["<corecrt_wctype.h>", "public", "<wctype.h>", "public"] },
     { include: ["<synchapi.h>", "private", "\"windows.h\"", "public"] },
     { include: ["<sys/time.h>", "public", "<time.h>", "public"] },
     { include: ["<threadpoolapiset.h>", "public", "\"windows.h\"", "public"] },
