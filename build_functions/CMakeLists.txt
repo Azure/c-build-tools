@@ -49,27 +49,21 @@ endfunction()
 
 function(build_lib whatIsBuilding solution_folder)
 
-    if(
-        ("${${whatIsBuilding}_c_files}" STREQUAL "") AND
-        ("${${whatIsBuilding}_cpp_files}" STREQUAL "")
+    add_library(${whatIsBuilding}_lib
+        ${${whatIsBuilding}_c_files}
+        ${${whatIsBuilding}_h_files}
+        ${${whatIsBuilding}_cpp_files}
+        ${${whatIsBuilding}_test_files}
     )
-        #for those cases when there are 0 other files except the .c file containing the tests. This is a bit less than ideal because a lib is still created and it is still linked against. To be improved at a later time.
-        add_library(${whatIsBuilding}_lib
-            ${build_c_tests_internal_dir}/nothing.c
-        )
 
-    else()
-        add_library(${whatIsBuilding}_lib
-            ${${whatIsBuilding}_c_files}
-            ${${whatIsBuilding}_h_files}
-            ${${whatIsBuilding}_cpp_files}
-        )
-
-    endif()
+    #make sure to compile the test file as C!
+    set_source_files_properties(${${whatIsBuilding}_test_files} PROPERTIES LANGUAGE C)
 
     set_target_properties(${whatIsBuilding}_lib
            PROPERTIES
            FOLDER ${solution_folder})
+
+    target_compile_definitions(${whatIsBuilding}_lib PUBLIC -DUSE_CTEST)
 
     set(PARSING_ADDITIONAL_LIBS OFF)
     set(PARSING_VALGRIND_SUPPRESSIONS_FILE OFF)
@@ -125,12 +119,14 @@ function(build_dll whatIsBuilding solution_folder)
     endif()
 
     #this is the .dll run by visual studio's test runner
-    add_library(${whatIsBuilding}_dll SHARED
-        ${${whatIsBuilding}_test_files}
-    )
-
-    #make sure to compile the test file as C++!
-    set_source_files_properties(${${whatIsBuilding}_test_files} PROPERTIES LANGUAGE CXX)
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/main_cpp_unittest.cpp")
+        add_library(${whatIsBuilding}_dll SHARED
+            main_cpp_unittest.cpp
+        )
+    else()
+        add_library(${whatIsBuilding}_dll SHARED
+            ${build_c_tests_internal_dir}/nothing.cpp)
+    endif()
 
     #link with the common lib (exe an dll share the lib part)
     target_link_libraries(${whatIsBuilding}_dll ${whatIsBuilding}_lib)
@@ -145,6 +141,7 @@ function(build_dll whatIsBuilding solution_folder)
                PROPERTIES
                FOLDER ${solution_folder})
 
+    target_compile_definitions(${whatIsBuilding}_dll PUBLIC -DUSE_CTEST)
     set_output_folder_properties(${whatIsBuilding}_dll)
 
     if (TARGET c_logging)
@@ -172,12 +169,8 @@ function(build_exe whatIsBuilding solution_folder)
 
     #this is the exe run by ctest (or directly from visual studio)
     add_executable(${whatIsBuilding}_exe
-        ${${whatIsBuilding}_test_files}
         main.c
     )
-
-    #make sure to compile the test file as C!
-    set_source_files_properties(${whatIsBuilding}_test_files PROPERTIES LANGUAGE C)
 
     #link with the common lib (exe an dll share the lib part)
     target_link_libraries(${whatIsBuilding}_exe ${whatIsBuilding}_lib)
