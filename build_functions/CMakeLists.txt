@@ -119,14 +119,9 @@ function(build_dll whatIsBuilding solution_folder)
     endif()
 
     #this is the .dll run by visual studio's test runner
-    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/main_cpp_unittest.cpp")
-        add_library(${whatIsBuilding}_dll SHARED
-            main_cpp_unittest.cpp
-        )
-    else()
-        add_library(${whatIsBuilding}_dll SHARED
-            ${build_c_tests_internal_dir}/nothing.cpp)
-    endif()
+    add_library(${whatIsBuilding}_dll SHARED
+        ${build_c_tests_internal_dir}/main_cpp_unittest.cpp
+    )
 
     #link with the common lib (exe an dll share the lib part)
     target_link_libraries(${whatIsBuilding}_dll ${whatIsBuilding}_lib)
@@ -135,6 +130,7 @@ function(build_dll whatIsBuilding solution_folder)
 
     target_include_directories(${whatIsBuilding}_dll PUBLIC ${sharedutil_include_directories} $ENV{VCInstallDir}auxiliary/vs/unittest/include $ENV{VCInstallDir}unittest/include)
     target_compile_definitions(${whatIsBuilding}_dll PUBLIC -DCPP_UNITTEST)
+    target_compile_definitions(${whatIsBuilding}_dll PUBLIC -Dtest_suite_name=${whatIsBuilding})
     target_compile_options(${whatIsBuilding}_dll PUBLIC /EHsc)
 
     set_target_properties(${whatIsBuilding}_dll
