@@ -64,6 +64,7 @@ function(build_lib whatIsBuilding solution_folder)
            FOLDER ${solution_folder})
 
     target_compile_definitions(${whatIsBuilding}_lib PUBLIC -DUSE_CTEST)
+    target_compile_definitions(${whatIsBuilding}_lib PUBLIC -DTEST_SUITE_NAME_FROM_CMAKE=${whatIsBuilding})
 
     set(PARSING_ADDITIONAL_LIBS OFF)
     set(PARSING_VALGRIND_SUPPRESSIONS_FILE OFF)
@@ -130,7 +131,7 @@ function(build_dll whatIsBuilding solution_folder)
 
     target_include_directories(${whatIsBuilding}_dll PUBLIC ${sharedutil_include_directories} $ENV{VCInstallDir}auxiliary/vs/unittest/include $ENV{VCInstallDir}unittest/include)
     target_compile_definitions(${whatIsBuilding}_dll PUBLIC -DCPP_UNITTEST)
-    target_compile_definitions(${whatIsBuilding}_dll PUBLIC -Dtest_suite_name=${whatIsBuilding})
+    target_compile_definitions(${whatIsBuilding}_dll PUBLIC -DTEST_SUITE_NAME_FROM_CMAKE=${whatIsBuilding})
     target_compile_options(${whatIsBuilding}_dll PUBLIC /EHsc)
 
     set_target_properties(${whatIsBuilding}_dll
@@ -165,7 +166,7 @@ function(build_exe whatIsBuilding solution_folder)
 
     #this is the exe run by ctest (or directly from visual studio)
     add_executable(${whatIsBuilding}_exe
-        main.c
+        ${build_c_tests_internal_dir}/main_ctest.c
     )
 
     #link with the common lib (exe an dll share the lib part)
@@ -178,6 +179,7 @@ function(build_exe whatIsBuilding solution_folder)
     set_output_folder_properties(${whatIsBuilding}_exe)
 
     target_compile_definitions(${whatIsBuilding}_exe PUBLIC -DUSE_CTEST)
+    target_compile_definitions(${whatIsBuilding}_exe PUBLIC -DTEST_SUITE_NAME_FROM_CMAKE=${whatIsBuilding})
     target_include_directories(${whatIsBuilding}_exe PUBLIC ${sharedutil_include_directories})
 
     if (TARGET c_logging)
