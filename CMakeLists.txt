@@ -31,7 +31,7 @@ option(run_drd "run DRD on tests (Linux only) (default is OFF)." OFF)
 option(run_traceability "run traceability tool (default is ON)" ON)
 
 add_subdirectory(build_functions)
-add_subdirectory(test_projects)
+
 # Skip for Ninja which can't build the C# project
 if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
     add_subdirectory(traceabilitytool)
