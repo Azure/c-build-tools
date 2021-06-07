@@ -23,6 +23,7 @@
     { include: ["<winerror.h>", "private", "\"windows.h\"", "public"] },
     { include: ["<winscard.h>", "public", "\"windows.h\"", "public"] },
     { include: ["<wtypes.h>", "public", "\"windows.h\"", "public"] },
+    { include: ["<winreg.h>", "public", "\"windows.h\"", "public"] },
     { symbol: ["_pgmptr", "private", "\"windows.h\"", "public"] },
     { symbol: ["clockid_t", "private", "<time.h>", "public"] },
     { symbol: ["errno", "private", "<errno.h>", "public"] },
