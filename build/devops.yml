@@ -5,7 +5,7 @@ resources:
 jobs:
 - job: Build_Windows_x64
   pool:
-    name: Azure-MessagingStore
+    name: Azure-MessagingStore-BuildMachinePool
     demands:
     - Cmd
     - msbuild
