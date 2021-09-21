@@ -49,7 +49,7 @@ jobs:
 - job: linuxubuntu
   displayName: 'Build Linux Ubuntu 16.04'
   pool:
-    name: Azure-MessagingStore
+    name: Azure-MessagingStore-LinuxBuildMachinePool
     demands:
     - linux
   steps:
