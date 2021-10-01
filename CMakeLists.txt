@@ -35,4 +35,5 @@ add_subdirectory(build_functions)
 # Skip for Ninja which can't build the C# project
 if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
     add_subdirectory(traceabilitytool)
+    add_subdirectory(real_check)
 endif()
