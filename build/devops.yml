@@ -3,7 +3,7 @@ resources:
 - repo: self
   clean: true
 jobs:
-- job: Build_Windows_x64
+- job: Build_Windows_x64_Debug
   pool:
     name: Azure-MessagingStore-BuildMachinePool
     demands:
@@ -53,12 +53,7 @@ jobs:
       arguments: '-C "Debug" -V --output-on-failure'
       workingFolder: 'build_x64'
 
-- job: Build_Windows_x64
-  pool:
-    name: Azure-MessagingStore-BuildMachinePool
-    demands:
-    - Cmd
-    - msbuild- job: Build_Windows_x64
+- job: Build_Windows_x64_RelWithDebInfo
   pool:
     name: Azure-MessagingStore-BuildMachinePool
     demands:
