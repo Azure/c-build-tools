@@ -53,6 +53,54 @@ jobs:
       arguments: '-C "Debug" -V --output-on-failure'
       workingFolder: 'build_x64'
 
+- job: Build_Windows_x64
+  pool:
+    name: Azure-MessagingStore-BuildMachinePool
+    demands:
+    - Cmd
+    - msbuild- job: Build_Windows_x64
+  pool:
+    name: Azure-MessagingStore-BuildMachinePool
+    demands:
+    - Cmd
+    - msbuild
+    - visualstudio
+    - Build
+  steps:
+  - task: BatchScript@1
+    displayName: 'Setup VS Vars'
+    inputs:
+      filename: '"c:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\Common7\Tools\VsDevCmd.bat"'
+      modifyEnvironment: true
+
+  - task: CMake@1
+    displayName: 'CMake .. -G "Visual Studio 16 2019"'
+    inputs:
+      workingDirectory: 'build_x64'
+      cmakeArgs: '.. -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -G "Visual Studio 16 2019"'
+
+  - task: VSBuild@1
+    displayName: 'Build solution build_x64\*.sln'
+    inputs:
+      solution: 'build_x64\*.sln'
+      platform: x64
+      configuration: RelWithDebInfo
+      msbuildArgs: '/t:restore /t:build'
+      maximumCpuCount: true
+
+  - task: Npm@1
+    displayName: 'npm install for srs_extension'
+    inputs:
+      command: install
+      workingDir: srs_extension
+
+  - task: Npm@1
+    displayName: 'npm run tests for srs_extension'
+    inputs:
+      command: custom
+      customCommand: 'run test'
+      workingDir: srs_extension
+
   - task: CmdLine@1
     displayName: 'Run ctest RelWithDebInfo'
     inputs:
