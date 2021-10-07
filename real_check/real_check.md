@@ -12,3 +12,14 @@ If the tool is unable to determine if the library contains such a pair, it retur
 ```
 PS> real_check.ps1 [lib_to_check]
 ```
+
+## Devops
+
+To add real check to the devops pipeline, add the following step to the `.yml` file and replace `PATH_TO_LIB` and `PATH_TO_REALS_LIB` with appropriate values:
+
+```
+  - template: ..\deps\c-build-tools\build\templates\real_check_template.yml
+    parameters:
+      lib: '{PATH_TO_LIB}'
+      reals_lib: '{PATH_TO_REALS_LIB}'
+```

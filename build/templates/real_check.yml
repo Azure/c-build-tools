@@ -1,0 +1,18 @@
+parameters:
+- name: 'lib'
+  type: string
+- name: 'reals_lib'
+  type: string
+
+steps:
+- task: PowerShell@2
+  displayName: Real check reals_lib
+  inputs:
+    filePath: deps\c-build-tools\real_check\real_check.ps1
+    arguments: ${{parameters.reals_lib}}
+
+- task: PowerShell@2
+  displayName: Real check lib
+  inputs:
+    filePath: deps\c-build-tools\real_check\real_check.ps1
+    arguments: ${{parameters.lib}}
