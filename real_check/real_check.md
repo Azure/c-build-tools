@@ -18,8 +18,22 @@ PS> real_check.ps1 [lib_to_check]
 To add real check to the devops pipeline, add the following step to the `.yml` file and replace `PATH_TO_LIB` and `PATH_TO_REALS_LIB` with appropriate values:
 
 ```
-  - template: ..\deps\c-build-tools\build\templates\real_check_template.yml
+  - template: build\templates\real_check.yml@c-build-tools
     parameters:
       lib: '{PATH_TO_LIB}'
       reals_lib: '{PATH_TO_REALS_LIB}'
+```
+
+The `resources` segment of the `.yml` file should look like this:
+
+```
+resources:
+  repositories:
+    - repository: self
+      clean: true
+
+    - repository: c-build-tools
+      type: github
+      name: Azure/c-build-tools
+      endpoint: "MessagingStore GitHub connection"
 ```
