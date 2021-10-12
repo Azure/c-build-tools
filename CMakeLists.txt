@@ -29,6 +29,7 @@ option(run_valgrind "run valgrind on tests (Linux only) (default is ON)." ON)
 option(run_helgrind "run helgrind on tests (Linux only) (default is ON)." ON)
 option(run_drd "run DRD on tests (Linux only) (default is OFF)." OFF)
 option(run_traceability "run traceability tool (default is ON)" ON)
+option(build_traceability_tool "build traceability tool (default is ON)" ON)
 
 add_subdirectory(build_functions)
 
@@ -36,6 +37,8 @@ enable_testing()
 
 # Skip for Ninja which can't build the C# project
 if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
-    add_subdirectory(traceabilitytool)
+    if(${build_traceability_tool})
+        add_subdirectory(traceabilitytool)
+    endif()
     add_subdirectory(real_check)
 endif()
