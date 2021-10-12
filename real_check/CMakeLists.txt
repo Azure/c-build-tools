@@ -4,3 +4,5 @@
 if(${run_unittests})
     add_subdirectory(test)
 endif()
+
+add_custom_target(realcheck SOURCES real_check.ps1)

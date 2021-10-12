@@ -193,3 +193,22 @@ function(compileTargetAsC11 theTarget)
     set_target_properties(${theTarget} PROPERTIES CXX_STANDARD 11)
   endif()
 endfunction()
+
+set(LIBS_TO_BE_REAL_CHECKED CACHE INTERNAL "LIBS_TO_BE_CHECKED")
+
+function (add_library())
+    _add_library(${ARGV})
+    get_target_property(lib_type ${ARGV0} TYPE)
+    if( (NOT ${CMAKE_CURRENT_LIST_DIR} MATCHES "deps") AND # ignore dependency libs
+        (NOT ${ARGV0} MATCHES "_ut_lib|int_lib$") AND # ignore test libs
+        (NOT ${lib_type} STREQUAL "INTERFACE_LIBRARY")) # ignore interface libs
+        set(LIBS_TO_BE_REAL_CHECKED "${LIBS_TO_BE_REAL_CHECKED};${ARGV0}" CACHE INTERNAL "LIBS_TO_BE_CHECKED")
+    endif()
+endfunction()
+
+function (get_target_files())
+    list(SUBLIST ARGV 1 -1 libraries)
+    foreach(lib ${libraries})
+        set(${ARGV0} "${${ARGV0}} \$\<TARGET_FILE:${lib}\>" CACHE INTERNAL "")
+    endforeach()
+endfunction()

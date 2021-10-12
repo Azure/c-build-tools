@@ -30,6 +30,7 @@ option(run_helgrind "run helgrind on tests (Linux only) (default is ON)." ON)
 option(run_drd "run DRD on tests (Linux only) (default is OFF)." OFF)
 option(run_traceability "run traceability tool (default is ON)" ON)
 option(build_traceability_tool "build traceability tool (default is ON)" ON)
+option(run_reals_check "run reals check tool (default is OFF)" OFF)
 
 add_subdirectory(build_functions)
 
