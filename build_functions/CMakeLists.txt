@@ -221,7 +221,6 @@ endfunction()
 
 # adds target to run reals check
 function(add_reals_check_target base_target)
-    message("libs to be checked: ${LIBS_TO_BE_REAL_CHECKED}")
     set(reals_check_target "${base_target}_reals_check")
     add_custom_target(${reals_check_target} ALL)
     add_dependencies(${reals_check_target} reals_check ${LIBS_TO_BE_REAL_CHECKED})
