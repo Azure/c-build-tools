@@ -10,8 +10,8 @@ extern "C"
 {
 #endif
 
-int reals_dummy_symbol_1();
-int reals_dummy_symbol_2();
+int real_dummy_symbol_1();
+int real_dummy_symbol_2();
 
 
 #ifdef __cplusplus
