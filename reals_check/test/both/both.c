@@ -4,6 +4,7 @@
 #include "reals_check_test/dummy.h"
 #include "reals_dummy.h"
 
-int dummy_symbol_3(){
+int dummy_symbol_3(void)
+{
     return 3;
 }

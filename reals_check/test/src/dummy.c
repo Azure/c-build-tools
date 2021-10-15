@@ -3,10 +3,12 @@
 
 #include "reals_check_test/dummy.h"
 
-int dummy_symbol_1(){
+int dummy_symbol_1(void)
+{
     return 1;
 }
 
-int dummy_symbol_2(){
+int dummy_symbol_2(void)
+{
     return 2;
 }

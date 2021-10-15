@@ -219,14 +219,17 @@ function (get_target_files())
     endforeach()
 endfunction()
 
-# adds target to run reals check
-function(add_reals_check_target base_target)
-    set(reals_check_target "${base_target}_reals_check")
+# adds ${CMAKE_PROJECT_NAME}_reals_check as target to run reals check
+# signature: add_reals_check_target()
+function(add_reals_check_target)
+    set(reals_check_target "${CMAKE_PROJECT_NAME}_reals_check")
     add_custom_target(${reals_check_target} ALL)
     add_dependencies(${reals_check_target} reals_check ${LIBS_TO_BE_REAL_CHECKED})
+    set(script_path)
+    get_target_property(script_path reals_check SOURCE_DIR)
     get_target_files(lib_paths ${LIBS_TO_BE_REAL_CHECKED})
     add_custom_command(TARGET ${reals_check_target} POST_BUILD
         COMMAND
-        powershell.exe ${CMAKE_CURRENT_LIST_DIR}/deps/c-build-tools/reals_check/reals_check.ps1 ${lib_paths}
+        powershell.exe ${script_path}/reals_check.ps1 ${lib_paths}
     )
 endfunction()

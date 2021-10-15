@@ -9,8 +9,8 @@ extern "C"
 {
 #endif
 
-int dummy_symbol_1();
-int dummy_symbol_2();
+int dummy_symbol_1(void);
+int dummy_symbol_2(void);
 
 #ifdef __cplusplus
 }
