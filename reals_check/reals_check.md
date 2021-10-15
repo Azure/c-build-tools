@@ -19,8 +19,8 @@ To add reals check to a project, add the following snippet to the root `CMakelis
 
 ```
 if(${run_reals_check})
-    add_reals_check_target([base_name])
+    add_reals_check_target()
 endif()
 ```
 
-Replace `\[base_name\]` with the name of the project. CMake will then create a target `\[base_name\]_reals_check`.
+CMake will then create a target with name `${CMAKE_PROJECT_NAME}_reals_check` that runs reals check on libraries when it is built.
