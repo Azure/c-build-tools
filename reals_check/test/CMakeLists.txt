@@ -23,7 +23,7 @@ add_library(random_ut_dll ./dummy_source.c)
 add_library(random_perf_lib ./dummy_source.c)
 add_library(random_interface_lib INTERFACE ./dummy_source.c)
 
-set(expected_value ";reals_check_test_reals;reals_check_test_both_int_;reals_check_test")
+set(expected_value ";reals_check_test_reals;reals_check_test")
 
 # Test to check that the correct libraries are selected for reals checking:
 if(NOT "${LIBS_TO_BE_REAL_CHECKED}" STREQUAL "${expected_value}")
