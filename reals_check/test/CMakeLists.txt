@@ -18,9 +18,9 @@ target_include_directories(reals_check_test PUBLIC $<BUILD_INTERFACE:${PROJECT_S
 add_test(NAME RUN_REALS_CHECK_TEST COMMAND powershell ${CMAKE_CURRENT_SOURCE_DIR}/test_reals_check.ps1 ${CMAKE_CURRENT_SOURCE_DIR}/../reals_check.ps1 ${CMAKE_BINARY_DIR} $<CONFIG>)
 
 # Adding libs that should get ignored for reals check
-add_library(random_int_test ./dummy_source.c)
-add_library(random_ut_test ./dummy_source.c)
-add_library(random_perf_test ./dummy_source.c)
+add_library(random_int_lib ./dummy_source.c)
+add_library(random_ut_dll ./dummy_source.c)
+add_library(random_perf_int ./dummy_source.c)
 add_library(random_interface_lib INTERFACE ./dummy_source.c)
 
 set(expected_value ";reals_check_test_reals;reals_check_test")
