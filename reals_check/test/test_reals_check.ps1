@@ -17,7 +17,7 @@ if($LASTEXITCODE -ne 0){
     exit 1
 }
 
-.$reals_check $build_dir/reals_check/test/both/$config/reals_check_test_both_int_.lib
+.$reals_check $build_dir/reals_check/test/both/$config/reals_check_test_both_int_lib.lib
 if($LASTEXITCODE -ne 1){
     Write-Error "reals_check.ps1 does not return exit code 1 for lib with original and real symbols."
     exit 1
