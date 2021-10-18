@@ -8,6 +8,6 @@ if(${run_reals_check})
     add_custom_target(reals_check SOURCES reals_check.ps1)
 endif()
 
-if(${run_unittests})
+if(${run_unittests} AND ${run_reals_check})
     add_subdirectory(test)
 endif()

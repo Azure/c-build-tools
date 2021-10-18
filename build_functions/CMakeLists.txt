@@ -198,6 +198,7 @@ endfunction()
 set(LIBS_TO_BE_REAL_CHECKED CACHE INTERNAL "LIBS_TO_BE_CHECKED")
 
 # overloading the add_library function to store name of library if it meets criteria
+# overloading is not officially supported, solution was found here: https://stackoverflow.com/a/55723415/10144036
 function (add_library())
     _add_library(${ARGV})
     get_target_property(lib_type ${ARGV0} TYPE)
@@ -224,7 +225,6 @@ endfunction()
 function(add_reals_check_target)
     set(reals_check_target "${CMAKE_PROJECT_NAME}_reals_check")
     add_custom_target(${reals_check_target} ALL)
-    add_dependencies(${reals_check_target} reals_check ${LIBS_TO_BE_REAL_CHECKED})
     set(script_path)
     get_target_property(script_path reals_check SOURCE_DIR)
     get_target_files(lib_paths ${LIBS_TO_BE_REAL_CHECKED})

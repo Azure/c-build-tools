@@ -142,7 +142,7 @@ jobs:
     displayName: 'CMake ..  -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -Dbuild_traceability_tool:bool=OFF -G "Visual Studio 16 2019" -A x64'
     inputs:
       workingDirectory: 'build_x64'
-      cmakeArgs: '.. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -Dbuild_traceability_tool:bool=OFF -G "Visual Studio 16 2019" -A x64'
+      cmakeArgs: '.. -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -Dbuild_traceability_tool:bool=OFF -G "Visual Studio 16 2019" -A x64'
 
   - task: Semmle@1
     inputs:
