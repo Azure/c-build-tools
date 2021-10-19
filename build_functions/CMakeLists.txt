@@ -193,3 +193,43 @@ function(compileTargetAsC11 theTarget)
     set_target_properties(${theTarget} PROPERTIES CXX_STANDARD 11)
   endif()
 endfunction()
+
+# variable to store list of libs that must be checked for reals
+set(LIBS_TO_BE_REAL_CHECKED CACHE INTERNAL "LIBS_TO_BE_CHECKED")
+
+# overloading the add_library function to store name of library if it meets criteria
+# overloading is not officially supported, solution was found here: https://stackoverflow.com/a/55723415/10144036
+function (add_library())
+    _add_library(${ARGV})
+    get_target_property(lib_type ${ARGV0} TYPE)
+    if( (NOT ${CMAKE_CURRENT_LIST_DIR} MATCHES "/deps/") AND # ignore dependency libs
+        (NOT ${ARGV0} MATCHES "_(ut|int|perf)_(lib|dll)") AND # ignore test libs
+        (NOT ${lib_type} STREQUAL "INTERFACE_LIBRARY")) # ignore interface libs
+        # appending lib to LIBS_TO_BE_REAL_CHECKED
+        set(LIBS_TO_BE_REAL_CHECKED "${LIBS_TO_BE_REAL_CHECKED};${ARGV0}" CACHE INTERNAL "LIBS_TO_BE_CHECKED")
+    endif()
+endfunction()
+
+# signature: get_target_files(var [list of targets])
+# returns a list of generator expressions for paths to targets
+function (get_target_files())
+    set(${ARGV0} CACHE INTERNAL "")
+    list(SUBLIST ARGV 1 -1 libraries)
+    foreach(lib ${libraries})
+        set(${ARGV0} "${${ARGV0}} \$\<TARGET_FILE:${lib}\>" CACHE INTERNAL "")
+    endforeach()
+endfunction()
+
+# adds ${CMAKE_PROJECT_NAME}_reals_check as target to run reals check
+# signature: add_reals_check_target()
+function(add_reals_check_target)
+    set(reals_check_target "${CMAKE_PROJECT_NAME}_reals_check")
+    add_custom_target(${reals_check_target} ALL)
+    set(script_path)
+    get_target_property(script_path reals_check SOURCE_DIR)
+    get_target_files(lib_paths ${LIBS_TO_BE_REAL_CHECKED})
+    add_custom_command(TARGET ${reals_check_target} POST_BUILD
+        COMMAND
+        powershell.exe ${script_path}/reals_check.ps1 ${lib_paths}
+    )
+endfunction()
