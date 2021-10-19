@@ -227,13 +227,17 @@ endfunction()
 # adds ${CMAKE_PROJECT_NAME}_reals_check as target to run reals check
 # signature: add_reals_check_target()
 function(add_reals_check_target)
-    set(reals_check_target "${CMAKE_PROJECT_NAME}_reals_check")
-    add_custom_target(${reals_check_target} ALL)
-    set(script_path)
-    get_target_property(script_path reals_check SOURCE_DIR)
-    get_target_files(lib_paths ${LIBS_TO_BE_REAL_CHECKED})
-    add_custom_command(TARGET ${reals_check_target} POST_BUILD
-        COMMAND
-        powershell.exe ${script_path}/reals_check.ps1 ${lib_paths}
-    )
+    if(NOT WIN32)
+        message(WARNING "Cannot run reals check for non-Windows build.")
+    else()
+        set(reals_check_target "${CMAKE_PROJECT_NAME}_reals_check")
+        add_custom_target(${reals_check_target} ALL)
+        set(script_path)
+        get_target_property(script_path reals_check SOURCE_DIR)
+        get_target_files(lib_paths ${LIBS_TO_BE_REAL_CHECKED})
+        add_custom_command(TARGET ${reals_check_target} POST_BUILD
+            COMMAND
+            powershell.exe ${script_path}/reals_check.ps1 ${lib_paths}
+        )
+    endif()
 endfunction()
