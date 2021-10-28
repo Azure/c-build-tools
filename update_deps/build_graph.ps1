@@ -29,7 +29,8 @@ c-build-tools macro-utils-c c-logging ctest c-testrunnerswitcher umock-c c-pal c
 #>
 
 # parse repo URL to extract repo name
-# Expected URL format: <anything>/<repo_name>.<anything>
+# Expected URL format: */<repo_name>[.*]
+# Example: https://github.com/Azure/c-build-tools or https://github.com/Azure/c-build-tools.git
 function get-name-from-url {
     param (
         [string] $url
