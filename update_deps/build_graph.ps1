@@ -1,8 +1,35 @@
 # Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+<#
+.SYNOPSIS
+
+Given the URL to a repository, prints the order in which its submodules should be updated.
+
+.DESCRIPTION
+
+Performs bottom-up level-order traversal of the dependency graph and prints the order.
+
+.PARAMETER repo
+
+URL of the repository upto which updates must be propagated.
+
+.INPUTS
+
+None.
+
+.OUTPUTS
+
+Prints order in which repositories must be updated.
+
+.EXAMPLE
+
+PS> .\build_graph.ps1 https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-MessagingStore
+c-build-tools macro-utils-c c-logging ctest c-testrunnerswitcher umock-c c-pal c-util clds com-wrapper zrpc sf-c-util Azure-MessagingStore
+#>
 
 # parse repo URL to extract repo name
+# Expected URL format: <anything>/<repo_name>.<anything>
 function get-name-from-url {
     param (
         [string] $url
@@ -54,7 +81,7 @@ $repo_levels = New-Object -TypeName "System.Collections.Generic.Dictionary[strin
 # queue to perform breadth-first search
 $queue = New-Object -TypeName "System.Collections.Queue"
 # list of repos to ignore while building graph
-$repos_to_ignore = "libcrc", "smhasher", "vcpkg", "mimalloc", "jemalloc", "Azure-Messaging-Metrics"
+$repos_to_ignore = "libcrc", "smhasher", "vcpkg", "mimalloc", "jemalloc"
 
 function Build-Graph {
     # get front of queue
@@ -112,29 +139,3 @@ $repo_order = New-Object -TypeName "System.Collections.ArrayList"
 $repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
 Write-Host $repo_order
 
-<#
-.SYNOPSIS
-
-Given the URL to a repository, prints the order in which its submodules should be updated.
-
-.DESCRIPTION
-
-Performs bottom-up level-order traversal of the dependency graph and prints the order.
-
-.PARAMETER repo
-
-URL of the repository upto which updates must be propagated.
-
-.INPUTS
-
-None.
-
-.OUTPUTS
-
-Prints order in which repositories must be updated.
-
-.EXAMPLE
-
-PS> .\build_graph.ps1 https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-MessagingStore
-c-build-tools macro-utils-c c-logging ctest c-testrunnerswitcher umock-c c-pal c-util clds com-wrapper zrpc sf-c-util Azure-MessagingStore
-#>
