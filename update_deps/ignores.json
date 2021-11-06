@@ -1,0 +1,7 @@
+[
+    "libcrc",
+    "smhasher",
+    "vcpkg",
+    "mimalloc",
+    "jemalloc"
+]
