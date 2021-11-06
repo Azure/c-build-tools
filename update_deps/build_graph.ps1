@@ -150,7 +150,6 @@ function Build-Graph {
 # seed queue with given argument
 $queue.Enqueue($args[0])
 Build-Graph
-# Write-Host "done building graph!!"
 # clear spinner animation
 Write-Host "`b"-NoNewLine
 # convert dictionary to list of (repo_name, level)
@@ -161,5 +160,4 @@ $repo_levels_list.Sort({$args[1].Value.CompareTo($args[0].Value)})
 $repo_order = New-Object -TypeName "System.Collections.ArrayList"
 # collect repo names in repo_order
 $repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
-# Write-Host "Writing Order"
 Set-Content -Path .\order.json -Value ($repo_order | ConvertTo-Json)
