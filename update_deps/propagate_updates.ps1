@@ -24,32 +24,35 @@ Personal access token for Github
 
 Personal access token for Azure Devops Services
 
+.PARAMETER azure_work_item
+
+Work item id that is linked to PRs made to Azure repos.
+
 .INPUTS
 
 ignore.json: list of repositories that must be ignored for updates.
-order.json: if -resume flag is set, reads order in which repositories must be updated from order.json
-done.txt: if -resume flag is set, reads list of repositories to skip from done.txt
+order.json: reads order in which repositories must be updated from order.json
 
 .OUTPUTS
 
-Prints names of repositories that have been updated to done.txt
+None.
 
 .EXAMPLE
 
-PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token {token2} [-root {root_repo_url}] [-resume]
+PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token {token2} [-root {root_repo_url}]
 #>
 
 
-param (
+param(
     [string]$root="https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-MessagingStore", # url for repo upto which updates must be propagated
     [Parameter(Mandatory=$true)][string]$github_token, # Github personal access token: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
     [Parameter(Mandatory=$true)][string]$azure_token, # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
-    [switch]$resume = $false # flag to continue from checkpoint of previous run
- )
+    [Int32]$azure_work_item # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
+)
 
 
 # sleep for $seconds seconds and play spinner animation
- function spin {
+function spin {
     param(
         [int] $seconds
     )
@@ -305,10 +308,13 @@ function create-pr-azure {
 # link work item to PR for Azure repo
 function link-work-item-to-pr-azure {
     param(
-        [string] $work_item_id,
         [string] $pr_artifact_id
     )
-    $request_url = 'https://dev.azure.com/msazure/One/_apis/wit/workitems/'+$work_item_id+'?api-version=6.0'
+    if(!$azure_work_item){
+        Write-Error "Updating Azure repos requires providing a work item id. Provide work item id as: -azure_work_item [id]"
+        exit -1
+    }
+    $request_url = 'https://dev.azure.com/msazure/One/_apis/wit/workitems/'+$azure_work_item+'?api-version=6.0'
     $body = @(
         @{
             op='add'
@@ -408,13 +414,11 @@ function update-repo-azure {
     param(
         [string] $repo_name
     )
-    Write-Host "`nCreating work item"
-    $work_item_id = create-work-item-azure
     Write-Host "Creating PR"
     $create_pr_response = create-pr-azure $repo_name
     $pr_artifact_id = $create_pr_response.artifactId
     Write-Host "Linking work item to PR"
-    link-work-item-to-pr-azure $work_item_id $pr_artifact_id
+    link-work-item-to-pr-azure $pr_artifact_id
     Write-Host "Approving PR"
     approve-pr-azure $create_pr_response.url $create_pr_response.createdBy.id
     Write-Host "Enabling PR to autocomplete"
@@ -468,40 +472,19 @@ function update-repo {
 
 # iterate over all repos and update them
 function propagate-updates {
-    # if -resume flag was not set
-    if(!$resume) {
-        # clear order.json and done.txt
-        Set-Content -Path order.json -Value '' -NoNewLine
-        Set-Content -Path done.txt -Value '' -NoNewLine
-        # build dependency graph
-        Write-Host "Building dependency graph..."
-        .$PSScriptRoot\build_graph.ps1 $root
-        Write-Host "Done building dependency graph"
-    }
+    # clear order.json
+    Set-Content -Path order.json -Value '' -NoNewLine
+    # build dependency graph
+    Write-Host "Building dependency graph..."
+    .$PSScriptRoot\build_graph.ps1 $root
+    Write-Host "Done building dependency graph"
     $repo_order = (Get-Content -Path order.json) | ConvertFrom-Json
     Write-Host "Updating repositories in the following order: "
     for($i = 0; $i -lt $repo_order.Length; $i++){
         Write-Host "$($i+1). $($repo_order[$i])"
     }
-    # get repos that were updated in previous run of script
-    $done_repos_txt = Get-Content -Path done.txt
-    $done_repos = @()
-    if ($done_repos_txt){
-        $done_repos = $done_repos_txt.Split()
-        Write-Host "Repositories to be skipped: "
-        for($i = 0; $i -lt $done_repos.Length; $i++){
-            Write-Host "$($i+1). $($done_repos[$i])"
-        }
-    }
     foreach ($repo in $repo_order) {
-        # skip repos that were updated in previous run of script
-        if($resume -and ($repo -in $done_repos)) {
-            Write-Host "Skipping repo $repo"
-            continue
-        }
         update-repo $repo
-        # record that repo has been updated
-        Add-Content -Path done.txt -Value $repo
     }
     Write-Host "Done updating all repos!"
 }

@@ -22,14 +22,15 @@ root repo by making PRs to each repo in bottom-up level-order.
 Run the script in a clean directory:
 
 ```
-PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token {token2} [-root {root_repo_url}] [-resume]
+PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token {token2} [-azure_work_item {work_item_id}] [-root {root_repo_url}] 
 ```
 ### Arguments:
 
 - `-azure_token`: Mandatory. Personal access token for Azure Devops Services. Token must have permissions for Code and Work Items.
 - `-github_token`: Mandatory. Personal access token for Github. Token must be authorized for use with the Azure organization on Github.
+- `-azure_work_item`: Optional. Work item id of Azure work item that is linked to PRs made to Azure repos. Only required if Azure repos need to be updated.
 - `-root`: Optional. URL of the repository upto which updates must be propagated. [Azure-MessagingStore](https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-MessagingStore) by default.
-- `resume`: Optional. If provided, dependency graph is loaded from `order.json` which was created in the previous run of the script. Repositories which were updated in the previous run and are listed in `done.txt` are skipped.
+
 
 ### ignores.json
 
