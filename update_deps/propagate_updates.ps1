@@ -172,7 +172,6 @@ function wait-until-mergeable-github {
         $check_run_content = $check_run_response.Content | ConvertFrom-Json
         $check_runs = $check_run_content.check_runs
         if($check_runs.Length -eq 0) {
-            Write-Host "No checks found"
             # retry if check-runs have not started yet
             continue
         }
