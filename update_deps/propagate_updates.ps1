@@ -9,7 +9,7 @@ Propagates dependency updates for git repositories.
 .DESCRIPTION
 
 Given a root repo and personal access tokens for Github and Azure Devops Services, this script \
-builds the dependency graph and propagates updates from the lowest level upto the \
+builds the dependency graph and propagates updates from the lowest level up to the \
 root repo by making PRs to each repo in bottom-up level-order.
 
 .PARAMETER root
@@ -159,6 +159,7 @@ function wait-until-mergeable-github {
         [string] $html_url
     )
     $request_url = "https://api.github.com/repos/Azure/$repo_name/commits/$new_branch_name/check-runs"
+
     # iterate over all check-runs
     while($true) {
         spin 10
@@ -171,8 +172,9 @@ function wait-until-mergeable-github {
         $check_run_content = $check_run_response.Content | ConvertFrom-Json
         $check_runs = $check_run_content.check_runs
         if($check_runs.Length -eq 0) {
-            Write-Error "No checks found for $repo_name"
-            exit -1
+            Write-Host "No checks found"
+            # retry if check-runs have not started yet
+            continue
         }
         for($i=0; $i -lt $check_runs.Length; $i++) {
             $check = $check_runs[$i]
@@ -414,7 +416,7 @@ function update-repo-azure {
     param(
         [string] $repo_name
     )
-    Write-Host "Creating PR"
+    Write-Host "`nCreating PR"
     $create_pr_response = create-pr-azure $repo_name
     $pr_artifact_id = $create_pr_response.artifactId
     Write-Host "Linking work item to PR"
