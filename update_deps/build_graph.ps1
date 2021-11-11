@@ -104,7 +104,7 @@ $repos_to_ignore = (Get-Content -Path $path_to_ignores) | ConvertFrom-Json
 $progress = @('|','/','-','\')
 $progress_counter = 0
 
-# perform breadth-first search on depenency graph
+# perform breadth-first search on dependency graph
 function Build-Graph {
     # spinner animation
     Write-Host "`b$($progress[$progress_counter++ % $progress.Length])" -NoNewline -ForegroundColor Yellow 
@@ -120,7 +120,7 @@ function Build-Graph {
         Write-Host "`b" -NoNewline # clear spinner
         git clone $repo_url 
     }
-    # $repo_level is the length of the path from the root to the current repo
+    # $repo_level is the length of the path in the graph from the root to the current repo
     $repo_level = $repo_levels[$repo_name]
     # get list for submodules URLs 
     $submodules = get-submodules $repo_url
@@ -131,7 +131,7 @@ function Build-Graph {
         if ($submodule_name -in $repos_to_ignore) {
             continue
         }
-        # $level is the length of the longest path from the root to the submodule seen so far.
+        # $level is the length of the longest path in the graph from the root to the submodule seen so far
         $level = 0
         [void]$repo_levels.TryGetValue($submodule_name, [ref]$level)
         # update repo level of submodule if path from root to submodule via current repo is longer
