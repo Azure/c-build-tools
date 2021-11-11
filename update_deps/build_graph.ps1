@@ -4,11 +4,11 @@
 <#
 .SYNOPSIS
 
-Given the URL to a repository, prints the order in which its submodules should be updated.
+Given the URL to a repository, prints the order in which its submodules should be updated to file order.json
 
 .DESCRIPTION
 
-Performs bottom-up level-order traversal of the dependency graph and prints the order.
+Performs bottom-up level-order traversal of the dependency graph and prints the order to file order.json
 
 .PARAMETER repo
 
@@ -20,12 +20,28 @@ None.
 
 .OUTPUTS
 
-Prints order in which repositories must be updated.
+Prints order in which repositories must be updated to file order.json
 
 .EXAMPLE
 
 PS> .\build_graph.ps1 https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-MessagingStore
-c-build-tools macro-utils-c c-logging ctest c-testrunnerswitcher umock-c c-pal c-util clds com-wrapper zrpc sf-c-util Azure-MessagingStore
+PS> Get-Content -Path order.json
+[
+    "c-build-tools",
+    "macro-utils-c",
+    "c-logging",
+    "ctest",
+    "c-testrunnerswitcher",
+    "umock-c",
+    "c-pal",
+    "c-util",
+    "com-wrapper",
+    "clds",
+    "sf-c-util",
+    "Azure-Messaging-Metrics",
+    "zrpc",
+    "Azure-MessagingStore"
+]
 #>
 
 # parse repo URL to extract repo name
@@ -52,7 +68,7 @@ function get-submodules {
     # create list for submodule URLs
     $submodules = New-Object -TypeName "System.Collections.ArrayList"
     # return empty list if no submodules
-    if ($submodule_data -eq $null) {
+    if (!$submodule_data) {
         return $submodules
     }
     # split raw data to parse
@@ -81,37 +97,44 @@ function get-submodules {
 $repo_levels = New-Object -TypeName "System.Collections.Generic.Dictionary[string, int]"
 # queue to perform breadth-first search
 $queue = New-Object -TypeName "System.Collections.Queue"
-# list of repos to ignore while building graph
-$repos_to_ignore = "libcrc", "smhasher", "vcpkg", "mimalloc", "jemalloc"
+# get list of repos to ignore  while building graph from ignores.json
+$path_to_ignores = $PSScriptRoot + "\ignores.json"
+$repos_to_ignore = (Get-Content -Path $path_to_ignores) | ConvertFrom-Json
+# for spinner animation
+$progress = @('|','/','-','\')
+$progress_counter = 0
 
+# perform breadth-first search on dependency graph
 function Build-Graph {
+    # spinner animation
+    Write-Host "`b$($progress[$progress_counter++ % $progress.Length])" -NoNewline -ForegroundColor Yellow 
     # get front of queue
     $repo_url = $queue.Dequeue()
     $repo_name = get-name-from-url -url $repo_url
-
     # set repo level to 0 if not seen before
     if(-not $repo_levels.ContainsKey($repo_name)) {
         $repo_levels[$repo_name] = 0
     }
     # clone repo if not already present
     if(-not (Test-Path -Path $repo_name)) {
-        git clone $repo_url
+        Write-Host "`b" -NoNewline # clear spinner
+        git clone $repo_url 
     }
-    # get current level of repo
+    # $repo_level is the length of the path in the graph from the root to the current repo
     $repo_level = $repo_levels[$repo_name]
     # get list for submodules URLs 
     $submodules = get-submodules $repo_url
     # iterate of list of submodules 
     foreach($submodule in $submodules) {
         $submodule_name = get-name-from-url -url $submodule
-        # Write-Host "Submodule $submodule_name"
         # ignore submodule if it is i $repos_to_ignore
         if ($submodule_name -in $repos_to_ignore) {
             continue
         }
+        # $level is the length of the longest path in the graph from the root to the submodule seen so far
         $level = 0
         [void]$repo_levels.TryGetValue($submodule_name, [ref]$level)
-        # update repo level of submodule if path from current repo is longer
+        # update repo level of submodule if path from root to submodule via current repo is longer
         if (($repo_level+1) -gt $level) {
             $repo_levels[$submodule_name] = $repo_level+1
         }
@@ -127,9 +150,9 @@ function Build-Graph {
 
 # seed queue with given argument
 $queue.Enqueue($args[0])
-
 Build-Graph
-
+# clear spinner animation
+Write-Host "`b"-NoNewLine
 # convert dictionary to list of (repo_name, level)
 $repo_levels_list = [Linq.Enumerable]::ToList($repo_levels)
 # sort list by descending order of level
@@ -138,5 +161,4 @@ $repo_levels_list.Sort({$args[1].Value.CompareTo($args[0].Value)})
 $repo_order = New-Object -TypeName "System.Collections.ArrayList"
 # collect repo names in repo_order
 $repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
-Write-Host $repo_order
-
+Set-Content -Path .\order.json -Value ($repo_order | ConvertTo-Json)
