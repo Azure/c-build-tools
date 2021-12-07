@@ -37,6 +37,11 @@ add_subdirectory(build_functions)
 
 enable_testing()
 
+include (CheckIncludeFiles)
+
+CHECK_INCLUDE_FILES(stdint.h HAVE_STDINT_H)
+CHECK_INCLUDE_FILES(stdbool.h HAVE_STDBOOL_H)
+
 # Skip for Ninja which can't build the C# project
 if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
     if(${build_traceability_tool})
