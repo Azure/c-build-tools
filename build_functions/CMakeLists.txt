@@ -62,6 +62,7 @@ function(copy_disable_vld_ini target output_directory)
 endfunction()
 
 macro(set_default_build_options)
+
     # Make sure we have a runtime output directory always set
     if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG)
         set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/Debug)
@@ -134,6 +135,19 @@ macro(set_default_build_options)
 
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL")
+    endif()
+
+    if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
+        message(STATUS "enabling vld")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FIvld.h")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /FIvld.h")
+        include_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include") 
+        if (${ARCHITECTURE} STREQUAL "x86_64")
+            link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win64")
+        else()
+            link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win32")
+        endif()
+        message(STATUS "cmake c flags in build tools: ${CMAKE_C_FLAGS}")
     endif()
 
     enable_testing()
