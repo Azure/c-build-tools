@@ -141,16 +141,15 @@ function Build-Graph {
         # add submodule to queue
         $queue.Enqueue($submodule)
     }
-    # if queue is not empty, make recursive call
-    if ( $queue.Count -ne 0) {
-        Build-Graph
-    }
 }
 
 
 # seed queue with given argument
 $queue.Enqueue($args[0])
-Build-Graph
+# build dependency graph
+while ( $queue.Count -ne 0) {
+    Build-Graph
+}
 # clear spinner animation
 Write-Host "`b"-NoNewLine
 # convert dictionary to list of (repo_name, level)
