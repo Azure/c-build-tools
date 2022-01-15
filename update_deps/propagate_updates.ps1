@@ -99,6 +99,8 @@ function update-local-repo {
     git checkout master
     git pull
     git submodule update --init
+    # Remove deps folder to refresh
+    Remove-Item deps -Recurse -Force
     # update all submodules except the ones mentioned in ignores.json
     git submodule foreach "case `$name in $ignore_pattern ) ;; *) git checkout master && git pull;; esac"
     # delete pre-existing branch
