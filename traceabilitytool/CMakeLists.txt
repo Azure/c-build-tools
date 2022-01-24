@@ -26,7 +26,7 @@ set_property(TARGET traceabilitytool
 )
 
 set_property(TARGET traceabilitytool
-    PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.8"
+    PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.7.2"
 )
 
 set_property(TARGET traceabilitytool PROPERTY VS_DOTNET_REFERENCES
