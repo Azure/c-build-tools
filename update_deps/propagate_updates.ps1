@@ -190,6 +190,8 @@ function wait-until-mergeable-github {
             }
             # if all checks have completed and were successful, exit while loop
             if($i -eq ($check_runs.Length - 1)) {
+                # timeout to let mergeable state stabilize
+                spin 10
                 $get_pr_response = Invoke-WebRequest -URI $api_url -UseBasicParsing -Method Get -Headers $github_header
                 if(!$get_pr_response) {
                     Write-Error "Failed to get PR: $html_url"
