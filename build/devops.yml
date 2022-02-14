@@ -93,7 +93,7 @@ jobs:
     displayName: 'npm run tests for srs_extension'
     inputs:
       command: custom
-      customCommand: 'run test'
+      customCommand: 'run test --verbose'
       workingDir: srs_extension
 
   - task: CmdLine@1

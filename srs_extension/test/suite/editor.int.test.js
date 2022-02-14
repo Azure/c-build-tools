@@ -38,10 +38,13 @@ async function deleteFile(file) {
     }
 }
 
+function saveAllEditors() {
+    return vscode.commands.executeCommand('workbench.action.files.saveAll');
+}
+
 function closeAllEditors() {
     return vscode.commands.executeCommand('workbench.action.closeAllEditors');
 }
-
 
 const sampleFileBefore = `
 # A File header
@@ -155,7 +158,10 @@ const sampleFileAfterWithLists = `
 suite('Editor Int Test Suite', () => {
     vscode.window.showInformationMessage('Start editor int tests.');
 
-    teardown(closeAllEditors);
+    teardown(async function () {
+        await saveAllEditors();
+        await closeAllEditors();
+    });
 
     function withRandomFileEditor(initialContents, run) {
         return createRandomFile(initialContents, undefined, '.md').then(file => {
