@@ -3,6 +3,7 @@ const assert = require('assert');
 // You can import and use all API from the 'vscode' module
 // as well as import your extension to test it
 const vscode = require('vscode');
+const crypto = require('crypto');
 const MemFS = require('../memfs');
 
 const extension = require('../../extension');
@@ -10,10 +11,10 @@ const extension = require('../../extension');
 // Test code based on https://github.com/microsoft/vscode/tree/master/extensions/vscode-api-tests/src/singlefolder-tests
 
 function rndName() {
-    return Math.random().toString(36).replace(/[^a-z]+/g, '').substr(0, 10);
+    return crypto.randomBytes(8).toString('hex');
 }
 
-const testFs = new MemFS.MemFS();
+const testFs = new MemFS.MemFS('fake-fs');
 vscode.workspace.registerFileSystemProvider(testFs.scheme, testFs);
 
 async function createRandomFile(contents = '', dir = undefined, ext = '') {
