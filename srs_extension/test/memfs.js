@@ -31,7 +31,8 @@ class Directory {
 }
 exports.Directory = Directory;
 class MemFS {
-    constructor() {
+    constructor(scheme) {
+        this.scheme = scheme;
         this.root = new Directory('');
         this.scheme = 'memfs';
         // --- manage file events

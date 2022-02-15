@@ -9,7 +9,7 @@ function run() {
         timeout: 600000
     });
     // Use any mocha API
-    mocha.useColors(true);
+    mocha.options.color = true;
 
     const testsRoot = path.resolve(__dirname, '..');
 
