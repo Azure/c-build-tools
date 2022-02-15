@@ -83,18 +83,19 @@ jobs:
       msbuildArgs: '/t:restore /t:build'
       maximumCpuCount: true
 
-  - task: Npm@1
+  - task: CmdLine@1
     displayName: 'npm install for srs_extension'
     inputs:
-      command: install
-      workingDir: srs_extension
+      filename: 'npm'
+      arguments: 'install'
+      workingFolder: srs_extension
 
-  - task: Npm@1
+  - task: CmdLine@1
     displayName: 'npm run tests for srs_extension'
     inputs:
-      command: custom
-      customCommand: 'run test --verbose'
-      workingDir: srs_extension
+      filename: 'npm'
+      arguments: 'run test --verbose'
+      workingFolder: srs_extension
 
   - task: CmdLine@1
     displayName: 'Run ctest RelWithDebInfo'
