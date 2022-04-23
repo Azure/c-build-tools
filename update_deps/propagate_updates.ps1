@@ -87,6 +87,16 @@ create-ignore-pattern
 # name for branch which will be used to create PR
 $new_branch_name = "new_deps"
 
+function refresh-submodules {
+    $submodules = git submodule | Out-String
+    Get-ChildItem "deps\" | ForEach-Object {
+        # There can be folders in deps\ that are not listed in .gitmodules.
+        # Only delete dep that is listed in .gitmodules
+        if($submodules.Contains($_.Name)) {
+            Remove-Item $_.FullName -Recurse -Force
+        }
+    }
+}
 
 # update the submodules of the given repo and push changes
 # returns $true if the local repo was update
@@ -98,8 +108,11 @@ function update-local-repo {
     cd $repo_name
     git checkout master
     git pull
-    # Remove deps folder to refresh
-    Remove-Item deps -Recurse -Force
+    # Sometimes git fails to detect updates in submodules
+    # Fix is to delete the submodule and reinitializes it
+    if (Test-Path "deps\") {
+        refresh-submodules
+    }
     git submodule update --init
     # update all submodules except the ones mentioned in ignores.json
     git submodule foreach "case `$name in $ignore_pattern ) ;; *) git checkout master && git pull;; esac"
