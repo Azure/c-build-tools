@@ -215,8 +215,9 @@ function (add_library())
     _add_library(${ARGV})
     get_target_property(lib_type ${ARGV0} TYPE)
     if( (NOT ${CMAKE_CURRENT_LIST_DIR} MATCHES "/deps/") AND # ignore dependency libs
-        (NOT ${ARGV0} MATCHES "_(ut|int|perf)_lib|dll") AND # ignore test libs and all dlls
-        (NOT ${lib_type} STREQUAL "INTERFACE_LIBRARY")) # ignore interface libs
+        (${lib_type} STREQUAL "STATIC_LIBRARY") AND # only check static libs
+        (NOT ${ARGV0} MATCHES "_(ut|int|perf)_lib") # ignore test libs
+       )
         # appending lib to LIBS_TO_BE_REAL_CHECKED
         set(LIBS_TO_BE_REAL_CHECKED "${LIBS_TO_BE_REAL_CHECKED};${ARGV0}" CACHE INTERNAL "LIBS_TO_BE_CHECKED")
     endif()
