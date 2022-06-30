@@ -393,7 +393,7 @@ function wait-until-complete-azure {
         $content =  $response.Content | ConvertFrom-Json
         $status = $content.status
         $merge_status = $content.mergeStatus
-        if($status -ne "active" -or $merge_status -ne "succeeded") {
+        if($status -ne "active" -or !($merge_status -eq "succeeded" -or $merge_status -eq "queued")) {
             break
         }
         spin 10
