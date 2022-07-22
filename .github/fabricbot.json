@@ -6,7 +6,6 @@
       "capabilityId": "IssueResponder",
       "subCapability": "PullRequestResponder",
       "version": "1.0",
-      "id": "Gozt-ce32",
       "config": {
         "conditions": {
           "operator": "and",
@@ -132,8 +131,7 @@
           }
         ],
         "taskName": "Request review from Messaging Store"
-      },
-      "id": "_d_2Rm5D_"
+      }
     },
     {
       "taskType": "trigger",
@@ -179,8 +177,7 @@
             }
           }
         ]
-      },
-      "id": "WfRLD_mcx"
+      }
     }
   ],
   "userGroups": []
