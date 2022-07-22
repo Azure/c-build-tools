@@ -121,7 +121,13 @@
           {
             "name": "requestReviewer",
             "parameters": {
-              "reviewer": "haridamineni"
+              "reviewer": "RohitG28"
+            }
+          },
+          {
+            "name": "requestReviewer",
+            "parameters": {
+              "reviewer": "ACKPaul"
             }
           }
         ],
