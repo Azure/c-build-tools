@@ -148,6 +148,11 @@ macro(set_default_build_options)
         endif()
     endif()
 
+    if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${fsanitize_address}))
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fsanitize=address")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /fsanitize=address")
+    endif()
+
     enable_testing()
 endmacro()
 
