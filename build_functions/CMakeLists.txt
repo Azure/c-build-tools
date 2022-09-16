@@ -135,7 +135,7 @@ macro(set_default_build_options)
         # /guard:cf is Enable Control Flow Guard https://docs.microsoft.com/en-us/cpp/build/reference/guard-enable-control-flow-guard, working for compiler and the linker
         set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf")
         set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf")
-        set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX /guard:cf")
+        set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX")
 
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf")
