@@ -17,6 +17,7 @@ if(TARGET c_build_tools)
 endif()
 
 add_custom_target(c_build_tools)
+
 project(c_build_tools)
 
 option(run_unittests "set run_unittests to ON to build unittests (default is OFF)" OFF)
