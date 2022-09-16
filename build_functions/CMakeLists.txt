@@ -3,6 +3,9 @@
 
 set(build_c_tests_internal_dir ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
 
+#add_custom_target... below exists so that a project (called "c_build_functions") is created in Visual Studio so it can be edited easily in the IDE
+add_custom_target(c_build_functions SOURCES ${CMAKE_CURRENT_LIST_FILE})
+
 include(CheckSymbolExists)
 function(detect_architecture symbol arch)
     if (NOT DEFINED ARCHITECTURE OR ARCHITECTURE STREQUAL "")
@@ -129,12 +132,13 @@ macro(set_default_build_options)
             endif()
         endif()
 
-        set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX")
-        set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX")
-        set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX")
+        # /guard:cf is Enable Control Flow Guard https://docs.microsoft.com/en-us/cpp/build/reference/guard-enable-control-flow-guard, working for compiler and the linker
+        set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf")
+        set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf")
+        set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX /guard:cf")
 
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf")
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
