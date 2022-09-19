@@ -137,8 +137,11 @@ macro(set_default_build_options)
         set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf")
         set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX")
 
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf")
+
+        # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]
+
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf /sdl")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf /sdl")
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
