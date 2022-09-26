@@ -51,6 +51,11 @@ function get-name-from-url {
     param (
         [string] $url
    )
+   if(!$url.Contains("http"))
+   {
+        Write-Error("Invalid URL: $url")
+        exit -1
+   }
    $split_by_slash = $url.Split('/')
    $split_by_dot = $split_by_slash[-1].Split('.') # $split_by_slash[-1] contains [repo_name].git
    return $split_by_dot[0] # $split_by_dot[0] contains [repo_name]
@@ -161,3 +166,4 @@ $repo_order = New-Object -TypeName "System.Collections.ArrayList"
 # collect repo names in repo_order
 $repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
 Set-Content -Path .\order.json -Value ($repo_order | ConvertTo-Json)
+Exit 0

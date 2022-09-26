@@ -44,10 +44,10 @@ PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token
 
 
 param(
-    [string]$root="https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-MessagingStore", # url for repo upto which updates must be propagated
+    [Parameter(Mandatory=$true)][string]$root, # url for repo upto which updates must be propagated
     [Parameter(Mandatory=$true)][string]$github_token, # Github personal access token: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
     [Parameter(Mandatory=$true)][string]$azure_token, # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
-    [Int32]$azure_work_item # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
+    [Parameter(Mandatory=$true)][Int32]$azure_work_item # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
 )
 
 
@@ -466,14 +466,30 @@ function update-repo {
     Write-Host "Done updating repo $repo_name"
 }
 
+function clear-directory {
+    $proceed = Read-Host("This script will clear the current directory. Enter [Y] to proceed.")
+    if($proceed -ne "Y")
+    {
+        exit 0
+    }
+    $Path = Get-Location | Select -expand Path
+    Set-Location ..
+    Remove-Item -LiteralPath $Path -Recurse -Force
+    $out = mkdir $Path
+    Set-Location $Path
+}
 
 # iterate over all repos and update them
 function propagate-updates {
-    # clear order.json
-    Set-Content -Path order.json -Value '' -NoNewLine
+    clear-directory
     # build dependency graph
     Write-Host "Building dependency graph..."
     .$PSScriptRoot\build_graph.ps1 $root
+    if($LASTEXITCODE -ne 0)
+    {
+        Write-Error("Could not build dependency graph.")
+        exit -1
+    }
     Write-Host "Done building dependency graph"
     $repo_order = (Get-Content -Path order.json) | ConvertFrom-Json
     Write-Host "Updating repositories in the following order: "
