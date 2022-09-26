@@ -26,10 +26,10 @@ PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token
 ```
 ### Arguments:
 
-- `-azure_token`: Mandatory. Personal access token for Azure Devops Services. Token must have permissions for Code and Work Items.
-- `-github_token`: Mandatory. Personal access token for Github. Token must be authorized for use with the Azure organization on Github.
-- `-azure_work_item`: Optional. Work item id of Azure work item that is linked to PRs made to Azure repos. Only required if Azure repos need to be updated.
-- `-root`: Optional. URL of the repository upto which updates must be propagated. [Azure-MessagingStore](https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-MessagingStore) by default.
+- `-root`: URL of the repository upto which updates must be propagated.
+- `-github_token`: Personal access token for Github. Token must be authorized for use with the Azure organization on Github.
+- `-azure_token`: Personal access token for Azure Devops Services. Token must have permissions for Code and Work Items.
+- `-azure_work_item`: Work item id of Azure work item that is linked to PRs made to Azure repos. Only required if Azure repos need to be updated.
 
 
 ### ignores.json
