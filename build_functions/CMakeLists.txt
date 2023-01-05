@@ -160,6 +160,8 @@ macro(set_default_build_options)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /fsanitize=address")
     endif()
 
+    configure_file(${build_c_tests_internal_dir}/ignore_function_names_vld.ini $ENV{ProgramFiles\(x86\)}/Visual Leak Detector/vld.ini COPYONLY)
+    
     enable_testing()
 endmacro()
 
