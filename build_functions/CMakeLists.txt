@@ -282,15 +282,14 @@ function(install_library_with_prefix theTarget includePrefix)
         set(CMAKE_INSTALL_LIBDIR "lib")
     endif()
 
-    # Install elastic_log_rpc_client
     set(package_location "cmake")
 
+    # Make an installation build target for theTarget
     install(TARGETS ${theTarget} EXPORT ${theTarget}Targets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/../bin
         PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${includePrefix}
     )
-    #install(FILES ${zrpc_h_files} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/zrpc)
 
 endfunction()
 
