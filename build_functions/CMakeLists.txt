@@ -267,6 +267,33 @@ function(add_reals_check_target)
     endif()
 endfunction()
 
+# signature: install_library_includes(<theTarget> <includePrefix> [ <public_header>... ]])
+# Creates an install target excluding libs for library with a subdirectory and optional public header files.
+function(install_library_includes theTarget includePrefix)
+    
+    if(ARGN)
+        set_target_properties(${theTarget} PROPERTIES PUBLIC_HEADER "${ARGN}")
+    endif()
+
+    # Set CMAKE_INSTALL_* if not defined
+    include(GNUInstallDirs)
+
+    if(NOT DEFINED CMAKE_INSTALL_LIBDIR)
+        set(CMAKE_INSTALL_LIBDIR "lib")
+    endif()
+
+    set(package_location "cmake")
+
+    # Make an installation build target for theTarget
+    install(TARGETS ${theTarget} EXPORT ${theTarget}Targets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} EXCLUDE_FROM_ALL
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} EXCLUDE_FROM_ALL
+        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/../bin EXCLUDE_FROM_ALL
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${includePrefix}
+    )
+
+endfunction()
+
 # signature: install_library_with_prefix(<theTarget> <includePrefix> [ <public_header>... ]])
 # Creates an install target for library with a subdirectory and optional public header files.
 function(install_library_with_prefix theTarget includePrefix)
