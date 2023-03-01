@@ -33,19 +33,18 @@ jobs:
       msbuildArgs: '/t:restore /t:build'
       maximumCpuCount: true
 
-# TODO: re-enable for Task 13386407: c-build-tools Re-enable SRS_extension node tests in gate
- # - task: Npm@1
- #   displayName: 'npm install for srs_extension'
- #   inputs:
- #     command: install
- #     workingDir: srs_extension
+  - task: Npm@1
+    displayName: 'npm install for srs_extension'
+    inputs:
+      command: install
+      workingDir: srs_extension
 
- # - task: Npm@1
- #   displayName: 'npm run tests for srs_extension'
- #   inputs:
- #     command: custom
- #     customCommand: 'run test --verbose'
- #     workingDir: srs_extension
+  - task: Npm@1
+    displayName: 'npm run tests for srs_extension'
+    inputs:
+      command: custom
+      customCommand: 'run test --verbose'
+      workingDir: srs_extension
 
   - task: CmdLine@1
     displayName: 'Run ctest Debug'
@@ -84,19 +83,18 @@ jobs:
       msbuildArgs: '/t:restore /t:build'
       maximumCpuCount: true
 
-# TODO: re-enable for Task 13386407: c-build-tools Re-enable SRS_extension node tests in gate
-#  - task: Npm@1
-#    displayName: 'npm install for srs_extension'
-#    inputs:
-#      command: install
-#      workingDir: srs_extension
+  - task: Npm@1
+    displayName: 'npm install for srs_extension'
+    inputs:
+      command: install
+      workingDir: srs_extension
 
-#  - task: Npm@1
-#    displayName: 'npm run tests for srs_extension'
-#    inputs:
-#      command: custom
-#      customCommand: 'run test --verbose'
-#      workingDir: srs_extension
+  - task: Npm@1
+    displayName: 'npm run tests for srs_extension'
+    inputs:
+      command: custom
+      customCommand: 'run test --verbose'
+      workingDir: srs_extension
 
   - task: CmdLine@1
     displayName: 'Run ctest RelWithDebInfo'
