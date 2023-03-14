@@ -65,6 +65,8 @@ function(copy_disable_vld_ini target output_directory)
 endfunction()
 
 macro(set_default_build_options)
+    #compile the code as C17
+    set(CMAKE_C_STANDARD 17)
 
     # Make sure we have a runtime output directory always set
     if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG)
@@ -82,6 +84,7 @@ macro(set_default_build_options)
 
     # System-specific compiler flags
     if(MSVC)
+        
         #use _CRT_SECURE_NO_WARNINGS by default
         add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
@@ -162,61 +165,6 @@ macro(set_default_build_options)
 
     enable_testing()
 endmacro()
-
-macro(compileAsC99)
-  if (CMAKE_VERSION VERSION_LESS "3.1")
-    if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-      set (CMAKE_C_FLAGS "--std=c99 ${CMAKE_C_FLAGS}")
-      if (CXX_FLAG_CXX11)
-        set (CMAKE_CXX_FLAGS "--std=c++11 ${CMAKE_CXX_FLAGS}")
-      else()
-        set (CMAKE_CXX_FLAGS "--std=c++0x ${CMAKE_CXX_FLAGS}")
-      endif()
-    endif()
-  else()
-    set (CMAKE_C_STANDARD 99)
-    set (CMAKE_CXX_STANDARD 11)
-  endif()
-endmacro(compileAsC99)
-
-macro(compileAsC11)
-    if (CMAKE_VERSION VERSION_LESS "3.1")
-        if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-            set (CMAKE_C_FLAGS "--std=c11 ${CMAKE_C_FLAGS}")
-            set (CMAKE_C_FLAGS "-D_POSIX_C_SOURCE=200112L ${CMAKE_C_FLAGS}")
-            set (CMAKE_CXX_FLAGS "--std=c++11 ${CMAKE_CXX_FLAGS}")
-        endif()
-    else()
-        set (CMAKE_C_STANDARD 11)
-        set (CMAKE_CXX_STANDARD 11)
-    endif()
-endmacro(compileAsC11)
-
-function(compileTargetAsC99 theTarget)
-  if (CMAKE_VERSION VERSION_LESS "3.1")
-    if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-      set_target_properties(${theTarget} PROPERTIES COMPILE_FLAGS "--std=c99")
-    endif()
-  else()
-    set_target_properties(${theTarget} PROPERTIES C_STANDARD 99)
-    set_target_properties(${theTarget} PROPERTIES CXX_STANDARD 11)
-  endif()
-endfunction()
-
-function(compileTargetAsC11 theTarget)
-  if (CMAKE_VERSION VERSION_LESS "3.1")
-    if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-      if (CXX_FLAG_CXX11)
-        set_target_properties(${theTarget} PROPERTIES COMPILE_FLAGS "--std=c11 -D_POSIX_C_SOURCE=200112L")
-      else()
-        set_target_properties(${theTarget} PROPERTIES COMPILE_FLAGS "--std=c99 -D_POSIX_C_SOURCE=200112L")
-      endif()
-    endif()
-  else()
-    set_target_properties(${theTarget} PROPERTIES C_STANDARD 11)
-    set_target_properties(${theTarget} PROPERTIES CXX_STANDARD 11)
-  endif()
-endfunction()
 
 # variable to store list of libs that must be checked for reals
 set(LIBS_TO_BE_REAL_CHECKED CACHE INTERNAL "LIBS_TO_BE_CHECKED")
