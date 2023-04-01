@@ -38,6 +38,17 @@ Here's another example, where `testhost.x86.exe` is recorded:
 Note: VsTest tasks require recording of the host process, that is, either `testhost.exe` (for x64) or `testhost.x86.exe` (for x32).
 
 
+When tttracer.exe senses the launch of a process, text similar to the one below appears in the pipeline log:
+
+```
+Microsoft (R) TTTracer 1.01.11
+Release: 1.11.11.0
+Copyright (C) Microsoft Corporation. All rights reserved.
+Launching '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\Extensions\TestPlatform\Extensions\..\testhost.x86.exe"  --port 49948 --endpoint 127.0.0.1:049948 --role client --parentprocessid 7032 --telemetryoptedin false'
+    Recording process (PID:9484) on trace file: C:\a\_work\1\b\tttracer\testhost.x8601.run
+```
+
+
 The pipeline will indicate that the templates are active by showing a list of tasks preceeded by [tttracer], like in the picture below:
 
 ![templates](./active_templates.jpg)
