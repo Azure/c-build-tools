@@ -1,0 +1,38 @@
+#Copyright (C) Microsoft Corporation. All rights reserved.
+
+# this file contains the yml template that downloads tttracer + starts a -onLaunch session with target process name.
+# it should be used with its pair (tttracer_stop.yml) that would upload the recorded trace.
+# This file contains a list of yml tasks
+# parameters:
+#   `tttracer_target` - the target process name that is to be recorded (default NUL and records nothing)
+#   `maxFileSize` - the parameter value for -maxFile parameter of tttracer.exe [in MB]
+# prerequisites:
+# - AzureCLI should be installed on the machine
+# - AAMsgStoreGateAA is the name of the service connection to the subscription
+# - $(Build.BinariesDirectory) is a variable pointing to an existing folder with write access
+# 
+
+parameters:
+- name: tttracer_target # process name to record
+  type: string # data type of the parameter; required
+  #https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file indicates that NUL is not a valid filename, so use this as "do not attach" tttracer to any process (which is the default)
+  default: NUL
+- name: maxFileSize #max file size
+  type: number
+  default: 10000 #maxFile "Maximum size of the trace file in MB." So 30000 is about ~30GB of file size
+
+steps:
+- task: AzureCLI@2
+  displayName: '[tttracer] download'
+  inputs:
+    azureSubscription: AAMsgStoreGateAA
+    scriptType: ps
+    scriptLocation: inlineScript
+    inlineScript: |
+      az storage blob download-batch --destination $(Build.BinariesDirectory) --source tttracer --account-name msgstoregate
+# tttracer command line options are here: https://www.osgwiki.com/wiki/TTTracer_Command_Line_Options
+- script: | 
+    mkdir $(Build.BinariesDirectory)\tttracer
+    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -maxFile ${{ parameters.maxFileSize }} -onlaunch ${{ parameters.tttracer_target }} -out $(Build.BinariesDirectory)\tttracer
+    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -status
+  displayName: '[tttracer] -onlaunch ${{ parameters.tttracer_target }}'
