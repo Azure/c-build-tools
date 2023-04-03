@@ -1,0 +1,44 @@
+#Copyright (C) Microsoft Corporation. All rights reserved.
+
+# this file contains the yml template that stop tttracer + uploads the recorded trace + the complete $(Build.BinariesDirectory) as a pipeline artifact and reboots the machine
+# note: a reboot is required because tttracer with "-onLaunch" is sticky until reboot therefore making the folder where tttracer resoides undeletable
+# note: $(Build.BinariesDirectory) is published because of symbols which are surely to be needed when time travel debugging the trace
+# it should be used with its pair (tttracer_start.yml) that starts and produces a trace
+# This file contains a list of yml tasks
+# parameters:
+#   `tttracer_target` - the target process name that is to be not recorded anymore (default NUL and stops nothing)
+# prerequisites:
+# - $(Build.BinariesDirectory) is a variable pointing to the folder containing `tttracer` folder with traces
+# 
+
+parameters:
+- name: tttracer_target # process name to stop recording
+  type: string
+  #https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file indicates that NUL is not a valid filename, so use this as "do not attach" tttracer to any process (which is the default)
+  default: ''
+
+steps:
+- script: | 
+    echo "These are the traces:"
+    dir $(Build.BinariesDirectory)\tttracer
+    echo "This is what is going to be published:"
+    dir $(Build.BinariesDirectory) /s
+    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -stop "all"
+    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -cleanup
+    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -status
+  displayName: '[tttracer] stop all'
+  condition: always()
+- task: PublishBuildArtifacts@1
+  displayName: '[tttracer] publish'
+  inputs:
+    pathtoPublish: '$(Build.BinariesDirectory)'
+    artifactName: 'tttracer_recordings'
+    parallel: true
+    #as of 2023 Apr 01 our pool Azure-MessagingStore-WinBuildPoolVS2022 has machines of size Standard D32s v5, so using a parallelCount of 32 here
+    parallelCount: 32
+  condition: always()
+#it seems that tttracer cannot be stopped from recording until next reboot (or its folder removed!), so let's schedule now that
+- script: | 
+     shutdown /r /t 0 /f
+  displayName: '[tttracer] FORCE REBOOT'
+  condition: always()
