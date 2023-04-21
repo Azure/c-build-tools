@@ -3,6 +3,8 @@
 
 # Note this is a separate file to include as early as possible in the root project when it is needed
 
+# This can go away when this cmake issue is resolved and we move to a version of cmake with that fix https://gitlab.kitware.com/cmake/cmake/-/issues/23513
+
 # So the SDK style projects we generate for C# .NET6 have a weird quirk in cmake (still present as of 3.26).
 # Cmake will generate the sln file such that ALL of these build as "Any CPU" and there is no way to avoid it
 # The symptom in Visual Studio is that the build solution will show many projects as "skipped" because we want to build x64
