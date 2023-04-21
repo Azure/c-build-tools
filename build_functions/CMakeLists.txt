@@ -84,7 +84,7 @@ macro(set_default_build_options)
 
     # System-specific compiler flags
     if(MSVC)
-        
+
         #use _CRT_SECURE_NO_WARNINGS by default
         add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
@@ -142,7 +142,7 @@ macro(set_default_build_options)
         set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX")
 
 
-        # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]        
+        # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf /sdl")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf /sdl")
     endif()
@@ -150,7 +150,7 @@ macro(set_default_build_options)
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FIvld.h")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /FIvld.h")
-        include_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include") 
+        include_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include")
         if (${ARCHITECTURE} STREQUAL "x86_64")
             link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win64")
         else()
@@ -165,6 +165,34 @@ macro(set_default_build_options)
 
     enable_testing()
 endmacro()
+
+# The following helper will enable C# .NET6 for projects
+# Assumes MSSharedLibSN1024.snk is available at the project root
+# Note: csharp_sdk_fix must be used in the project
+function(build_as_csharp_net6_project targetname)
+    set_target_properties(${targetname} PROPERTIES
+        DOTNET_SDK "Microsoft.NET.Sdk"
+        DOTNET_TARGET_FRAMEWORK "net6.0"
+        VS_GLOBAL_RuntimeIdentifier "win10-${CMAKE_VS_PLATFORM_NAME}"
+        VS_GLOBAL_AppendRuntimeIdentifierToOutputPath false
+        VS_GLOBAL_AppendTargetFrameworkToOutputPath false
+        VS_GLOBAL_PlatformTarget ${CMAKE_VS_PLATFORM_NAME}
+        VS_GLOBAL_Platforms ${CMAKE_VS_PLATFORM_NAME}
+        VS_GLOBAL_Configurations "Debug;Release;RelWithDebInfo;MinSizeRel"
+        VS_GLOBAL_AssemblyOriginatorKeyFile "${PROJECT_SOURCE_DIR}/MSSharedLibSN1024.snk"
+        VS_GLOBAL_SignAssembly true
+        VS_GLOBAL_DelaySign true
+        VS_GLOBAL_TreatWarningsAsErrors true
+        VS_GLOBAL_WarningLevel 4
+        VS_GLOBAL_GenerateAssemblyVersionAttribute false
+        VS_GLOBAL_GenerateAssemblyFileVersionAttribute false
+        VS_GLOBAL_GenerateAssemblyInformationalVersionAttribute false)
+    # Enable native debugging in the managed projects
+    set(PROFILE_NAME ${targetname})
+    configure_file(${build_c_tests_internal_dir}/launchSettings.json.in ${CMAKE_CURRENT_BINARY_DIR}/Properties/launchSettings.json @ONLY)
+    # As of cmake 3.24-3.26 (not sure exactly), this is required or Debug will be warning level 3 and Release will be warning level 1
+    target_compile_options(${targetname} PRIVATE /warn:4)
+endfunction()
 
 # variable to store list of libs that must be checked for reals
 set(LIBS_TO_BE_REAL_CHECKED CACHE INTERNAL "LIBS_TO_BE_CHECKED")
@@ -218,7 +246,7 @@ endfunction()
 # signature: install_library_includes(<theTarget> <includePrefix> [ <public_header>... ]])
 # Creates an install target excluding libs for library with a subdirectory and optional public header files.
 function(install_library_includes theTarget includePrefix)
-    
+
     if(ARGN)
         set_target_properties(${theTarget} PROPERTIES PUBLIC_HEADER "${ARGN}")
     endif()
@@ -245,7 +273,7 @@ endfunction()
 # signature: install_library_with_prefix(<theTarget> <includePrefix> [ <public_header>... ]])
 # Creates an install target for library with a subdirectory and optional public header files.
 function(install_library_with_prefix theTarget includePrefix)
-    
+
     if(ARGN)
         set_target_properties(${theTarget} PROPERTIES PUBLIC_HEADER "${ARGN}")
     endif()
