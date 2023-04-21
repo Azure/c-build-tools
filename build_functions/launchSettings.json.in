@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "@PROFILE_NAME@": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

@@ -84,7 +84,7 @@ macro(set_default_build_options)
 
     # System-specific compiler flags
     if(MSVC)
-        
+
         #use _CRT_SECURE_NO_WARNINGS by default
         add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
@@ -142,7 +142,7 @@ macro(set_default_build_options)
         set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX")
 
 
-        # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]        
+        # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf /sdl")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf /sdl")
     endif()
@@ -150,7 +150,7 @@ macro(set_default_build_options)
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FIvld.h")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /FIvld.h")
-        include_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include") 
+        include_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include")
         if (${ARCHITECTURE} STREQUAL "x86_64")
             link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win64")
         else()
@@ -164,6 +164,87 @@ macro(set_default_build_options)
     endif()
 
     enable_testing()
+endmacro()
+
+# The following helper will enable C# .NET6 for projects
+# Assumes MSSharedLibSN1024.snk is available at the project root
+function(build_as_csharp_net6_project targetname)
+    set_target_properties(${targetname} PROPERTIES
+        DOTNET_SDK "Microsoft.NET.Sdk"
+        DOTNET_TARGET_FRAMEWORK "net6.0"
+        VS_GLOBAL_RuntimeIdentifier "win10-${CMAKE_VS_PLATFORM_NAME}"
+        VS_GLOBAL_AppendRuntimeIdentifierToOutputPath false
+        VS_GLOBAL_AppendTargetFrameworkToOutputPath false
+        VS_GLOBAL_PlatformTarget ${CMAKE_VS_PLATFORM_NAME}
+        VS_GLOBAL_Platforms ${CMAKE_VS_PLATFORM_NAME}
+        VS_GLOBAL_Configurations "Debug;Release;RelWithDebInfo;MinSizeRel"
+        VS_GLOBAL_AssemblyOriginatorKeyFile "${PROJECT_SOURCE_DIR}/MSSharedLibSN1024.snk"
+        VS_GLOBAL_SignAssembly true
+        VS_GLOBAL_DelaySign true
+        VS_GLOBAL_TreatWarningsAsErrors true
+        VS_GLOBAL_WarningLevel 4
+        VS_GLOBAL_GenerateAssemblyVersionAttribute false
+        VS_GLOBAL_GenerateAssemblyFileVersionAttribute false
+        VS_GLOBAL_GenerateAssemblyInformationalVersionAttribute false)
+    # Enable native debugging in the managed projects
+    set(PROFILE_NAME ${targetname})
+    configure_file(${build_c_tests_internal_dir}/launchSettings.json.in ${CMAKE_CURRENT_BINARY_DIR}/Properties/launchSettings.json @ONLY)
+    # As of cmake 3.24-3.26 (not sure exactly), this is required or Debug will be warning level 3 and Release will be warning level 1
+    target_compile_options(${targetname} PRIVATE /warn:4)
+endfunction()
+
+# So the SDK style projects we generate for C# .NET6 have a weird quirk in cmake (still present as of 3.26).
+# Cmake will generate the sln file such that ALL of these build as "Any CPU" and there is no way to avoid it
+# The symptom in Visual Studio is that the build solution will show many projects as "skipped" because we want to build x64
+# As a horrible hack, we can modify the sln file after Cmake is done.
+# How? Well, SO to the rescue: https://stackoverflow.com/questions/7091447/run-command-after-generation-step-in-cmake
+# "all" we have to do is recursively call cmake itself recursively (relying on any options passed to be cached)
+# then we can have "post-generate" step commands, which we will use to hack up the .sln and replace "Any CPU" with "x64"
+# BUT we can't do this from a clean cmake directory, cmake needs to run normally at least once
+# This macro must be added near the top of any project using .NET6 projects (or any SDK style C#)
+# Users must generate the project normally and then enable FIX_ANY_CPU
+macro(enable_net6_sln_anycpu_fix)
+    option(FIX_ANY_CPU "Enable work-around to fix AnyCPU generated in sln, must run cmake once without this first" OFF)
+    option(RECURSIVE_GENERATE "Recursive call to cmake" OFF)
+    if(FIX_ANY_CPU AND NOT RECURSIVE_GENERATE)
+        message(NOTICE "ANY_CPU fix enabled, will patch sln file. Note that you must run cmake with FIX_ANY_CPU OFF at least once to populate the cache")
+        message(CHECK_START "Recursive generate")
+        # Propagate the log level to the recursive call if possible
+        set(current_log_level STATUS)
+        if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.25.0")
+            cmake_language(GET_MESSAGE_LOG_LEVEL current_log_level)
+        endif()
+        execute_process(COMMAND ${CMAKE_COMMAND}
+            -G "${CMAKE_GENERATOR}"
+            -T "${CMAKE_GENERATOR_TOOLSET}"
+            -A "${CMAKE_GENERATOR_PLATFORM}"
+            -DRECURSIVE_GENERATE:BOOL=ON
+            ${CMAKE_SOURCE_DIR}
+            --log-level=${current_log_level}
+            RESULT_VARIABLE recursive_result)
+        if (${recursive_result} EQUAL 0)
+            message(CHECK_PASS "done")
+        else()
+            message(CHECK_FAIL "failed!")
+            message(FATAL_ERROR "Recursive generate failed!")
+        endif()
+
+        # post-generate steps here
+        message(CHECK_START "Fixing the csproj mess of AnyCPU...")
+        execute_process(COMMAND
+            powershell -Command "(Get-Content ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.sln) -replace 'Any CPU', 'x64' | Out-File ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.sln"
+            RESULT_VARIABLE any_cpu_fix_result)
+        if (${any_cpu_fix_result} EQUAL 0)
+            message(CHECK_PASS "done")
+        else()
+            message(CHECK_FAIL "failed!")
+        endif()
+
+        # exit without doing anything else, since it already happened
+        return()
+    elseif(NOT FIX_ANY_CPU)
+        message(NOTICE "ANY_CPU fix disabled, sln will contain ANY_CPU entries and some projects will NOT build in Visual Studio. Recommend running cmake again with FIX_ANY_CPU ON")
+    endif()
 endmacro()
 
 # variable to store list of libs that must be checked for reals
@@ -218,7 +299,7 @@ endfunction()
 # signature: install_library_includes(<theTarget> <includePrefix> [ <public_header>... ]])
 # Creates an install target excluding libs for library with a subdirectory and optional public header files.
 function(install_library_includes theTarget includePrefix)
-    
+
     if(ARGN)
         set_target_properties(${theTarget} PROPERTIES PUBLIC_HEADER "${ARGN}")
     endif()
@@ -245,7 +326,7 @@ endfunction()
 # signature: install_library_with_prefix(<theTarget> <includePrefix> [ <public_header>... ]])
 # Creates an install target for library with a subdirectory and optional public header files.
 function(install_library_with_prefix theTarget includePrefix)
-    
+
     if(ARGN)
         set_target_properties(${theTarget} PROPERTIES PUBLIC_HEADER "${ARGN}")
     endif()
