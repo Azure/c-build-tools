@@ -10,8 +10,8 @@
 # The symptom in Visual Studio is that the build solution will show many projects as "skipped" because we want to build x64
 # As a horrible hack, we can modify the sln file after Cmake is done.
 # How? Well, SO to the rescue: https://stackoverflow.com/questions/7091447/run-command-after-generation-step-in-cmake
-# "all" we have to do is recursively call cmake itself recursively (relying on any options passed to be cached)
-# then we can have "post-generate" step commands, which we will use to hack up the .sln and replace "Any CPU" with "x64"
+# "all" we have to do is recursively call cmake itself (relying on any options passed to be cached)
+# then we can have "post-generate" step commands, which we will use to hack up the sln and replace "Any CPU" with "x64"
 # BUT we can't do this from a clean cmake directory, cmake needs to run normally at least once
 # This macro must be added near the top of any project using .NET6 projects (or any SDK style C#)
 # Users must generate the project normally and then enable FIX_ANY_CPU
