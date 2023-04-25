@@ -4,7 +4,7 @@ Sometimes it is **impossible** to get a local repro for a build failure in the g
 
 The solution is to (hopefully) record a trace of the failing test in the gate using tttracer and then downloading that trace (and the binaries) for further analysis locally.
 
-There are 2 templates provided: `tttracer_start.yml` and `tttracer_stop.yml`. They should be used in pairs.
+There are 2 templates provided: `tttracer_start.yml` and `tttracer_stop.yml`. They should be used in pairs. Copy the templates from c-build-tools\build\templates to your project's build\templates folder.
 
 Typical usage 
 1) insert `tttracer_start.yml` before the execution of the test
