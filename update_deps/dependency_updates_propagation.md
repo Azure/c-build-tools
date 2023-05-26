@@ -79,4 +79,3 @@ PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token
 4. Click `Create` at the bottom.
 
 5. Copy the generated token and save it.
-
