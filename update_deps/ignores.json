@@ -3,5 +3,6 @@
     "smhasher",
     "vcpkg",
     "mimalloc",
-    "jemalloc"
+    "jemalloc",
+    "Detours"
 ]
