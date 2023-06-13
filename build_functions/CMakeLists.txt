@@ -215,12 +215,27 @@ function(get_all_targets_except_deps _result _dir)
     if(NOT ${CMAKE_CURRENT_LIST_DIR} MATCHES "/deps/")
         get_property(_subdirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
         foreach(_subdir IN LISTS _subdirs)
-            get_all_targets(${_result} "${_subdir}")
+            get_all_targets_except_deps(${_result} "${_subdir}")
         endforeach()
 
         get_directory_property(_sub_targets DIRECTORY "${_dir}" BUILDSYSTEM_TARGETS)
         set(${_result} ${${_result}} ${_sub_targets} PARENT_SCOPE)
     endif()
+endfunction()
+
+function(init_libs_to_be_real_checked)
+    get_all_targets_except_deps(all_targets_to_check ${PROJECT_SOURCE_DIR})
+
+    foreach(lib ${all_targets_to_check})
+        get_target_property(lib_type ${lib} TYPE)
+        if(
+            (${lib_type} STREQUAL "STATIC_LIBRARY") AND # only check static libs
+            (NOT ${lib} MATCHES "_(ut|int|perf)_lib") # ignore test libs
+            )
+            # appending lib to LIBS_TO_BE_REAL_CHECKED
+            set(LIBS_TO_BE_REAL_CHECKED "${LIBS_TO_BE_REAL_CHECKED};${lib}" CACHE INTERNAL "LIBS_TO_BE_CHECKED")
+        endif()
+    endforeach()
 endfunction()
 
 # adds ${CMAKE_PROJECT_NAME}_reals_check as target to run reals check
@@ -234,18 +249,7 @@ function(add_reals_check_target)
         set(script_path)
         get_target_property(script_path reals_check SOURCE_DIR)
 
-        get_all_targets_except_deps(all_targets_to_check ${PROJECT_SOURCE_DIR})
-
-        foreach(lib ${all_targets_to_check})
-            get_target_property(lib_type ${lib} TYPE)
-            if(
-                (${lib_type} STREQUAL "STATIC_LIBRARY") AND # only check static libs
-                (NOT ${lib} MATCHES "_(ut|int|perf)_lib") # ignore test libs
-               )
-                # appending lib to LIBS_TO_BE_REAL_CHECKED
-                set(LIBS_TO_BE_REAL_CHECKED "${LIBS_TO_BE_REAL_CHECKED};${lib}" CACHE INTERNAL "LIBS_TO_BE_CHECKED")
-            endif()
-        endforeach()
+        init_libs_to_be_real_checked()
 
         get_target_files(lib_paths ${LIBS_TO_BE_REAL_CHECKED})
         add_custom_command(TARGET ${reals_check_target} POST_BUILD
