@@ -25,12 +25,10 @@ add_library(random_interface_lib INTERFACE ./dummy_source.c)
 
 set(expected_value ";reals_check_test_reals;reals_check_test")
 
-init_libs_to_be_real_checked()
+# adding reals check target for automatic checking
+add_reals_check_target()
 
 # Test to check that the correct libraries are selected for reals checking:
 if(NOT "${LIBS_TO_BE_REAL_CHECKED}" STREQUAL "${expected_value}")
     message(FATAL_ERROR "LIBS_TO_BE_REAL_CHECKED does not contain the correct value.\nExpected value: ${expected_value}\nActual value: ${LIBS_TO_BE_REAL_CHECKED}")
 endif()
-
-# adding reals check target for automatic checking
-add_reals_check_target()
