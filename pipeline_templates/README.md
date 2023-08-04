@@ -17,6 +17,10 @@ This folder contains pipeline yml templates for devops pipelines.
 - dump_drive_usage_on_failure.yml
   - For a given drive (default c), dump the largest directories/files recursively when they are at least a certain size (1GB by default) and down to a certain depth (6 by default).
   - Run only when the job failed.
+- tttracer_start.yml
+  - Starts tttracer for a given process to collect time-travel traces.
+- tttracer_stop.yml
+  - Stops tttraces for the process to stop collecting time-travel traces. Then publishes the trace and reboots the machine.
 
 ## How to Consume
 
