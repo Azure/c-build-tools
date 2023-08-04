@@ -9,7 +9,7 @@ parameters:
  - name: providers_file
    default: "providers.txt"
  - name: repo_root
-   default: $(Build.SourcesDirectory)/c-build-tools
+   default: $(Build.SourcesDirectory)/deps/c-build-tools
 
 steps:
   - task: PowerShell@2
