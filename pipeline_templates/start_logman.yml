@@ -8,6 +8,8 @@
 parameters:
  - name: providers_file
    default: "providers.txt"
+ - name: repo_name
+   default: c_build_tools
 
 steps:
   - task: PowerShell@2
@@ -21,5 +23,6 @@ steps:
     displayName: 'Start etl trace'
     inputs:
       targetType: filePath
+      workingDirectory: $(Agent.BuildDirectory)/s/${{ parameters.repo_name }}
       filePath: './scripts/start_trace.ps1 -ProviderFile ${{ parameters.providers_file }}'
       arguments: -TraceFile "$(Build.ArtifactStagingDirectory)\etl_logs\trace.etl"

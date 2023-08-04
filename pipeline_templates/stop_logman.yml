@@ -1,10 +1,15 @@
 # stops the collection of events
 
+parameters:
+ - name: repo_name
+   default: c_build_tools
+
 steps:
   - task: PowerShell@2
     displayName: 'Stop collection of events'
     inputs:
       targetType: filePath
+      workingDirectory: $(Agent.BuildDirectory)/s/${{ parameters.repo_name }}
       filePath: './scripts/stop_trace.ps1'
     continueOnError: true
     condition: always()
