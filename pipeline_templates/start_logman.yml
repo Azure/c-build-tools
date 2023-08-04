@@ -1,0 +1,25 @@
+# this template file contains the tasks needed to setup a trace session that collects events from our nice EBS provider
+# stop any previous trace session
+# delete the trace session
+# create the new trace session
+# start the trace session
+# Note that the providers.txt includes DAD29F36-0A48-4DEF-9D50-8EF9036B92B4 by default, but another providers file may be specified instead
+
+parameters:
+ - name: providers_file
+   default: "providers.txt"
+
+steps:
+  - task: PowerShell@2
+    displayName: 'make (Build.ArtifactStagingDirectory)/etl_logs folder'
+    inputs:
+      targetType: inline
+      workingDirectory: $(Build.ArtifactStagingDirectory)
+      script: 'New-Item -Name "etl_logs" -ItemType "directory" -Force'
+
+  - task: PowerShell@2
+    displayName: 'Start etl trace'
+    inputs:
+      targetType: filePath
+      filePath: './scripts/start_trace.ps1 -ProviderFile ${{ parameters.providers_file }}'
+      arguments: -TraceFile "$(Build.ArtifactStagingDirectory)\etl_logs\trace.etl"
