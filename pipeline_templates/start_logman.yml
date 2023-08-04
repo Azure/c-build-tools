@@ -20,26 +20,9 @@ steps:
       script: 'New-Item -Name "etl_logs" -ItemType "directory" -Force'
 
   - task: PowerShell@2
-    displayName: 'DEBUG REMOVE ME'
-    inputs:
-      targetType: inline
-      informationPreference: continue
-      errorActionPreference: continue
-      verbosePreference: continue
-      ignoreLASTEXITCODE: false
-      script: |
-        Write-Output "Test..."
-        dir ${{ parameters.repo_root }}
-        Write-Output "Test..."
-        dir ${{ parameters.repo_root }}/pipeline_templates
-        Write-Output "Test..."
-        dir ${{ parameters.repo_root }}/pipeline_templates/scripts
-        Write-Output "Done"
-
-  - task: PowerShell@2
     displayName: 'Start etl trace'
     inputs:
       targetType: filePath
       workingDirectory: ${{ parameters.repo_root }}/pipeline_templates/scripts
-      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/start_trace.ps1 -ProviderFile ${{ parameters.providers_file }}'
-      arguments: -TraceFile "$(Build.ArtifactStagingDirectory)\etl_logs\trace.etl"
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/start_trace.ps1'
+      arguments:  -ProviderFile ${{ parameters.providers_file }} -TraceFile "$(Build.ArtifactStagingDirectory)\etl_logs\trace.etl"
