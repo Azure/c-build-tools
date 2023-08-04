@@ -20,7 +20,7 @@
 #>
 
 Param(
-    $TraceFile = ".\x.etl"
+    $TraceFile = ".\x.etl",
     $ProviderFile = "providers.txt"
 )
 
