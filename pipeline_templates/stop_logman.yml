@@ -10,7 +10,7 @@ steps:
     inputs:
       targetType: filePath
       workingDirectory: ${{ parameters.repo_root }}
-      filePath: './scripts/stop_trace.ps1'
+      filePath: '${{ parameters.repo_root }}/scripts/stop_trace.ps1'
     continueOnError: true
     condition: always()
 

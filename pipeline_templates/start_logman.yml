@@ -24,5 +24,5 @@ steps:
     inputs:
       targetType: filePath
       workingDirectory: ${{ parameters.repo_root }}
-      filePath: './scripts/start_trace.ps1 -ProviderFile ${{ parameters.providers_file }}'
+      filePath: '${{ parameters.repo_root }}/scripts/start_trace.ps1 -ProviderFile ${{ parameters.providers_file }}'
       arguments: -TraceFile "$(Build.ArtifactStagingDirectory)\etl_logs\trace.etl"
