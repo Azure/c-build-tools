@@ -54,10 +54,11 @@ In case a template requires external files or scripts, the consuming repo has tw
 1. Use a submodule of c-build-tools and specify that path
 2. Checkout the c-build-tools repo in the yaml and specify the path as `$(Build.SourcesDirectory)/repo_name`
 
-The second step requires the following snippet near where the `checkout: self` line is:
+The second option requires the following snippet near where the `checkout: self` line is:
 
 ```yaml
   steps:
   - checkout: c_build_tools
 ```
 
+Note that in this case the variable `$(Build.SourcesDirectory)` will not point to the "self" repository code anymore. See [Predefined Variables](https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables?view=azure-devops&tabs=yaml) for notes.

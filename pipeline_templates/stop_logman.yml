@@ -9,8 +9,8 @@ steps:
     displayName: 'Stop collection of events'
     inputs:
       targetType: filePath
-      workingDirectory: ${{ parameters.repo_root }}
-      filePath: '${{ parameters.repo_root }}/scripts/stop_trace.ps1'
+      workingDirectory: ${{ parameters.repo_root }}/pipeline_templates/scripts
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/stop_trace.ps1'
     continueOnError: true
     condition: always()
 
