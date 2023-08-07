@@ -4,7 +4,7 @@ Sometimes it is **impossible** to get a local repro for a build failure in the g
 
 The solution is to (hopefully) record a trace of the failing test in the gate using tttracer and then downloading that trace (and the binaries) for further analysis locally.
 
-There are 2 templates provided: `tttracer_start.yml` and `tttracer_stop.yml`. They should be used in pairs. Copy the templates from c-build-tools\build\templates to your project's build\templates folder.
+There are 2 templates provided: `tttracer_start.yml` and `tttracer_stop.yml`. They should be used in pairs. See the [README](../README.md) for notes on consuming these templates in your pipeline.
 
 Typical usage 
 1) insert `tttracer_start.yml` before the execution of the test
@@ -15,7 +15,7 @@ Note: `tttracer_stop.yml` will reboot the build machine.
 Here's an example:
 
 ```yml
-  - template: templates/tttracer_start.yml
+  - template: pipeline_templates/tttracer_start.yml@c_build_tools
     parameters: 
       tttracer_target: cert_alt_name_entry_helper_ut_exe_zrpc.exe
 
@@ -26,7 +26,7 @@ Here's an example:
       arguments: '-C "Debug" -V --output-on-failure'
       workingFolder: 'build_x86'
 
-  - template: templates/tttracer_stop.yml
+  - template: pipeline_templates/tttracer_stop.yml@c_build_tools
 ```
 
 In the above example we are interested in getting a trace for the test `cert_alt_name_entry_helper_ut_exe_zrpc.exe process`.
