@@ -72,6 +72,12 @@
           {
             "name": "requestReviewer",
             "parameters": {
+              "reviewer": "avranju"
+            }
+          },
+          {
+            "name": "requestReviewer",
+            "parameters": {
               "reviewer": "mattdurak"
             }
           },
