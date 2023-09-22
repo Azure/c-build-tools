@@ -112,8 +112,8 @@ macro(set_default_build_options)
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
     elseif(UNIX) #LINUX OR APPLE
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -g")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror -g")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -Wno-unused-function -Wno-missing-braces -g -fPIC")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror -Wall -Wno-unused-function -Wno-missing-braces -g -fPIC")
     endif()
 
     if(${run_valgrind} OR ${run_helgrind} OR ${run_drd})
@@ -197,20 +197,6 @@ endfunction()
 # variable to store list of libs that must be checked for reals
 set(LIBS_TO_BE_REAL_CHECKED CACHE INTERNAL "LIBS_TO_BE_CHECKED")
 
-# overloading the add_library function to store name of library if it meets criteria
-# overloading is not officially supported, solution was found here: https://stackoverflow.com/a/55723415/10144036
-function (add_library())
-    _add_library(${ARGV})
-    get_target_property(lib_type ${ARGV0} TYPE)
-    if( (NOT ${CMAKE_CURRENT_LIST_DIR} MATCHES "/deps/") AND # ignore dependency libs
-        (${lib_type} STREQUAL "STATIC_LIBRARY") AND # only check static libs
-        (NOT ${ARGV0} MATCHES "_(ut|int|perf)_lib") # ignore test libs
-       )
-        # appending lib to LIBS_TO_BE_REAL_CHECKED
-        set(LIBS_TO_BE_REAL_CHECKED "${LIBS_TO_BE_REAL_CHECKED};${ARGV0}" CACHE INTERNAL "LIBS_TO_BE_CHECKED")
-    endif()
-endfunction()
-
 # signature: get_target_files(var [list of targets])
 # returns a list of generator expressions for paths to targets
 function (get_target_files)
@@ -225,6 +211,33 @@ function (get_target_files)
     endforeach()
 endfunction()
 
+function(get_all_targets_except_deps _result _dir)
+    if(NOT ${CMAKE_CURRENT_LIST_DIR} MATCHES "/deps/")
+        get_property(_subdirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
+        foreach(_subdir IN LISTS _subdirs)
+            get_all_targets_except_deps(${_result} "${_subdir}")
+        endforeach()
+
+        get_directory_property(_sub_targets DIRECTORY "${_dir}" BUILDSYSTEM_TARGETS)
+        set(${_result} ${${_result}} ${_sub_targets} PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(init_libs_to_be_real_checked)
+    get_all_targets_except_deps(all_targets_to_check ${PROJECT_SOURCE_DIR})
+
+    foreach(lib ${all_targets_to_check})
+        get_target_property(lib_type ${lib} TYPE)
+        if(
+            (${lib_type} STREQUAL "STATIC_LIBRARY") AND # only check static libs
+            (NOT ${lib} MATCHES "_(ut|int|perf)_lib") # ignore test libs
+            )
+            # appending lib to LIBS_TO_BE_REAL_CHECKED
+            set(LIBS_TO_BE_REAL_CHECKED "${LIBS_TO_BE_REAL_CHECKED};${lib}" CACHE INTERNAL "LIBS_TO_BE_CHECKED")
+        endif()
+    endforeach()
+endfunction()
+
 # adds ${CMAKE_PROJECT_NAME}_reals_check as target to run reals check
 # signature: add_reals_check_target()
 function(add_reals_check_target)
@@ -235,6 +248,9 @@ function(add_reals_check_target)
         add_custom_target(${reals_check_target} ALL)
         set(script_path)
         get_target_property(script_path reals_check SOURCE_DIR)
+
+        init_libs_to_be_real_checked()
+
         get_target_files(lib_paths ${LIBS_TO_BE_REAL_CHECKED})
         add_custom_command(TARGET ${reals_check_target} POST_BUILD
             COMMAND

@@ -1,0 +1,32 @@
+# This template file outputs how much space is used on the drive(s) in case of failure
+# It can be used to determine why the pipeline failed with out of disk space
+# Output is sent to pipeline output as a sorted list of directory sizes for all directories larger than requested size (default 1GB)
+# Checks folders down to a requested depth (default 6)
+
+parameters:
+  - name: depth
+    default: 6
+  - name: min_size_MB
+    default: 1024
+  - name: drive_letter
+    default: "c"
+
+steps:
+  - task: PowerShell@2
+    displayName: 'List large directories when pipeline failed'
+    inputs:
+      targetType: inline
+      informationPreference: continue
+      errorActionPreference: continue
+      verbosePreference: continue
+      ignoreLASTEXITCODE: false
+      script: |
+        Write-Output "Checking ${{ parameters.drive_letter }} drive..."
+        # Get the size of all directories recursively down to the "depth" level
+        # Extract the size of the directory (in MB), its path, and the depth
+        # Filter out directories to only show greater than "min_size_MB"
+        # Sort by depth ascending (so root folders show first) then by size descending (show largest folders)
+        # Table formatting such that the path is wrapped to a new line if needed
+        du -nobanner -accepteula -c -l ${{ parameters.depth }} ${{ parameters.drive_letter }}:\ | ConvertFrom-Csv | select @{Name="DirectorySize";expression={$_.DirectorySize / 1MB }},Path,@{Name="Depth";expression={$_.Path.Split('\').count - 1}} | Where-Object { $_.DirectorySize -gt ${{ parameters.min_size_MB }} } | Sort-Object -Property @{Expression="Depth"; Descending=$false},@{Expression="DirectorySize"; Descending=$true} | Format-Table -Wrap
+        Write-Output "Done"
+    condition: failed()

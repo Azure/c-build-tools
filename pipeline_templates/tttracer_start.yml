@@ -6,11 +6,13 @@
 # parameters:
 #   `tttracer_target` - the target process name that is to be recorded (default NUL and records nothing)
 #   `maxFileSize` - the parameter value for -maxFile parameter of tttracer.exe [in MB]
+#   `azure_subscription` - is the name of the service connection to the subscription
+#   `blob_account` - storage account with tttracer
 # prerequisites:
 # - AzureCLI should be installed on the machine
-# - AAMsgStoreGateAA is the name of the service connection to the subscription
+# - The service connection to the subscription is setup
 # - $(Build.BinariesDirectory) is a variable pointing to an existing folder with write access
-# 
+# - Blob account has tttracer tool for download
 
 parameters:
 - name: tttracer_target # process name to record
@@ -20,18 +22,24 @@ parameters:
 - name: maxFileSize #max file size
   type: number
   default: 10000 #maxFile "Maximum size of the trace file in MB." So 30000 is about ~30GB of file size
+- name: azure_subscription
+  type: string
+  default: AAMsgStoreGateAA
+- name: blob_account
+  type: string
+  default: msgstoregate
 
 steps:
 - task: AzureCLI@2
   displayName: '[tttracer] download'
   inputs:
-    azureSubscription: AAMsgStoreGateAA
+    azureSubscription: ${{ parameters.azure_subscription }}
     scriptType: ps
     scriptLocation: inlineScript
     inlineScript: |
-      az storage blob download-batch --destination $(Build.BinariesDirectory) --source tttracer --account-name msgstoregate
+      az storage blob download-batch --destination $(Build.BinariesDirectory) --source tttracer --account-name ${{ parameters.blob_account }}
 # tttracer command line options are here: https://www.osgwiki.com/wiki/TTTracer_Command_Line_Options
-- script: | 
+- script: |
     mkdir $(Build.BinariesDirectory)\tttracer
     $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -maxFile ${{ parameters.maxFileSize }} -onlaunch ${{ parameters.tttracer_target }} -out $(Build.BinariesDirectory)\tttracer
     $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -status
