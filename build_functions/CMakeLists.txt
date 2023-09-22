@@ -112,8 +112,8 @@ macro(set_default_build_options)
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
     elseif(UNIX) #LINUX OR APPLE
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -Wno-unused-function -Wno-missing-braces -g -fPIC")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror -Wall -Wno-unused-function -Wno-missing-braces -g -fPIC")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -Wno-unused-function -Wno-missing-braces -Wno-strict-aliasing -Wno-array-bounds -g -fPIC")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror -Wall -Wno-unused-function -Wno-missing-braces -Wno-strict-aliasing -Wno-array-bounds -g -fPIC")
     endif()
 
     if(${run_valgrind} OR ${run_helgrind} OR ${run_drd})
