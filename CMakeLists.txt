@@ -51,7 +51,7 @@ endif()
 
 # Skip for Ninja which can't build the C# project
 if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
-    if(${build_traceability_tool} and ${build_csharp_projects})
+    if((${build_traceability_tool}) and (${build_csharp_projects}))
         add_subdirectory(traceabilitytool)
     endif()
     add_subdirectory(reals_check)
