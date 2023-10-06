@@ -33,6 +33,7 @@ option(build_traceability_tool "build traceability tool (default is ON)" ON)
 option(run_reals_check "run reals check tool (default is OFF)" OFF)
 option(use_vld "use VLD for leak detection (default is OFF)" OFF)
 option(fsanitize_address "enable /fsanitize=address compiler switch (default is OFF)" OFF) # see https://docs.microsoft.com/en-us/cpp/build/reference/fsanitize
+option(build_csharp_projects "Build csharp projects? (default is ON)" ON)
 
 add_subdirectory(build_functions)
 
@@ -50,7 +51,7 @@ endif()
 
 # Skip for Ninja which can't build the C# project
 if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
-    if(${build_traceability_tool})
+    if(${build_traceability_tool} and ${build_csharp_projects})
         add_subdirectory(traceabilitytool)
     endif()
     add_subdirectory(reals_check)
