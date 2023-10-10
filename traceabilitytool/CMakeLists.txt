@@ -29,6 +29,10 @@ set_property(TARGET traceabilitytool
     PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.7.2"
 )
 
+set_property(TARGET traceabilitytool
+    PROPERTY VS_GLOBAL_CompilerGeneratedFilesOutputPath Generated
+)
+
 set_property(TARGET traceabilitytool PROPERTY VS_DOTNET_REFERENCES
     "Microsoft.CSharp"
     "System"
