@@ -104,9 +104,9 @@ jobs:
       workingFolder: 'build_x64'
 
 - job: linuxubuntu
-  displayName: 'Build Linux Ubuntu 16.04'
+  displayName: 'Build Linux Ubuntu 22.04'
   pool:
-    name: Azure-MessagingStore-LinuxBuildMachinePool
+    name: Azure-MsgStore-Linux2204BuildMachinePool
     demands:
     - linux
   steps:
