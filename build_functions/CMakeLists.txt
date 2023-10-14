@@ -166,13 +166,10 @@ macro(set_default_build_options)
     enable_testing()
 endmacro()
 
-# The following helper will enable C# .NET6 for projects
-# Assumes MSSharedLibSN1024.snk is available at the project root
-# Note: csharp_sdk_fix must be used in the project
-function(build_as_csharp_net6_project targetname)
+function(build_as_csharp_net6_project_with_framework targetname framework)
     set_target_properties(${targetname} PROPERTIES
         DOTNET_SDK "Microsoft.NET.Sdk"
-        DOTNET_TARGET_FRAMEWORK "net6.0"
+        DOTNET_TARGET_FRAMEWORK ${framework}
         VS_GLOBAL_RuntimeIdentifier "win10-${CMAKE_VS_PLATFORM_NAME}"
         VS_GLOBAL_AppendRuntimeIdentifierToOutputPath false
         VS_GLOBAL_AppendTargetFrameworkToOutputPath false
@@ -192,6 +189,20 @@ function(build_as_csharp_net6_project targetname)
     configure_file(${build_c_tests_internal_dir}/launchSettings.json.in ${CMAKE_CURRENT_BINARY_DIR}/Properties/launchSettings.json @ONLY)
     # As of cmake 3.24-3.26 (not sure exactly), this is required or Debug will be warning level 3 and Release will be warning level 1
     target_compile_options(${targetname} PRIVATE /warn:4)
+endfunction()
+
+# The following helper will enable C# .NET6 for projects
+# Assumes MSSharedLibSN1024.snk is available at the project root
+# Note: csharp_sdk_fix must be used in the project
+function(build_as_csharp_net6_project targetname)
+    build_as_csharp_net6_project_with_framework(${targetname} "net6.0")
+endfunction()
+
+# The following helper will enable C# .NET6 for Windows only projects
+# Assumes MSSharedLibSN1024.snk is available at the project root
+# Note: csharp_sdk_fix must be used in the project
+function(build_as_csharp_net6_windows_project targetname)
+    build_as_csharp_net6_project_with_framework(${targetname} "net6.0-windows")
 endfunction()
 
 # variable to store list of libs that must be checked for reals
