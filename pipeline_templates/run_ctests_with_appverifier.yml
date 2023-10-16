@@ -1,0 +1,47 @@
+# this template file will run tests under ctest with appverifier enabled
+# it will disable app verifier after running
+# If the list of tests from ctest is filtered, pass the filter arguments as ctest_additional_args so appverifier is enabled for the correct binaries
+# The steps in the steps parameter will all be run after enabling app verifier
+
+parameters:
+ - name: repo_root
+   default: $(Build.SourcesDirectory)/deps/c-build-tools
+ - name: ctest_tests_bin_directory
+ - name: ctest_additional_args
+   default: ""
+ - name: app_verifier_enable
+   default: "exceptions handles heaps leak memory threadpool tls"
+ - name: app_verifier_additional_properties
+   default: ""
+ - name: 'steps'
+   type: stepList
+   default: [] 
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Enable AppVerifier'
+    inputs:
+      targetType: 'filePath'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/enable_appverifier_ctest_tests.ps1'
+      arguments: '-on -ctestArgs ${{ parameters.ctest_additional_args }} -appVerifierEnable `"${{ parameters.app_verifier_enable }}`" -appVerifierAdditionalProperties `"${{ parameters.app_verifier_additional_properties }}`"'
+      workingDirectory: ${{ parameters.ctest_tests_bin_directory }}
+
+  # see https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops#iterative-insertion
+  - ${{ each step in parameters.steps }}: # Each step
+    ${{ if ne(step.key, 'displayName') }}:
+      ${{ step.key }}: ${{ step.value }}
+    displayName: '${{ step.displayName }} [appverifier enabled]'
+
+  - task: CmdLine@1
+    displayName: 'Run ctest [appverifier enabled]'
+    inputs:
+      filename: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe"'
+      arguments: '-C "${{ parameters.test_configuration }}" -V --output-on-failure --no-tests=error -j $(NUMBER_OF_PROCESSORS)'
+      workingFolder: ${{ parameters.ctest_tests_bin_directory }}
+
+  - task: PowerShell@2
+    displayName: 'Disable AppVerifier'
+    inputs:
+      targetType: 'filePath'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/enable_appverifier_ctest_tests.ps1'
+    condition: always()
