@@ -13,7 +13,7 @@ parameters:
    default: "exceptions handles heaps leak memory threadpool tls"
  - name: app_verifier_additional_properties
    default: ""
- - name: 'steps'
+ - name: test_steps
    type: stepList
    default: [] 
 
@@ -27,7 +27,7 @@ steps:
       workingDirectory: ${{ parameters.ctest_tests_bin_directory }}
 
   # see https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops#iterative-insertion
-  - ${{ each step in parameters.steps }}: # Each step
+  - ${{ each step in parameters.test_steps }}: # Each step
     ${{ if ne(step.key, 'displayName') }}:
       ${{ step.key }}: ${{ step.value }}
     displayName: '${{ step.displayName }} [appverifier enabled]'
