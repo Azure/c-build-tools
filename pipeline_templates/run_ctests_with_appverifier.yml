@@ -28,8 +28,9 @@ steps:
 
   # see https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops#iterative-insertion
   - ${{ each step in parameters.test_steps }}: # Each step
-    - ${{ if ne(step.key, 'displayName') }}:
-        ${{ step.key }}: ${{ step.value }}
+    - ${{ each pair in step }}:
+      - ${{ if ne(pair.key, 'displayName') }}:
+        ${{ pair.key }}: ${{ pair.value }}
       displayName: '${{ step.displayName }} [appverifier enabled]'
 
   - task: CmdLine@1
