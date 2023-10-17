@@ -27,18 +27,12 @@ steps:
       workingDirectory: ${{ parameters.ctest_tests_bin_directory }}
 
   # see https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops#iterative-insertion
+  # Also, the magic indenting syntax help from: https://stackoverflow.com/questions/73392651/azure-devops-how-to-add-a-parameter-to-a-step-in-a-steplist
   - ${{ each step in parameters.test_steps }}: # Each step
     - ${{ each pair in step }}:
         ${{ if ne(pair.key, 'displayName') }}:
           ${{ pair.key }}: ${{ pair.value }}
       displayName: '${{ step.displayName }} [appverifier enabled]'
-
-  - task: CmdLine@1
-    displayName: 'Run ctest [appverifier enabled]'
-    inputs:
-      filename: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe"'
-      arguments: '-C "${{ parameters.test_configuration }}" -V --output-on-failure --no-tests=error -j $(NUMBER_OF_PROCESSORS)'
-      workingFolder: ${{ parameters.ctest_tests_bin_directory }}
 
   - task: PowerShell@2
     displayName: 'Disable AppVerifier'
