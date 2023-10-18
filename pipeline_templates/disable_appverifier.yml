@@ -10,5 +10,5 @@ steps:
     displayName: 'Disable AppVerifier'
     inputs:
       targetType: 'filePath'
-      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/enable_appverifier_ctest_tests.ps1'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
     condition: always()

@@ -81,13 +81,14 @@ This template does 3 things:
 2. Run any steps in the specified steps list (name will say "[appverifier enabled]")
 3. Disable Application Verifier for everything
 
-Example running all tests:
+Example running all tests (where the test binaries are named test_name_exe_ebs.exe):
 
 ```yaml
   steps:
   - template : pipeline_templates/run_ctests_with_appverifier.yml@c_build_tools
     parameters:
       repo_root: $(Build.SourcesDirectory)/deps/c-build-tools
+      binary_name_suffix: "_exe_ebs.exe"
       ctest_tests_bin_directory: $(Build.BinariesDirectory)\c
       steps:
        - task: CmdLine@1
@@ -98,7 +99,7 @@ Example running all tests:
            workingFolder: $(Build.BinariesDirectory)\c
 ```
 
-Example running Cuzz tests on my_test_1:
+Example running Cuzz tests on my_test_1.exe:
 
 See [Cuzz](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/application-verifier-tests-within-application-verifier#cuzz)
 
@@ -108,6 +109,7 @@ See [Cuzz](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/ap
     parameters:
       repo_root: $(Build.SourcesDirectory)/deps/c-build-tools
       ctest_additional_args: '-R my_test_1'
+      binary_name_suffix: ".exe"
       app_verifier_enable: 'cuzz'
       appVerifierAdditionalProperties: 'FuzzingLevel=4 RandomSeed=0'
       ctest_tests_bin_directory: $(Build.BinariesDirectory)\c

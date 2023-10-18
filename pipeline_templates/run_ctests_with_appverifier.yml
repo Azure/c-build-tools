@@ -7,6 +7,7 @@ parameters:
  - name: repo_root
    default: $(Build.SourcesDirectory)/deps/c-build-tools
  - name: ctest_tests_bin_directory
+ - name: binary_name_suffix 
  - name: ctest_additional_args
    default: ""
  - name: app_verifier_enable
@@ -22,7 +23,7 @@ steps:
     displayName: 'Enable AppVerifier'
     inputs:
       targetType: 'filePath'
-      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/enable_appverifier_ctest_tests.ps1'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
       arguments: '-on -ctestArgs "${{ parameters.ctest_additional_args }}" -appVerifierEnable "${{ parameters.app_verifier_enable }}" -appVerifierAdditionalProperties "${{ parameters.app_verifier_additional_properties }}"'
       workingDirectory: ${{ parameters.ctest_tests_bin_directory }}
 
@@ -38,5 +39,5 @@ steps:
     displayName: 'Disable AppVerifier'
     inputs:
       targetType: 'filePath'
-      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/enable_appverifier_ctest_tests.ps1'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
     condition: always()

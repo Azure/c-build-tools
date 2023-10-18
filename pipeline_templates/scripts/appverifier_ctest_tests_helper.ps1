@@ -21,21 +21,29 @@
   .PARAMETER ctestArgs
   Arguments to pass to ctest. By default ctest is run with "-N" which will just list all tests. This option may be used to filter the tests
 
+  .PARAMETER binaryNameSuffix
+  Suffix for binary names of tests. E.g. if ctest returns some test names like foo, bar, and the binaries are foo_x.exe and bar_x.exe then this should be "_x.exe"
+
   .INPUTS
-  None. You cannot pipe objects to restore_data.ps1.
+  None. You cannot pipe objects to appverifier_ctest_tests_helper.ps1.
 
   .OUTPUTS
-  None. restore_data.ps1 does not generate any output.
+  None. appverifier_ctest_tests_helper.ps1 does not generate any output.
 
   .EXAMPLE
-  PS> .\recover_blocks.ps1
+  PS> .\appverifier_ctest_tests_helper.ps1
+  By default, disables app verifier for all processes
+
+  PS> .\appverifier_ctest_tests_helper.ps1 -on
+  Enables app verifier for all test binaries found in ctest
 #>
 
 param(
     [Parameter()][switch]$on,
     [Parameter()][string]$appVerifierEnable = "exceptions handles heaps leak memory threadpool tls",
     [Parameter()][string]$appVerifierAdditionalProperties = "",
-    [Parameter()][string]$ctestArgs = ""
+    [Parameter()][string]$ctestArgs = "",
+    [Parameter()][string]$binaryNameSuffix
 )
 
 if ($on)
@@ -50,7 +58,7 @@ if ($on)
         if ($t -match ':' -and $t -match '#')
         {
             $testName = ($t -split ":")[1].Trim()
-            $exeName = "$($testName)_exe_ebs.exe"
+            $exeName = "$($testName)$($binaryNameSuffix)"
             if ($on)
             {
                 Write-Output "Enabling appverifier for $exeName"
