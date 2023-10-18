@@ -23,7 +23,7 @@ steps:
     inputs:
       targetType: 'filePath'
       filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/enable_appverifier_ctest_tests.ps1'
-      arguments: '-on -ctestArgs ${{ parameters.ctest_additional_args }} -appVerifierEnable `"${{ parameters.app_verifier_enable }}`" -appVerifierAdditionalProperties `"${{ parameters.app_verifier_additional_properties }}`"'
+      arguments: '-on -ctestArgs `"${{ parameters.ctest_additional_args }}`" -appVerifierEnable `"${{ parameters.app_verifier_enable }}`" -appVerifierAdditionalProperties `"${{ parameters.app_verifier_additional_properties }}`"'
       workingDirectory: ${{ parameters.ctest_tests_bin_directory }}
 
   # see https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops#iterative-insertion

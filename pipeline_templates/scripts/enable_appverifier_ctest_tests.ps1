@@ -35,7 +35,7 @@ param(
     [Parameter()][switch]$on,
     [Parameter()][string]$appVerifierEnable = "exceptions handles heaps leak memory threadpool tls",
     [Parameter()][string]$appVerifierAdditionalProperties = "",
-    [Parameter()][string]$ctestArgs = "",
+    [Parameter()][string]$ctestArgs = ""
 )
 
 if ($on)
