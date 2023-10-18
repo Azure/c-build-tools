@@ -1,0 +1,43 @@
+# this template file will run tests under ctest with appverifier enabled
+# it will disable app verifier after running
+# If the list of tests from ctest is filtered, pass the filter arguments as ctest_additional_args so appverifier is enabled for the correct binaries
+# The steps in the steps parameter will all be run after enabling app verifier
+
+parameters:
+ - name: repo_root
+   default: $(Build.SourcesDirectory)/deps/c-build-tools
+ - name: ctest_tests_bin_directory
+ - name: binary_name_suffix 
+ - name: ctest_additional_args
+   default: ""
+ - name: app_verifier_enable
+   default: "exceptions handles heaps leak memory threadpool tls"
+ - name: app_verifier_additional_properties
+   default: ""
+ - name: test_steps
+   type: stepList
+   default: [] 
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Enable AppVerifier'
+    inputs:
+      targetType: 'filePath'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
+      arguments: '-on -ctestArgs "${{ parameters.ctest_additional_args }}" -appVerifierEnable "${{ parameters.app_verifier_enable }}" -appVerifierAdditionalProperties "${{ parameters.app_verifier_additional_properties }}"'
+      workingDirectory: ${{ parameters.ctest_tests_bin_directory }}
+
+  # see https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops#iterative-insertion
+  # Also, the magic indenting syntax help from: https://stackoverflow.com/questions/73392651/azure-devops-how-to-add-a-parameter-to-a-step-in-a-steplist
+  - ${{ each step in parameters.test_steps }}: # Each step
+    - ${{ each pair in step }}:
+        ${{ if ne(pair.key, 'displayName') }}:
+          ${{ pair.key }}: ${{ pair.value }}
+      displayName: '${{ step.displayName }} [appverifier enabled]'
+
+  - task: PowerShell@2
+    displayName: 'Disable AppVerifier'
+    inputs:
+      targetType: 'filePath'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
+    condition: always()
