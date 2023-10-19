@@ -1,0 +1,14 @@
+# Convenience helper to disable application verifier for all processes
+# May be useful as a cleanup task in case the application verifier state leaks from other canceled jobs
+
+parameters:
+ - name: repo_root
+   default: $(Build.SourcesDirectory)/deps/c-build-tools
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Disable AppVerifier'
+    inputs:
+      targetType: 'filePath'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
+    condition: always()

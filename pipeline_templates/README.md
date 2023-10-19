@@ -21,6 +21,10 @@ This folder contains pipeline yml templates for devops pipelines.
   - Starts tttracer for a given process to collect time-travel traces.
 - tttracer_stop.yml
   - Stops tttraces for the process to stop collecting time-travel traces. Then publishes the trace and reboots the machine.
+- run_ctests_with_appverifier.yml
+  - Runs tests under ctest with app verifier enabled
+- disable_appverifier.yml
+  - Only the cleanup portion of run_ctests_with_appverifier.yml, which may be used for a cleanup step during setup
 
 ## How to Consume
 
@@ -65,4 +69,55 @@ The second option requires the following snippet near where the `checkout: self`
   - checkout: c_build_tools
 ```
 
-Note that in this case the variable `$(Build.SourcesDirectory)` will not point to the "self" repository code anymore. See [Predefined Variables](https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables?view=azure-devops&tabs=yaml) for notes.
+Note that in this case the variable `$(Build.SourcesDirectory)` will not point to the "self" repository code anymore so this option may not be ideal.
+See [Predefined Variables](https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables?view=azure-devops&tabs=yaml) for notes.
+
+## Specific Template Notes
+
+### run_ctests_with_appverifier.yml
+
+This template does 3 things:
+1. Enable Application Verifier for all tests found by running `ctest -N`
+2. Run any steps in the specified steps list (name will say "[appverifier enabled]")
+3. Disable Application Verifier for everything
+
+Example running all tests (where the test binaries are named test_name_exe_ebs.exe):
+
+```yaml
+  steps:
+  - template : pipeline_templates/run_ctests_with_appverifier.yml@c_build_tools
+    parameters:
+      repo_root: $(Build.SourcesDirectory)/deps/c-build-tools
+      binary_name_suffix: "_exe_ebs.exe"
+      ctest_tests_bin_directory: $(Build.BinariesDirectory)\c
+      steps:
+       - task: CmdLine@1
+         displayName: 'Run ctest'
+         inputs:
+           filename: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe"'
+           arguments: '-C "${{ parameters.test_configuration }}" -V --output-on-failure --no-tests=error -j $(NUMBER_OF_PROCESSORS)'
+           workingFolder: $(Build.BinariesDirectory)\c
+```
+
+Example running Cuzz tests on my_test_1.exe:
+
+See [Cuzz](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/application-verifier-tests-within-application-verifier#cuzz)
+
+```yaml
+  steps:
+  - template : pipeline_templates/run_ctests_with_appverifier.yml@c_build_tools
+    parameters:
+      repo_root: $(Build.SourcesDirectory)/deps/c-build-tools
+      ctest_additional_args: '-R my_test_1'
+      binary_name_suffix: ".exe"
+      app_verifier_enable: 'cuzz'
+      appVerifierAdditionalProperties: 'FuzzingLevel=4 RandomSeed=0'
+      ctest_tests_bin_directory: $(Build.BinariesDirectory)\c
+      steps:
+       - task: CmdLine@1
+         displayName: 'Run ctest'
+         inputs:
+           filename: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe"'
+           arguments: '-C "${{ parameters.test_configuration }}" -R my_test_1 -V --output-on-failure --no-tests=error -j $(NUMBER_OF_PROCESSORS)'
+           workingFolder: $(Build.BinariesDirectory)\c
+```
