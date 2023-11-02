@@ -50,7 +50,7 @@ const sampleFileBefore = `
 # A File header
 
 This is my spec:
-   
+
 do something
 
 do something else
@@ -62,7 +62,7 @@ const sampleFileAfterOneSpec = `
 # A File header
 
 This is my spec:
-   
+
 **SRS_MY_PREFIX_08_001: [** do something **]**
 
 do something else
@@ -74,7 +74,7 @@ const sampleFileAfter = `
 # A File header
 
 This is my spec:
-   
+
 **SRS_MY_PREFIX_08_001: [** do something **]**
 
 **SRS_MY_PREFIX_08_002: [** do something else **]**
@@ -131,7 +131,7 @@ const sampleFileBeforeWithLists = `
 # A File header
 
 Do many things:
-   
+
  - do something
 
  - do something else
@@ -145,7 +145,7 @@ const sampleFileAfterWithLists = `
 # A File header
 
 **SRS_MY_PREFIX_08_001: [** Do many things: **]**
-   
+
  - **SRS_MY_PREFIX_08_002: [** do something **]**
 
  - **SRS_MY_PREFIX_08_003: [** do something else **]**
@@ -341,6 +341,28 @@ suite('Editor Int Test Suite', () => {
                     return vscode.commands.executeCommand("extension.insertReqsCommand").then(status => {
                         assert.ok(status);
                         assert.equal(doc.getText(), sampleFileAfterWithLists);
+                        done();
+                    });
+                });
+            });
+        })
+        .catch(err => {
+            done(err);
+        });
+    });
+
+    test('Remove three requirements', (done) => {
+        withRandomFileEditor(sampleFileAfter, (editor, doc) => {
+            editor.selection = new vscode.Selection(
+                new vscode.Position(5, 0),
+                new vscode.Position(9, 16)
+            );
+
+            return vscode.commands.executeCommand("extension.forceSetDevId", "8").then(_ => {
+                return vscode.commands.executeCommand("extension.forceSetReqPrefix", "SRS_MY_PREFIX_").then(_ => {
+                    return vscode.commands.executeCommand("extension.stripReqsCommand").then(status => {
+                        assert.ok(status);
+                        assert.equal(doc.getText(), sampleFileBefore);
                         done();
                     });
                 });
