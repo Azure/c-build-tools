@@ -45,7 +45,7 @@ function activate(context) {
         }
         return false;
     };
-    
+
     var askDevId = function () {
         return vscode.window.showInputBox({ prompt: "Please enter your dev id" });
     };
@@ -99,7 +99,7 @@ function activate(context) {
                         e.insert(editor.selection.end, endSnippet);
                     });
                 }
-                
+
                 return status;
             }).then(function(status) {
                 if(status) {
@@ -161,7 +161,7 @@ function activate(context) {
                     var lineEnd = value.with(value.line, line.text.length);
                     e.insert(lineEnd, endSnippet);
                 };
-                
+
                 // Insert start
                 if (task == null) {
                     task = editor.edit(doInsertStart);
@@ -182,7 +182,75 @@ function activate(context) {
                     return status;
                 });
             });
-            
+
+            if (task == null) {
+                return editor.edit(function (e) {}).then(function(status) { return status; });
+            } else {
+                return task.then(function(status) { return status; });
+            }
+        } else {
+            return editor.edit(function (e) {}).then(function(status) { return status; });
+        }
+    };
+
+    var stripReqTags = function () {
+        var text = loadText();
+
+        if (text) {
+            var editor = vscode.window.activeTextEditor;
+            var document = editor.document;
+
+            // Matches SRS requirements
+            var regexRequirements = / ?\*\*[A-Z0-9_: \[\]]*\*\* ?/g;
+
+            var rangesWithReqTags = new Array();
+            var positionIterator = editor.selection.start;
+            var stopLine = editor.selection.end.line;
+
+
+            while (positionIterator.line <= stopLine) {
+                var line = document.lineAt(positionIterator);
+                // Attempt to remove requirement from each line
+                if (!line.isEmptyOrWhitespace) {
+                    // Skip markdown list and white space around it
+                    var startOffset = line.firstNonWhitespaceCharacterIndex;
+                    while (line.text.charAt(startOffset) == '-' || line.text.charAt(startOffset) == ' ') {
+                        startOffset++;
+                    }
+                    if (line.text.charAt(startOffset) != '\n' && line.text.charAt(startOffset) != '\r') {
+                        var lineStart = positionIterator.translate(0, startOffset);
+                        line.text.match(regexRequirements)
+                        var matches = line.text.match(regexRequirements);
+                        matches.forEach(function (value, index, array){
+                            var start = line.text.indexOf(value);
+                            var end = start + value.length;
+                            rangesWithReqTags.push(new vscode.Range(lineStart.translate(0, start), lineStart.translate(0, end)));
+                        });
+                    }
+                }
+                positionIterator = positionIterator.with(positionIterator.line + 1, 0);
+            }
+
+            var task = null;
+
+            rangesWithReqTags.reverse().forEach(function (value, index, array){
+                var doRemove = function (e) {
+                    // remove the tags
+                    e.delete(value);
+                };
+
+                if (task == null) {
+                    task = editor.edit(doRemove);
+                } else {
+                    task = task.then(function(status) {
+                        if (status) {
+                            return editor.edit(doRemove);
+                        }
+                        return status;
+                    });
+                }
+            });
+
             if (task == null) {
                 return editor.edit(function (e) {}).then(function(status) { return status; });
             } else {
@@ -223,6 +291,10 @@ function activate(context) {
         }
     });
 
+    var stripReqsCommand = vscode.commands.registerCommand('extension.stripReqsCommand', function () {
+        return stripReqTags();
+    });
+
     var changeDevIdCommand = vscode.commands.registerCommand('extension.changeDevId', function () {
         askDevId().then(setDevId);
     });
@@ -245,6 +317,7 @@ function activate(context) {
 
     context.subscriptions.push(insertReqCommand);
     context.subscriptions.push(insertReqsCommand);
+    context.subscriptions.push(stripReqsCommand);
     context.subscriptions.push(changeDevIdCommand);
     context.subscriptions.push(changeReqPrefixCommand);
 

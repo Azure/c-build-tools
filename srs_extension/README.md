@@ -26,8 +26,8 @@ or
 Once installed, the extension becomes active whenever a markdown file is opened.
 At first it'll ask for a Developer ID, it's used to create requirement tags.
 To insert a new requirement tag:
-1. Select the text of the requirement 
-2. Press `Alt+F8`. It'll read all the tags in the document and insert the next one using your Dev ID. 
+1. Select the text of the requirement
+2. Press `Alt+F8`. It'll read all the tags in the document and insert the next one using your Dev ID.
     - If it hasn't yet it will prompt you for your Dev ID.
     - if there are multiple requirement tags in the document with different prefixes, it'll ask you once to pick which prefix to use.
     - if there are no requirements in the document, you'll have to create the first one yourself manually (see below for requirement tags format).
@@ -35,7 +35,7 @@ To insert a new requirement tag:
 All requirement tags use the following syntax: `SRS_SOMESTRING_<DEVID>_<REQID>`
 
 You may also insert requirement tags for the currently selected text by pressing `Alt+F9`. This will:
- - Tag all non-empty (white space only) lines
+ - Tag all non-empty (not white-space only) lines
  - Preserve unordered list markdown (i.e. skip over combinations of `-` and space)
 
 (Right now the requirement tag format is hardcoded.)
@@ -43,6 +43,7 @@ You may also insert requirement tags for the currently selected text by pressing
 There are a couple more things you can do, by bringing up the command pane (by pressing F1):
 - change your Dev ID (look for the "Change Developer ID" command in the list)
 - change the prefix used (look for the "Change Requirement Tag Prefix" command in the list)
+- strip requirement tags from a selection by pressing `Alt+F10` (using basic regex matching)
 
 these two commands do not have shortcut keys (doesn't feel useful for now).
 
