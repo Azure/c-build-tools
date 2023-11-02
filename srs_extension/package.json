@@ -6,7 +6,7 @@
     "publisher": "microsoft",
     "repository": "https://github.com/Azure/c-build-tools/tree/master/srs_extension",
     "engines": {
-        "vscode": "^1.39.0"
+        "vscode": "^1.64.0"
     },
     "categories": [
         "Other"
