@@ -136,6 +136,8 @@ function update-repo-github {
         Write-Error "Failed to merge PR for repo $repo_name"
         exit -1
     }
+    # Wait for merge to complete
+    Start-Sleep -Seconds 10
     cd ..
 }
 
