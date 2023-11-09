@@ -57,7 +57,6 @@ PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -root {root_repo_url} -azure_token 
 - `-azure_token`: Personal access token for Azure Devops Services. Token must have permissions for Code and Work Items.
 - `-azure_work_item`: Work item id of Azure work item that is linked to PRs made to Azure repos. Only required if Azure repos need to be updated.
 
-
 ### ignores.json
 
 `ignores.json` contains a list of repositories that should be ignored while building the dependency graph and should not be updated.
