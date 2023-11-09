@@ -14,6 +14,8 @@ root repo by making PRs to each repo in bottom-up level-order.
 
 .PARAMETER root
 
+URL of the repository upto which updates must be propagated.
+
 .PARAMETER azure_token
 
 Personal access token for Azure Devops Services
