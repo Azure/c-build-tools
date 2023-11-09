@@ -13,8 +13,7 @@ PS> .\build_graph.ps1 [repo_url]
 ```
 ## propagate_updates.ps1
 
-Given a root repo and a personal access token for Azure Devops Services, this script \
-builds the dependency graph and propagates updates from the lowest level upto the \
+Given a root repo, this script builds the dependency graph and propagates updates from the lowest level upto the \
 root repo by making PRs to each repo in bottom-up level-order.
 
 ## Prerequisites
@@ -50,7 +49,7 @@ root repo by making PRs to each repo in bottom-up level-order.
 Run the script in a clean directory:
 
 ```
-PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token}  [-azure_work_item {work_item_id}] [-root {root_repo_url}] 
+PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -root {root_repo_url} -azure_token {token}  [-azure_work_item {work_item_id}] 
 ```
 ### Arguments:
 
