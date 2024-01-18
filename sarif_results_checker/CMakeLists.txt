@@ -21,8 +21,10 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
     PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.7.2"
 )
 
-set_property(TARGET Azure.Messaging.SarifResultsChecker
-    PROPERTY VS_PROJECT_IMPORT $ENV{Build_SourcesDirectory}/import_for_signing.not_propz_at_all
+if (EXISTS $ENV{Build_SourcesDirectory}/import_for_signing.not_propz_at_all)
+    set_property(TARGET Azure.Messaging.SarifResultsChecker
+        PROPERTY VS_PROJECT_IMPORT $ENV{Build_SourcesDirectory}/import_for_signing.not_propz_at_all
+    )
 )
 
 set_output_folder_properties(Azure.Messaging.SarifResultsChecker)
