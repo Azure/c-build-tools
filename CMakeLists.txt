@@ -34,6 +34,7 @@ option(run_reals_check "run reals check tool (default is OFF)" OFF)
 option(use_vld "use VLD for leak detection (default is OFF)" OFF)
 option(fsanitize_address "enable /fsanitize=address compiler switch (default is OFF)" OFF) # see https://docs.microsoft.com/en-us/cpp/build/reference/fsanitize
 option(build_csharp_projects "Build csharp projects? (default is ON)" ON)
+option(build_sarif_results_checker "Build Sarif results checker? (default is ON)" ON)
 
 add_subdirectory(build_functions)
 
@@ -55,4 +56,8 @@ if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
         add_subdirectory(traceabilitytool)
     endif()
     add_subdirectory(reals_check)
+endif()
+
+if((CMAKE_GENERATOR MATCHES "Visual Studio") AND (${build_sarif_results_checker}))
+    add_subdirectory(sarif_results_checker)
 endif()
