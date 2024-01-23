@@ -1,0 +1,15 @@
+# disables SN verification
+
+parameters:
+ - name: repo_root
+   default: $(Build.SourcesDirectory)/deps/c-build-tools
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Disable strong name verification'
+    inputs:
+      targetType: filePath
+      workingDirectory: ${{ parameters.repo_root }}/pipeline_templates/scripts
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/disable_sn_verification.ps1'
+    continueOnError: true
+    condition: always()
