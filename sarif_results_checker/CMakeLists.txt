@@ -27,6 +27,10 @@ if (EXISTS $ENV{Build_SourcesDirectory}/import_for_signing.not_propz_at_all)
     )
 endif()
 
+set_property(TARGET Azure.Messaging.SarifResultsChecker
+    PROPERTY VS_GLOBAL_CompilerGeneratedFilesOutputPath Generated
+)
+
 set_output_folder_properties(Azure.Messaging.SarifResultsChecker)
 
 set_target_properties(Azure.Messaging.SarifResultsChecker PROPERTIES
