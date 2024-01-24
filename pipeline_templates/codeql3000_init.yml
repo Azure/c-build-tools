@@ -1,0 +1,11 @@
+# This is the job template for CodeQL3000 init
+# - disable sn verification (for Azure.Messaging.SarifResultsChecker)
+# - initializes the Code QL 3000 engine
+
+steps:
+- template : disable_sn_verification.yml
+
+- task: CodeQL3000Init@0
+  inputs:
+    Enabled: true
+    AnalyzeInPipeline: true
