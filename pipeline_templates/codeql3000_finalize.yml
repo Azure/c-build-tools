@@ -6,6 +6,8 @@
 parameters:
  - name: ignore_paths
    default: $(Build.SourcesDirectory)/deps/c-build-tools
+ - name: configuration
+   default: Debug
 
 steps:
 - task: CodeQL3000Finalize@0
@@ -14,7 +16,7 @@ steps:
 - task: CmdLine@2
   displayName: 'Running Sarif results checker'
   inputs:
-    script: '"$(Build.BinariesDirectory)/Debug/Azure.Messaging.SarifResultsChecker/Azure.Messaging.SarifResultsChecker.exe" --sarifPath $(Build.ArtifactStagingDirectory)/CodeAnalysisLogs --ignorePaths $(ignored_paths)'
+    script: '"$(Build.BinariesDirectory)/${{ parameters.configuration }}/Azure.Messaging.SarifResultsChecker/Azure.Messaging.SarifResultsChecker.exe" --sarifPath $(Build.ArtifactStagingDirectory)/CodeAnalysisLogs --ignorePaths ${{ parameters.ignore_paths }}'
 
 - task: SarifBob@0
   inputs:
