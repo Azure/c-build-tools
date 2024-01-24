@@ -1,0 +1,27 @@
+# This is the job template for Code QL 3000 finalize
+# - calls CodeQL3000Finalize
+# - Runs the Sarif results checker (built as part of the main build)
+# Runs SarifBob to pretty print the Sarif results
+
+parameters:
+ - name: ignore_paths
+   default: $(Build.SourcesDirectory)/deps/c-build-tools
+ - name: configuration
+   default: Debug
+
+steps:
+- task: CodeQL3000Finalize@0
+  condition: always()
+
+- task: CmdLine@2
+  displayName: 'Running Sarif results checker'
+  inputs:
+    script: '"$(Build.BinariesDirectory)/${{ parameters.configuration }}/Azure.Messaging.SarifResultsChecker/Azure.Messaging.SarifResultsChecker.exe" --sarifPath $(Build.ArtifactStagingDirectory)/CodeAnalysisLogs --ignorePaths ${{ parameters.ignore_paths }}'
+
+- task: SarifBob@0
+  inputs:
+    logFolder: '$(Build.ArtifactStagingDirectory)/CodeAnalysisLogs'
+    severity: 'critical, important, moderate, low'
+    ignoreSuppressions: false
+    failOnIsssues: false
+  condition: failed()

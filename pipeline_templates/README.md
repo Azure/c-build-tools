@@ -25,6 +25,12 @@ This folder contains pipeline yml templates for devops pipelines.
   - Runs tests under ctest with app verifier enabled
 - disable_appverifier.yml
   - Only the cleanup portion of run_ctests_with_appverifier.yml, which may be used for a cleanup step during setup
+- codeql3000_init.yml
+  - Initializes CodeQL3000 and disables strong name verification (needed for running Sarif results checker).
+- codeql3000_finalize.yml
+  - Finalize portion of CodeQL3000 (build steps should be between the `codeql3000_init` and `codeql3000_finalize` wrappers).
+  - It runs Sarif results checker to verify that there are no errors and fails the build
+  - Runs SarifBob to pretty print all the errors in the Sarif in case of failures.
 
 ## How to Consume
 
