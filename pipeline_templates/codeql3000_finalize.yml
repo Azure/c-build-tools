@@ -4,7 +4,7 @@
 # Runs SarifBob to pretty print the Sarif results
 
 parameters:
- - name: ignored_paths
+ - name: ignore_paths
    default: $(Build.SourcesDirectory)/deps/c-build-tools
 
 steps:
