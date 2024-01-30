@@ -171,6 +171,7 @@ function(build_as_csharp_net6_project_with_framework targetname framework)
         DOTNET_SDK "Microsoft.NET.Sdk"
         DOTNET_TARGET_FRAMEWORK ${framework}
         VS_GLOBAL_RuntimeIdentifier "win10-${CMAKE_VS_PLATFORM_NAME}"
+        VS_GLOBAL_SelfContained true
         VS_GLOBAL_AppendRuntimeIdentifierToOutputPath false
         VS_GLOBAL_AppendTargetFrameworkToOutputPath false
         VS_GLOBAL_PlatformTarget ${CMAKE_VS_PLATFORM_NAME}
