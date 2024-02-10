@@ -36,6 +36,15 @@ option(fsanitize_address "enable /fsanitize=address compiler switch (default is 
 option(build_csharp_projects "Build csharp projects? (default is ON)" ON)
 option(build_sarif_results_checker "Build Sarif results checker? (default is ON)" ON)
 
+if ("$ENV{BUILD_BINARIESDIRECTORY}" STREQUAL "")
+    message(WARNING "BUILD_BINARIESDIRECTORY not defined!")
+else()
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG $ENV{BUILD_BINARIESDIRECTORY}/Debug)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE $ENV{BUILD_BINARIESDIRECTORY}/Release)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO $ENV{BUILD_BINARIESDIRECTORY}/RelWithDebInfo)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL $ENV{BUILD_BINARIESDIRECTORY}/MinSizeRel)
+endif()
+
 add_subdirectory(build_functions)
 
 enable_testing()
