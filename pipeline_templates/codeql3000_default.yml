@@ -4,6 +4,9 @@ parameters:
 - name: 'cmake_command'
   type: string
   default: '.. -G "Visual Studio 17 2022" -A x64'
+- name: 'configuration'
+  type: string
+  default: 'RelWithDebInfo'
 
 jobs:
 - job: codeql
@@ -64,17 +67,10 @@ jobs:
       solution: 'build_x64\*.sln'
       msbuildArgs: '/t:restore /t:build'
       platform: x64
-      configuration: RelWithDebInfo
+      configuration: ${{parameters.configuration}}
       maximumCpuCount: true
 
   - template: codeql3000_finalize.yml
     parameters:
       ignore_paths: 'deps/jemalloc;deps/mimalloc;deps/vcpkg;build/vcpkg_installed'
-      configuration: 'RelWithDebInfo'
-
-  - task: PublishBuildArtifacts@1
-    displayName: 'Publish CodeQL build Artifacts'
-    inputs:
-      pathtoPublish: $(Build.BinariesDirectory)
-      artifactName: CodeQL_artifacts
-      parallel: true
+      configuration: ${{parameters.configuration}}
