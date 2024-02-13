@@ -1,0 +1,76 @@
+# This is the job template for running CodeQL on a repository
+
+parameters:
+- name: 'cmake_command'
+  type: string
+  default: '.. -G "Visual Studio 17 2022" -A x64'
+- name: 'configuration'
+  type: string
+  default: 'RelWithDebInfo'
+
+jobs:
+- job: codeql
+  displayName: 'Run CodeQL on production code'
+  pool:
+    name: Azure-MessagingStore-WinBuildPoolVS2022
+    demands:
+    - Cmd
+    - msbuild
+    - visualstudio
+    - build
+
+  workspace:
+    clean: all
+
+  steps:
+  - task: BatchScript@1
+    displayName: 'Git submodule update'
+    inputs:
+      filename: 'C:\Program Files\Git\bin\git.exe'
+      arguments: 'submodule update --init --force'
+
+  - task: BatchScript@1
+    displayName: 'Git submodule clean'
+    inputs:
+      filename: 'C:\Program Files\Git\bin\git.exe'
+      arguments: 'submodule foreach --recursive "git clean -xdff"'
+
+  - task: BatchScript@1
+    displayName: 'Git clean'
+    inputs:
+      filename: 'C:\Program Files\Git\bin\git.exe'
+      arguments: 'clean -xdff'
+
+  - task: DeleteFiles@1
+    displayName: 'Clean build binaries directory'
+    inputs:
+      sourceFolder: $(Build.BinariesDirectory)
+      contents: \*
+
+  - task: BatchScript@1
+    displayName: 'Setup VS Vars'
+    inputs:
+      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
+      modifyEnvironment: true
+
+  - template: codeql3000_init.yml
+
+  - task: CMake@1
+    displayName: 'CMake ${{parameters.cmake_command}}'
+    inputs:
+      workingDirectory: 'build_x64'
+      cmakeArgs: ${{parameters.cmake_command}}
+
+  - task: VSBuild@1
+    displayName: 'Build solution build_x64\*.sln'
+    inputs:
+      solution: 'build_x64\*.sln'
+      msbuildArgs: '/t:restore /t:build'
+      platform: x64
+      configuration: ${{parameters.configuration}}
+      maximumCpuCount: true
+
+  - template: codeql3000_finalize.yml
+    parameters:
+      ignore_paths: 'deps/jemalloc;deps/mimalloc;deps/vcpkg;build/vcpkg_installed'
+      configuration: ${{parameters.configuration}}

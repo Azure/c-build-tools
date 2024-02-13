@@ -36,6 +36,18 @@ option(fsanitize_address "enable /fsanitize=address compiler switch (default is 
 option(build_csharp_projects "Build csharp projects? (default is ON)" ON)
 option(build_sarif_results_checker "Build Sarif results checker? (default is ON)" ON)
 
+# BUILD_BINARIESDIRECTORY is an environment variable used to designate where the binaries resulting from the build go
+# It exists because we usually build using Azure DevOps (it maps to the Build.BinariesDirectory predefined variable of DevOps: https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables?view=azure-devops&tabs=yaml)
+# Set this to a folder where all build binaries will be placed
+if ("$ENV{BUILD_BINARIESDIRECTORY}" STREQUAL "")
+    message(WARNING "BUILD_BINARIESDIRECTORY not defined!")
+else()
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG $ENV{BUILD_BINARIESDIRECTORY}/Debug)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE $ENV{BUILD_BINARIESDIRECTORY}/Release)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO $ENV{BUILD_BINARIESDIRECTORY}/RelWithDebInfo)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL $ENV{BUILD_BINARIESDIRECTORY}/MinSizeRel)
+endif()
+
 add_subdirectory(build_functions)
 
 enable_testing()

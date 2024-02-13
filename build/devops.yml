@@ -103,6 +103,8 @@ jobs:
       arguments: '-C "RelWithDebInfo" -V --output-on-failure'
       workingFolder: 'build_x64'
 
+- template: /pipeline_templates/codeql3000_default.yml
+
 - job: linuxubuntu
   displayName: 'Build Linux Ubuntu 22.04'
   pool:
