@@ -201,7 +201,8 @@ function activate(context) {
             var document = editor.document;
 
             // Matches SRS requirements
-            var regexRequirements = / ?\*\*[A-Z0-9_: \[\]]*\*\* ?/g;
+            var regexStartRequirements = /\*\*[A-Z0-9_: \[\]]*\*\* ?/g;
+            var regexEndRequirements = / ?\*\*\]\*\* ?/g;
 
             var rangesWithReqTags = new Array();
             var positionIterator = editor.selection.start;
@@ -212,16 +213,18 @@ function activate(context) {
                 var line = document.lineAt(positionIterator);
                 // Attempt to remove requirement from each line
                 if (!line.isEmptyOrWhitespace) {
-                    // Skip markdown list and white space around it
-                    var startOffset = line.firstNonWhitespaceCharacterIndex;
-                    while (line.text.charAt(startOffset) == '-' || line.text.charAt(startOffset) == ' ') {
-                        startOffset++;
+                    var lineStart = positionIterator;
+                    var startMatches = line.text.match(regexStartRequirements);
+                    if (startMatches != null) {
+                        startMatches.forEach(function (value, index, array){
+                            var start = line.text.indexOf(value);
+                            var end = start + value.length;
+                            rangesWithReqTags.push(new vscode.Range(lineStart.translate(0, start), lineStart.translate(0, end)));
+                        });
                     }
-                    if (line.text.charAt(startOffset) != '\n' && line.text.charAt(startOffset) != '\r') {
-                        var lineStart = positionIterator.translate(0, startOffset);
-                        line.text.match(regexRequirements)
-                        var matches = line.text.match(regexRequirements);
-                        matches.forEach(function (value, index, array){
+                    var endMatches = line.text.match(regexEndRequirements);
+                    if (endMatches != null) {
+                        endMatches.forEach(function (value, index, array){
                             var start = line.text.indexOf(value);
                             var end = start + value.length;
                             rangesWithReqTags.push(new vscode.Range(lineStart.translate(0, start), lineStart.translate(0, end)));
@@ -233,24 +236,25 @@ function activate(context) {
 
             var task = null;
 
-            rangesWithReqTags.reverse().forEach(function (value, index, array){
-                var doRemove = function (e) {
-                    // remove the tags
-                    e.delete(value);
-                };
+            if (rangesWithReqTags.length != 0) {
+                rangesWithReqTags.reverse().forEach(function (value, index, array){
+                    var doRemove = function (e) {
+                        // remove the tags
+                        e.delete(value);
+                    };
 
-                if (task == null) {
-                    task = editor.edit(doRemove);
-                } else {
-                    task = task.then(function(status) {
-                        if (status) {
-                            return editor.edit(doRemove);
-                        }
-                        return status;
-                    });
-                }
-            });
-
+                    if (task == null) {
+                        task = editor.edit(doRemove);
+                    } else {
+                        task = task.then(function(status) {
+                            if (status) {
+                                return editor.edit(doRemove);
+                            }
+                            return status;
+                        });
+                    }
+                });
+            }
             if (task == null) {
                 return editor.edit(function (e) {}).then(function(status) { return status; });
             } else {

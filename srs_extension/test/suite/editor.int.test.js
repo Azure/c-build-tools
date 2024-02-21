@@ -155,6 +155,20 @@ const sampleFileAfterWithLists = `
 **SRS_MY_PREFIX_08_005: [** Last one **]**
 `;
 
+const sampleFileAfterWithListsLine5Stripped = `
+# A File header
+
+**SRS_MY_PREFIX_08_001: [** Do many things: **]**
+
+ - do something
+
+ - **SRS_MY_PREFIX_08_003: [** do something else **]**
+
+   - **SRS_MY_PREFIX_08_004: [** sublist item **]**
+
+**SRS_MY_PREFIX_08_005: [** Last one **]**
+`;
+
 suite('Editor Int Test Suite', () => {
     vscode.window.showInformationMessage('Start editor int tests.');
 
@@ -363,6 +377,94 @@ suite('Editor Int Test Suite', () => {
                     return vscode.commands.executeCommand("extension.stripReqsCommand").then(status => {
                         assert.ok(status);
                         assert.equal(doc.getText(), sampleFileBefore);
+                        done();
+                    });
+                });
+            });
+        })
+        .catch(err => {
+            done(err);
+        });
+    });
+
+    test('Remove single requirement markdown list item', (done) => {
+        withRandomFileEditor(sampleFileAfterWithLists, (editor, doc) => {
+            editor.selection = new vscode.Selection(
+                new vscode.Position(5, 0),
+                new vscode.Position(6, 0)
+            );
+
+            return vscode.commands.executeCommand("extension.forceSetDevId", "8").then(_ => {
+                return vscode.commands.executeCommand("extension.forceSetReqPrefix", "SRS_MY_PREFIX_").then(_ => {
+                    return vscode.commands.executeCommand("extension.stripReqsCommand").then(status => {
+                        assert.ok(status);
+                        assert.equal(doc.getText(), sampleFileAfterWithListsLine5Stripped);
+                        done();
+                    });
+                });
+            });
+        })
+        .catch(err => {
+            done(err);
+        });
+    });
+
+    test('Remove requirements with markdown lists', (done) => {
+        withRandomFileEditor(sampleFileAfterWithLists, (editor, doc) => {
+            editor.selection = new vscode.Selection(
+                new vscode.Position(1, 0),
+                new vscode.Position(12, 0)
+            );
+
+            return vscode.commands.executeCommand("extension.forceSetDevId", "8").then(_ => {
+                return vscode.commands.executeCommand("extension.forceSetReqPrefix", "SRS_MY_PREFIX_").then(_ => {
+                    return vscode.commands.executeCommand("extension.stripReqsCommand").then(status => {
+                        assert.ok(status);
+                        assert.equal(doc.getText(), sampleFileBeforeWithLists);
+                        done();
+                    });
+                });
+            });
+        })
+        .catch(err => {
+            done(err);
+        });
+    });
+
+    test('Remove requirements with markdown lists already removed', (done) => {
+        withRandomFileEditor(sampleFileBeforeWithLists, (editor, doc) => {
+            editor.selection = new vscode.Selection(
+                new vscode.Position(1, 0),
+                new vscode.Position(12, 0)
+            );
+
+            return vscode.commands.executeCommand("extension.forceSetDevId", "8").then(_ => {
+                return vscode.commands.executeCommand("extension.forceSetReqPrefix", "SRS_MY_PREFIX_").then(_ => {
+                    return vscode.commands.executeCommand("extension.stripReqsCommand").then(status => {
+                        assert.ok(status);
+                        assert.equal(doc.getText(), sampleFileBeforeWithLists);
+                        done();
+                    });
+                });
+            });
+        })
+        .catch(err => {
+            done(err);
+        });
+    });
+
+    test('Remove requirements empty line no change', (done) => {
+        withRandomFileEditor(sampleFileAfter, (editor, doc) => {
+            editor.selection = new vscode.Selection(
+                new vscode.Position(2, 0),
+                new vscode.Position(2, 1)
+            );
+
+            return vscode.commands.executeCommand("extension.forceSetDevId", "8").then(_ => {
+                return vscode.commands.executeCommand("extension.forceSetReqPrefix", "SRS_MY_PREFIX_").then(_ => {
+                    return vscode.commands.executeCommand("extension.stripReqsCommand").then(status => {
+                        assert.ok(status);
+                        assert.equal(doc.getText(), sampleFileAfter);
                         done();
                     });
                 });
