@@ -56,10 +56,10 @@ jobs:
   - template: codeql3000_init.yml
 
   - task: CMake@1
-    displayName: 'CMake ${{parameters.cmake_command}}'
+    displayName: 'CMake ${{parameters.cmake_command}} -DCMAKE_BUILD_TYPE=${{parameters.configuration}}'
     inputs:
       workingDirectory: 'build_x64'
-      cmakeArgs: ${{parameters.cmake_command}}
+      cmakeArgs: '${{parameters.cmake_command}} -DCMAKE_BUILD_TYPE=${{parameters.configuration}}'
 
   - task: VSBuild@1
     displayName: 'Build solution build_x64\*.sln'
