@@ -330,7 +330,7 @@ function(install_library theTarget )
     install_library_with_prefix(${theTarget} "" ${ARGN})
 endfunction()
 
-function use_vcpkg()
+function(use_vcpkg)
     if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/deps/vcpkg/scripts/buildsystems/vcpkg.cmake)
         set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_LIST_DIR}/triplets")
         if(${fsanitize})
