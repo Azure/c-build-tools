@@ -343,4 +343,4 @@ macro(use_vcpkg vcpkgPath)
 
         include(deps/vcpkg/scripts/buildsystems/vcpkg.cmake)
     endif()
-endfunction()
+endmacro()
