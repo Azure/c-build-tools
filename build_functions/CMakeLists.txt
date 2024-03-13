@@ -330,10 +330,12 @@ function(install_library theTarget )
     install_library_with_prefix(${theTarget} "" ${ARGN})
 endfunction()
 
-function(use_vcpkg)
-    if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/deps/vcpkg/scripts/buildsystems/vcpkg.cmake)
+# This function is used to add the vcpkg cmake (it lives at `vcpkgPath`) to the current project
+# It also sets the VCPKG_OVERLAY_TRIPLETS to the common c build tools path and selects the corresponding triplet
+macro(use_vcpkg vcpkgPath)
+    if (EXISTS ${vcpkgPath}/scripts/buildsystems/vcpkg.cmake)
         set(VCPKG_OVERLAY_TRIPLETS "${build_c_tests_internal_dir}/../vcpkg_triplets/")
-        if(${fsanitize})
+        if(${fsanitize_address})
             set(VCPKG_TARGET_TRIPLET "x64-windows-static-cbt-asan")
         else()
             set(VCPKG_TARGET_TRIPLET "x64-windows-static-cbt")
