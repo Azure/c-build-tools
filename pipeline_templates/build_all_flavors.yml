@@ -24,6 +24,11 @@ parameters:
     type: object
     default: ["Debug", "RelWithDebInfo"]
 
+  # cmake_options is a string that is passed to the cmake command line.
+  - name: cmake_options
+    type: string
+    default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON"
+
 jobs:
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
   - ${{ each FSANITIZE_TYPE in parameters.FSANITIZE_TYPE_VALUES }}:
@@ -41,3 +46,4 @@ jobs:
               build_configuration: ${{ BUILD_CONFIGURATION_TYPE }}
               FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
               ARCH_TYPE: ${{ ARCH_TYPE }}
+              cmake_options: ${{ parameters.cmake_options }}

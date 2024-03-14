@@ -14,6 +14,9 @@ parameters:
     default: "Debug"
   - name: ARCH_TYPE
     default: "x64"
+  - name: cmake_options
+    type: string
+    default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON"
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -66,10 +69,10 @@ jobs:
       modifyEnvironment: true
 
   - task: CMake@1
-    displayName: 'CMake .. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
+    displayName: 'CMake .. ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
     inputs:
       workingDirectory: 'cmake_build'
-      cmakeArgs: '.. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
+      cmakeArgs: '.. ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
 
   - task: VSBuild@1
     displayName: 'Build solution cmake_build\*.sln'
