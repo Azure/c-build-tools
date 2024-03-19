@@ -50,7 +50,7 @@ jobs:
     displayName: 'Run ctest Debug'
     inputs:
       filename: ctest
-      arguments: '-C "Debug" -V --output-on-failure'
+      arguments: '-C "Debug" --output-on-failure'
       workingFolder: 'build_x64'
 
 - job: Build_Windows_x64_RelWithDebInfo
@@ -100,7 +100,7 @@ jobs:
     displayName: 'Run ctest RelWithDebInfo'
     inputs:
       filename: ctest
-      arguments: '-C "RelWithDebInfo" -V --output-on-failure'
+      arguments: '-C "RelWithDebInfo" --output-on-failure'
       workingFolder: 'build_x64'
 
 - template: /pipeline_templates/codeql3000_default.yml
