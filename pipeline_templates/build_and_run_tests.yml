@@ -104,6 +104,6 @@ jobs:
     displayName: 'Run ctest'
     inputs:
       filename: ctest
-      arguments: '-C "${{ parameters.build_configuration }}" -V --output-on-failure'
+      arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
       workingFolder: 'cmake_build'
   
