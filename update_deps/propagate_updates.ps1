@@ -118,6 +118,14 @@ function update-local-repo {
     cd ..
 }
 
+function check-gh-cli-exists {
+    $gh = Get-Command gh -ErrorAction SilentlyContinue
+    if(!$gh) {
+        Write-Error "Github CLI is not installed. Install it from https://cli.github.com/"
+        exit -1
+    }
+}
+
 # update dependencies for Github repo
 function update-repo-github {
     param(
@@ -365,6 +373,7 @@ function clear-directory {
 
 # iterate over all repos and update them
 function propagate-updates {
+    check-gh-cli-exists
     clear-directory
     # build dependency graph
     Write-Host "Building dependency graph..."
