@@ -1,0 +1,32 @@
+diff --git a/mesonbuild/minstall.py b/mesonbuild/minstall.py
+index 1531be4c3..fc6883b30 100644
+--- a/mesonbuild/minstall.py
++++ b/mesonbuild/minstall.py
+@@ -238,26 +238,8 @@ def restore_selinux_contexts() -> None:
+ 
+     If $DESTDIR is set, do not warn if the call fails.
+     '''
+-    try:
+-        subprocess.check_call(['selinuxenabled'])
+-    except (FileNotFoundError, NotADirectoryError, PermissionError, subprocess.CalledProcessError):
+-        # If we don't have selinux or selinuxenabled returned 1, failure
+-        # is ignored quietly.
+-        return
+-
+-    if not shutil.which('restorecon'):
+-        # If we don't have restorecon, failure is ignored quietly.
+-        return
+-
+-    if not selinux_updates:
+-        # If the list of files is empty, do not try to call restorecon.
+-        return
+ 
+-    proc, out, err = Popen_safe(['restorecon', '-F', '-f-', '-0'], ('\0'.join(f for f in selinux_updates) + '\0'))
+-    if proc.returncode != 0:
+-        print('Failed to restore SELinux context of installed files...',
+-              'Standard output:', out,
+-              'Standard error:', err, sep='\n')
++    return
+ 
+ def get_destdir_path(destdir: str, fullprefix: str, path: str) -> str:
+     if os.path.isabs(path):
