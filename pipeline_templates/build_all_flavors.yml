@@ -4,7 +4,7 @@ parameters:
   # GBALLOC_LL_TYPE_VALUES is an array of strings
   - name: GBALLOC_LL_TYPE_VALUES
     type: object
-    default: ["PASSTHROUGH", "JEMALLOC"]
+    default: ["PASSTHROUGH"]
 
   # FSANITIZE_TYPE_VALUES are the same as cmakelists "fsanitize" option used to pass (or not) /fsanitize=address to the compiler.
   - name: FSANITIZE_TYPE_VALUES
@@ -15,8 +15,6 @@ parameters:
   # it provides the "walked path" of how to extend the pipeline with a completely different orthogonal parameter that can take an array of string of values
   - name: ARCH_TYPE_VALUES
     type: object
-    #default: ["x64", "x86"]
-    # TODO: for now only x64 is supported, seems that we have some errors on x86
     default: ["x64"]
 
   # BUILD_CONFIGURATION_TYPE_VALUES is a list of build configurations to be used in the pipeline
