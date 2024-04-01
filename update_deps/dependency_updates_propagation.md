@@ -43,6 +43,7 @@ root repo by making PRs to each repo in bottom-up level-order.
  - `What is your preferred protocol for Git operations?` : Select `HTTPS`
  - `Authenticate Git with your GitHub credentials?` : Enter `Y`
  - `How would you like to authenticate GitHub CLI?` : Select `Login with a web browser`
+ - Select the `Azure` organization on the authentication page.
 
 ### Usage
 
