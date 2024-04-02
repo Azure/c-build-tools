@@ -107,3 +107,10 @@ jobs:
       arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
       workingFolder: 'cmake_build'
   
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish ${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration}} Artifacts'
+    inputs:
+      pathtoPublish: $(Build.BinariesDirectory)
+      artifactName: ${{ parameters.build_configuration}}_${{ parameters.ARCH_TYPE }}_artifacts
+      parallel: true
+    condition: failed()
