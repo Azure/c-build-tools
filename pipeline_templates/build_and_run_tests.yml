@@ -17,6 +17,11 @@ parameters:
   - name: cmake_options
     type: string
     default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON"
+  # If this parameter is specified the specified test suite will be run without invoking ctest
+  # This is very useful for debugging a single test suite because ctest still does not allow Watson dumps to be collected
+  - name: run_test_suite_without_ctest
+    type: string
+    default: ""
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -82,6 +87,8 @@ jobs:
       configuration: ${{ parameters.build_configuration }}
       maximumCpuCount: true
 
+  - template : start_logman.yml
+
   # in the gate address sanitizer has problems running which are not reproducible locally, so skipping Address Sanitizer for vstest (note: ctest is perfectly fine with Address Sanitizer)
   # here's example:
   #   vstest.console will output 
@@ -89,7 +96,7 @@ jobs:
   #A total of 257 test files matched the specified pattern.
   ##[error]The active test run was aborted. Reason: Test host process crashed : AddressSanitizer: CHECK failed: asan_thread.cpp:273 "((tid())) == ((0))" (0x1, 0x0) (tid=11016)
   # [continues, with none of our code on any stack]
-  - ${{ if eq(parameters.FSANITIZE_TYPE, 'OFF') }}:
+  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
     - task: VSTest@2
       displayName: '[blockstorage] VsTest - testAssemblies (no int tests)'
       inputs:
@@ -100,13 +107,23 @@ jobs:
         codeCoverageEnabled: false
         otherConsoleOptions: '-- RunConfiguration.ExecutionThreadApartmentState=MTA'
 
-  - task: CmdLine@1
-    displayName: 'Run ctest'
-    inputs:
-      filename: ctest
-      arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
-      workingFolder: 'cmake_build'
-  
+  - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
+    - task: CmdLine@1
+      displayName: 'Run ctest'
+      inputs:
+        filename: ctest
+        arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
+        workingFolder: 'cmake_build'
+
+  - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
+    - task: CmdLine@1
+      displayName: 'Run ${{ parameters.run_test_suite_without_ctest }}'
+      inputs:
+        filename: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}\${{ parameters.run_test_suite_without_ctest }}.exe'
+        workingFolder: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}'
+
+  - template : stop_logman.yml
+
   - task: PublishBuildArtifacts@1
     displayName: 'Publish ${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration}} Artifacts'
     inputs:
