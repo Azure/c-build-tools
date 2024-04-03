@@ -4,7 +4,7 @@
 <#
 .SYNOPSIS
 
-Given a list of URLs to a repositories, prints the order in which its submodules should be updated to file order.json
+Given a comma-separeted list of URLs to repositories, prints the order in which its submodules should be updated to file order.json
 
 .DESCRIPTION
 
