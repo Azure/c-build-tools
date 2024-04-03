@@ -24,7 +24,7 @@ Prints order in which repositories must be updated to file order.json
 
 .EXAMPLE
 
-PS> .\build_graph.ps1 -root_list 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-GeoReplication' 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-ElasticLog'
+PS> .\build_graph.ps1 -root_list 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-GeoReplication', 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-ElasticLog'
 PS> Get-Content -Path order.json
 [
     "c-build-tools",
