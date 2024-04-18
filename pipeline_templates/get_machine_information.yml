@@ -1,0 +1,18 @@
+# prints some machine information to the console
+
+parameters:
+ - name: repo_root
+   default: $(Build.SourcesDirectory)/deps/c-build-tools
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Get-WmiObject -class win32_processor'
+    inputs:
+      targetType: 'inline'
+      script: |
+        systeminfo
+        Get-WmiObject -class win32_processor | Select * 
+        Invoke-RestMethod -Headers @{"Metadata"="true"} -Method GET -Uri http://169.254.169.254/metadata/instance?api-version=2020-09-01 | ConvertTo-Json
+
+    continueOnError: true
+    condition: always()
