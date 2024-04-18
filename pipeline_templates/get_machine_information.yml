@@ -6,7 +6,7 @@ parameters:
 
 steps:
   - task: PowerShell@2
-    displayName: 'Get-WmiObject -class win32_processor'
+    displayName: 'Machine Information'
     inputs:
       targetType: 'inline'
       script: |

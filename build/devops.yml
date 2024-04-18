@@ -12,6 +12,9 @@ jobs:
     - visualstudio
     - Build
   steps:
+
+  - template: /pipeline_templates/get_machine_information.yml
+
   - task: BatchScript@1
     displayName: 'Setup VS Vars'
     inputs:
