@@ -53,6 +53,8 @@ jobs:
       filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
       modifyEnvironment: true
 
+  - template: get_machine_information.yml
+
   - template: codeql3000_init.yml
 
   - task: CMake@1
