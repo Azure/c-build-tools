@@ -10,9 +10,14 @@ steps:
     inputs:
       targetType: 'inline'
       script: |
+        #get information about the machine
         systeminfo
+        
+        #get information about the processor
         Get-WmiObject -class win32_processor | Select * 
-        Invoke-RestMethod -Headers @{"Metadata"="true"} -Method GET -Uri http://169.254.169.254/metadata/instance?api-version=2020-09-01 | ConvertTo-Json
+
+        # Get the Azure VM size
+        (Invoke-RestMethod -Headers @{"Metadata"="true"} -Method GET -Uri http://169.254.169.254/metadata/instance?api-version=2020-09-01).Compute.VmSize
 
     continueOnError: true
     condition: always()
