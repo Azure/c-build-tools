@@ -7,7 +7,7 @@ vcpkg_from_github(
 )
 
 set(OPTIONS "-Dc_args=/QSpectre /guard:cf")
-list(APPEND OPTIONS "-Dc_link_args=/CETCOMPAT")
+list(APPEND OPTIONS "-Dc_link_args=/CETCOMPAT /DYNAMICBASE")
 
 vcpkg_configure_meson(
     SOURCE_PATH "${SOURCE_PATH}"
