@@ -6,8 +6,8 @@ vcpkg_from_github(
     HEAD_REF master
 )
 
-set(OPTIONS "-Dc_args=/QSpectre /guard:cf")
-list(APPEND OPTIONS "-Dc_link_args=/CETCOMPAT")
+set(OPTIONS "-Dc_args=/QSpectre /guard:cf /W3")
+list(APPEND OPTIONS "-Dc_link_args=/CETCOMPAT /guard:cf")
 
 vcpkg_configure_meson(
     SOURCE_PATH "${SOURCE_PATH}"
