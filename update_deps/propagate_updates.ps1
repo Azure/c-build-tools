@@ -14,7 +14,7 @@ root repo by making PRs to each repo in bottom-up level-order.
 
 .PARAMETER root
 
-URL of the repository upto which updates must be propagated.
+Comma-separated list of URLs of the repositories upto which updates must be propagated.
 
 .PARAMETER azure_token
 
@@ -35,14 +35,14 @@ None.
 
 .EXAMPLE
 
-PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token {token2} [-root {root_repo_url}]
+PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token {token2} -root_list root1, root2, ...
 #>
 
 
 param(
-    [Parameter(Mandatory=$true)][string]$root, # url for repo upto which updates must be propagated
     [Parameter(Mandatory=$true)][string]$azure_token, # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
-    [Parameter(Mandatory=$true)][Int32]$azure_work_item # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
+    [Parameter(Mandatory=$true)][Int32]$azure_work_item, # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
+    [Parameter(Mandatory=$true)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
 
 
@@ -378,12 +378,14 @@ function propagate-updates {
     clear-directory
     # build dependency graph
     Write-Host "Building dependency graph..."
-    .$PSScriptRoot\build_graph.ps1 $root
+
+    .$PSScriptRoot\build_graph.ps1 -root_list $root_list
     if($LASTEXITCODE -ne 0)
     {
-        Write-Error("Could not build dependency graph.")
+        Write-Error("Could not build dependency graph for $root_list.")
         exit -1
     }
+
     Write-Host "Done building dependency graph"
     $repo_order = (Get-Content -Path order.json) | ConvertFrom-Json
     Write-Host "Updating repositories in the following order: "

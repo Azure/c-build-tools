@@ -2,14 +2,14 @@
 
 ## build_graph.ps1
 
-This script takes as argument the URL of the repository upto which updates must be propagated.\\
+This script takes as argument a list of URLs of the repositories upto which updates must be propagated.\\
 It builds the dependency graph and performs bottom-up level-order traversal to determine the order in which \\
 the submodules must be updates such that all submodules contain the latest changes.
 
 ### Usage
 
 ```
-PS> .\build_graph.ps1 [repo_url]
+PS> .\build_graph.ps1 -root_list {root1}, {root2}, ...
 ```
 ## propagate_updates.ps1
 
@@ -50,13 +50,13 @@ root repo by making PRs to each repo in bottom-up level-order.
 Run the script in a clean directory:
 
 ```
-PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -root {root_repo_url} -azure_token {token}  [-azure_work_item {work_item_id}] 
+PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token}  -azure_work_item {work_item_id} -root_list {root1}, {root2}, ...
 ```
 ### Arguments:
 
-- `-root`: URL of the repository upto which updates must be propagated.
 - `-azure_token`: Personal access token for Azure Devops Services. Token must have permissions for Code and Work Items.
 - `-azure_work_item`: Work item id of Azure work item that is linked to PRs made to Azure repos. Only required if Azure repos need to be updated.
+- `-root_list`: Comma-separated list of URLs of the repositories upto which updates must be propagated.
 
 ### ignores.json
 

@@ -4,15 +4,15 @@
 <#
 .SYNOPSIS
 
-Given the URL to a repository, prints the order in which its submodules should be updated to file order.json
+Given a comma-separeted list of URLs to repositories, prints the order in which its submodules should be updated to file order.json
 
 .DESCRIPTION
 
 Performs bottom-up level-order traversal of the dependency graph and prints the order to file order.json
 
-.PARAMETER repo
+.PARAMETER root_list
 
-URL of the repository upto which updates must be propagated.
+Comma-separated list of URLs for repositories upto which updates must be propagated
 
 .INPUTS
 
@@ -24,7 +24,7 @@ Prints order in which repositories must be updated to file order.json
 
 .EXAMPLE
 
-PS> .\build_graph.ps1 https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-MessagingStore
+PS> .\build_graph.ps1 -root_list 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-GeoReplication', 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-ElasticLog'
 PS> Get-Content -Path order.json
 [
     "c-build-tools",
@@ -36,13 +36,20 @@ PS> Get-Content -Path order.json
     "c-pal",
     "c-util",
     "com-wrapper",
-    "clds",
     "sf-c-util",
-    "Azure-Messaging-Metrics",
+    "clds",
     "zrpc",
-    "Azure-MessagingStore"
+    "Azure-Messaging-Metrics",
+    "Azure-MessagingStore",
+    "Azure-Messaging-GeoReplication",
+    "Azure-Messaging-ElasticLog"
 ]
 #>
+
+param(
+    [Parameter(Mandatory=$true)][string[]] $root_list # comma-separated list of URLs for repositories upto which updates must be propagated
+)
+
 
 # parse repo URL to extract repo name
 # Expected URL format: */<repo_name>[.*]
@@ -148,13 +155,16 @@ function Build-Graph {
     }
 }
 
+# seed queue with given arguments
+foreach ($root in $root_list) {
+    $queue.Enqueue($root)
+}
 
-# seed queue with given argument
-$queue.Enqueue($args[0])
 # build dependency graph
 while ( $queue.Count -ne 0) {
     Build-Graph
 }
+
 # clear spinner animation
 Write-Host "`b"-NoNewLine
 # convert dictionary to list of (repo_name, level)
