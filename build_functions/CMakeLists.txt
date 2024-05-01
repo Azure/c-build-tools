@@ -334,7 +334,7 @@ endfunction()
 # It also sets the VCPKG_OVERLAY_TRIPLETS to the common c build tools path and selects the corresponding triplet
 macro(use_vcpkg vcpkgPath)
     # Only obtain assets from Terrapin project. See Asset Caching (https://vcpkg.io/en/docs/users/assetcaching.html)
-    set(ENV{X_VCPKG_ASSET_SOURCES} "clear;x-azurl,https://terradevwus2vcpkg.blob.core.windows.net/artifacts/;x-block-origin")
+    set(ENV{X_VCPKG_ASSET_SOURCES} "clear;x-azurl,https://vcpkg.storage.devpackages.microsoft.io/artifacts/;x-block-origin")
 
     if (EXISTS ${vcpkgPath}/scripts/buildsystems/vcpkg.cmake)
         set(VCPKG_OVERLAY_TRIPLETS "${build_c_tests_internal_dir}/../vcpkg_triplets/")
