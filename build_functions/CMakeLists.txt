@@ -111,6 +111,11 @@ macro(set_default_build_options)
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
+        # Use statically linked MSVC runtime if fstatic_win32_crt is set
+        if(${fstatic_win32_crt})
+            set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+
     elseif(UNIX) #LINUX OR APPLE
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -Wno-unused-function -Wno-missing-braces -g -fPIC")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror -Wall -Wno-unused-function -Wno-missing-braces -g -fPIC")
@@ -338,19 +343,25 @@ macro(use_vcpkg vcpkgPath)
 
     if (EXISTS ${vcpkgPath}/scripts/buildsystems/vcpkg.cmake)
         set(VCPKG_OVERLAY_TRIPLETS "${build_c_tests_internal_dir}/../vcpkg_triplets/")
+
         if (${ARCHITECTURE} STREQUAL "x86_64")
-            if(${fsanitize_address})
-                set(VCPKG_TARGET_TRIPLET "x64-windows-static-cbt-asan")
-            else()
-                set(VCPKG_TARGET_TRIPLET "x64-windows-static-cbt")
-            endif()
+            set(TEMP_VCPKG_TARGET_TRIPLET_ARCH "x64")
         else()
-        if(${fsanitize_address})
-            set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt-asan")
-        else()
-            set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt")
+            set(TEMP_VCPKG_TARGET_TRIPLET_ARCH "x86")
         endif()
-    endif()
+        if(${fsanitize_address})
+            set(TEMP_VCPKG_TARGET_TRIPLET_ASAN "-asan")
+        else()
+            set(TEMP_VCPKG_TARGET_TRIPLET_ASAN "")
+        endif()
+        if(${fstatic_win32_crt})
+            set(TEMP_VCPKG_TARGET_TRIPLET_CRT "-staticcrt")
+        else()
+            set(TEMP_VCPKG_TARGET_TRIPLET_CRT "")
+        endif()
+
+        # e.g. x64-windows-staticcrt-static-cbt-asan
+        set(VCPKG_TARGET_TRIPLET "${TEMP_VCPKG_TARGET_TRIPLET_ARCH}-windows${TEMP_VCPKG_TARGET_TRIPLET_CRT}-static-cbt${TEMP_VCPKG_TARGET_TRIPLET_ASAN}")
         include(deps/vcpkg/scripts/buildsystems/vcpkg.cmake)
     endif()
 
