@@ -354,5 +354,5 @@ macro(use_vcpkg vcpkgPath)
         include(deps/vcpkg/scripts/buildsystems/vcpkg.cmake)
     endif()
 
-    set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports")
+    set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports;${VCPKG_OVERLAY_PORTS}")
 endmacro()
