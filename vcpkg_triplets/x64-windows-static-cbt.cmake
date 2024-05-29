@@ -8,6 +8,6 @@ set(VCPKG_PLATFORM_TOOLSET v143)
 # Note: Programs that aren't following the documented restrictions on binary compatibility may encounter null dereferences in mutex machinery. You must follow this rule:
 # When you mix binaries built by different supported versions of the toolset, the Redistributable version must be at least as new as the latest toolset used by any app component.
 # You can define _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR as an escape hatch.
-set(VCPKG_CXX_FLAGS /guard:cf /D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+set(VCPKG_CXX_FLAGS "/guard:cf /D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR")
 set(VCPKG_C_FLAGS /guard:cf)
 set(VCPKG_LINKER_FLAGS /guard:cf)
