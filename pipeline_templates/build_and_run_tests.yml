@@ -123,7 +123,7 @@ jobs:
         arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
         workingFolder: 'cmake_build'
 
-  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier) }}:
+  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier)) }}:
     - template : run_ctests_with_appverifier.yml
       parameters:
         ${{ if ne(repo_root_override, '') }}:
