@@ -22,6 +22,14 @@ parameters:
   - name: run_test_suite_without_ctest
     type: string
     default: ""
+  # Settings to add an app verifier step for ctest
+  - name: with_app_verifier
+    type: boolean
+    default: false
+  - name: repo_root_override
+    default: ""
+  - name: binary_name_suffix
+    default: ".exe"
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -91,7 +99,7 @@ jobs:
 
   # in the gate address sanitizer has problems running which are not reproducible locally, so skipping Address Sanitizer for vstest (note: ctest is perfectly fine with Address Sanitizer)
   # here's example:
-  #   vstest.console will output 
+  #   vstest.console will output
   # Starting test execution, please wait...
   #A total of 257 test files matched the specified pattern.
   ##[error]The active test run was aborted. Reason: Test host process crashed : AddressSanitizer: CHECK failed: asan_thread.cpp:273 "((tid())) == ((0))" (0x1, 0x0) (tid=11016)
@@ -114,6 +122,21 @@ jobs:
         filename: ctest
         arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
         workingFolder: 'cmake_build'
+
+  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier) }}:
+    - template : run_ctests_with_appverifier.yml
+      parameters:
+        ${{ if ne(repo_root_override, '') }}:
+          repo_root: ${{ parameters.repo_root_override }}
+        binary_name_suffix: ${{ parameters.binary_name_suffix }}
+        ctest_tests_bin_directory: 'cmake_build'
+        test_steps:
+        - task: CmdLine@1
+          displayName: 'Run ctest'
+          inputs:
+            filename: ctest
+            arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
+            workingFolder: 'cmake_build'
 
   - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
     - task: CmdLine@1
