@@ -30,6 +30,10 @@ parameters:
     default: ""
   - name: binary_name_suffix
     default: ".exe"
+  # Must be separated by '|' or empty to run all tests.
+  - name: appverifier_skip_tests_list
+    type: string
+    default: ""
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -81,6 +85,12 @@ jobs:
       filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
       modifyEnvironment: true
 
+  # Cleanup appverifier from any previous runs
+  - template : disable_appverifier.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
+
   - task: CMake@1
     displayName: 'CMake .. ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
     inputs:
@@ -130,12 +140,17 @@ jobs:
           repo_root: ${{ parameters.repo_root_override }}
         binary_name_suffix: ${{ parameters.binary_name_suffix }}
         ctest_tests_bin_directory: 'cmake_build'
+        ${{ if ne(parameters.appverifier_skip_tests, '') }}:
+          ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests }}"
         test_steps:
         - task: CmdLine@1
           displayName: 'Run ctest'
           inputs:
             filename: ctest
-            arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
+            ${{ if ne(parameters.appverifier_skip_tests, '') }}:
+              arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests }}'
+            ${{ else }}:
+              arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
             workingFolder: 'cmake_build'
 
   - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
