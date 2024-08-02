@@ -139,15 +139,15 @@ jobs:
           repo_root: ${{ parameters.repo_root_override }}
         binary_name_suffix: ${{ parameters.binary_name_suffix }}
         ctest_tests_bin_directory: 'cmake_build'
-        ${{ if ne(parameters.appverifier_skip_tests, '') }}:
-          ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests }}"
+        ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
+          ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
         test_steps:
         - task: CmdLine@1
           displayName: 'Run ctest'
           inputs:
             filename: ctest
-            ${{ if ne(parameters.appverifier_skip_tests, '') }}:
-              arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests }}'
+            ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
+              arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests_list }}'
             ${{ else }}:
               arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
             workingFolder: 'cmake_build'
