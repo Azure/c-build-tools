@@ -30,7 +30,6 @@ parameters:
     default: ""
   - name: binary_name_suffix
     default: ".exe"
-  # Must be separated by '|' or empty to run all tests.
   - name: appverifier_skip_tests_list
     type: string
     default: ""
