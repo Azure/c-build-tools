@@ -33,6 +33,7 @@ option(build_traceability_tool "build traceability tool (default is ON)" ON)
 option(run_reals_check "run reals check tool (default is OFF)" OFF)
 option(use_vld "use VLD for leak detection (default is OFF)" OFF)
 option(fsanitize_address "enable /fsanitize=address compiler switch (default is OFF)" OFF) # see https://docs.microsoft.com/en-us/cpp/build/reference/fsanitize
+option(fstatic_win32_crt "Statically link to CRT on Windows (default is OFF)" OFF)
 option(build_csharp_projects "Build csharp projects? (default is ON)" ON)
 option(build_sarif_results_checker "Build Sarif results checker? (default is ON)" ON)
 
