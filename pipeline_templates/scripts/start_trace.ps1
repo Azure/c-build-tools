@@ -43,8 +43,7 @@ try
     $timer.AutoReset = $false
 
     # Define the action to take when the timer elapses
-    $timerEvent = Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action 
-    {
+    $timerEvent = Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action {
         Write-Host "Timeout reached. Restarting the machine! Expect the build to (eventually) fail... "
         Restart-Computer -Force
     }
