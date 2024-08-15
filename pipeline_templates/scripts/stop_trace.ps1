@@ -22,7 +22,6 @@ try
     # print the current state first
     logman
 
-
     # then stop or reboot machine if it doesn't complete in 10 seconds
     Write-Output "Stopping any old trace (or reboot if it doesn't stop) ..."
 
