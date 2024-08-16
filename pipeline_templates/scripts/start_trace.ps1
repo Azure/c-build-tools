@@ -32,8 +32,10 @@ try
     Write-Output "Current logman state ..."
     logman
 
+    . ".\run_awdump.ps1" #this imports the Run-Awdump function
+
     # then stop or reboot machine if it doesn't complete in 10 seconds
-    Write-Output "Stopping any old trace (or reboot if it doesn't stop) ..."
+    Write-Output "Stopping any old trace (or dump logman and kernel) ..."
 
     $timeout = 10000 # 10 seconds
 
@@ -44,7 +46,13 @@ try
 
     # Define the action to take when the timer elapses
     $timerEvent = Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action {
-        Write-Host "Timeout reached. Restarting the machine! Expect the build to (eventually) fail... "
+        Write-Host "Timeout reached. Will awdump logman... Restarting the machine! Expect the build to (eventually) fail... "
+        Run-Awdump -ProcessName "logman.exe"
+        Write-Host "Running Run-AwdumpKernel to produce a kernel dump"
+        Run-AwdumpKernel
+        Write-Host "Dumps (logman and kernel exist). Will wait 5 minutes [because it might take time to upload the dump] then restart the machine"
+        Start-Sleep -Seconds 300
+        Write-Host "Restarting the machine now..."
         Restart-Computer -Force
     }
 

@@ -9,7 +9,7 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
     PROPERTY VS_PACKAGE_REFERENCES
         "CommandLineParser_2.9.1"
         "Sarif.Sdk_4.4.0"
-        "Newtonsoft.Json_13.0.1"
+        "Newtonsoft.Json_13.0.3"
         "System.Collections.Immutable_1.5.0"
 )
 
