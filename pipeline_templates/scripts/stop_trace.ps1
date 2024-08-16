@@ -18,7 +18,7 @@
 Write-Output "Stopping trace ..."
 
 try
-
+{
     # print the current state first
     Write-Output "Current logman state ..."
     logman
@@ -26,7 +26,7 @@ try
     . ".\run_awdump.ps1" #this imports the Run-Awdump function
 
     # then stop or reboot machine if it doesn't complete in 10 seconds
-    Write-Output "Stopping any old trace (or dump+kernel crash if it doesn't stop) ..."
+    Write-Output "Stopping any old trace (or dump logman and kernel) ..."
 
     $timeout = 10000 # 10 seconds
 
@@ -39,10 +39,12 @@ try
     $timerEvent = Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action {
         Write-Host "Timeout reached. Will awdump logman... Restarting the machine! Expect the build to (eventually) fail... "
         Run-Awdump -ProcessName "logman.exe"
-        Write-Host "Logman has been awdumped. Will wait 5 minutes [because it might take time to upload the dump] then bugchecking the kernel "
+        Write-Host "Running Run-AwdumpKernel to produce a kernel dump"
+        Run-AwdumpKernel
+        Write-Host "Dumps (logman and kernel exist). Will wait 5 minutes [because it might take time to upload the dump] then restart the machine"
         Start-Sleep -Seconds 300
-        Write-Host "Bugchecking the kernel now... with aHardcoded breakpoint! https://learn.microsoft.com/en-us/sysinternals/downloads/notmyfault"
-        notmyfault.exe crash 0x07
+        Write-Host "Restarting the machine now..."
+        Restart-Computer -Force
     }
 
     # Start the timer
