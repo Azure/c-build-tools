@@ -137,14 +137,14 @@ macro(set_default_build_options)
 
         # /guard:cf is Enable Control Flow Guard https://docs.microsoft.com/en-us/cpp/build/reference/guard-enable-control-flow-guard, working for compiler and the linker
         # /CETCOMPAT (CET Shadow Stack compatible) https://learn.microsoft.com/en-us/cpp/build/reference/cetcompat. Also mitigates: warning BA2025: 'latency_test_server.exe' does not enable the Control-flow Enforcement Technology (CET) Shadow Stack mitigation. To resolve this issue, pass /CETCOMPAT on the linker command lines.
-        set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
-        set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+        set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+        set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
         set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX")
 
 
         # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /guard:cf /sdl")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /guard:cf /sdl")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf /sdl")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf /sdl")
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
@@ -333,9 +333,6 @@ endfunction()
 # This function is used to add the vcpkg cmake (it lives at `vcpkgPath`) to the current project
 # It also sets the VCPKG_OVERLAY_TRIPLETS to the common c build tools path and selects the corresponding triplet
 macro(use_vcpkg vcpkgPath)
-    # Only obtain assets from Terrapin project. See Asset Caching (https://vcpkg.io/en/docs/users/assetcaching.html)
-    set(ENV{X_VCPKG_ASSET_SOURCES} "clear;x-azurl,https://vcpkg.storage.devpackages.microsoft.io/artifacts/;x-block-origin")
-
     if (EXISTS ${vcpkgPath}/scripts/buildsystems/vcpkg.cmake)
         set(VCPKG_OVERLAY_TRIPLETS "${build_c_tests_internal_dir}/../vcpkg_triplets/")
         if (${ARCHITECTURE} STREQUAL "x86_64")
@@ -354,5 +351,5 @@ macro(use_vcpkg vcpkgPath)
         include(deps/vcpkg/scripts/buildsystems/vcpkg.cmake)
     endif()
 
-    set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports;${VCPKG_OVERLAY_PORTS}")
+    set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports")
 endmacro()
