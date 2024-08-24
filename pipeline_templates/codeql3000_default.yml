@@ -12,7 +12,7 @@ jobs:
 - job: codeql
   displayName: 'Run CodeQL on production code'
   pool:
-    name: Azure-MessagingStore-WinBuildPoolVS2022
+    name: Azure-MessagingStore-WinBuildPool0
     demands:
     - Cmd
     - msbuild

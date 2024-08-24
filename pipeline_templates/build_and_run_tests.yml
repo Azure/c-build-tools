@@ -45,7 +45,7 @@ jobs:
       use_vld_option: '-Duse_vld:bool=ON'
 
   pool:
-    name: Azure-MessagingStore-WinBuildPoolVS2022
+    name: Azure-MessagingStore-WinBuildPool0
     demands:
     - Cmd
     - msbuild
