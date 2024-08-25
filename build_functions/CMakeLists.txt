@@ -336,6 +336,9 @@ macro(use_vcpkg vcpkgPath)
     # Only obtain assets from Terrapin project. See Asset Caching (https://vcpkg.io/en/docs/users/assetcaching.html)
     set(ENV{X_VCPKG_ASSET_SOURCES} "clear;x-azurl,https://vcpkg.storage.devpackages.microsoft.io/artifacts/;x-block-origin")
 
+    #Use vcpkg package caching into an ADO artifact feed
+    set(ENV{VCPKG_BINARY_SOURCES} "clear;nuget,https://msazure.pkgs.visualstudio.com/One/_packaging/azure-messagingstore-vcpkg-cache/nuget/v3/index.json,readwrite")
+
     if (EXISTS ${vcpkgPath}/scripts/buildsystems/vcpkg.cmake)
         set(VCPKG_OVERLAY_TRIPLETS "${build_c_tests_internal_dir}/../vcpkg_triplets/")
         if (${ARCHITECTURE} STREQUAL "x86_64")
