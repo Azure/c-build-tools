@@ -1,0 +1,10 @@
+# this template file sets up the Nuget tool:
+# - installs the Nuget tool
+# - authenticates so that Nuget can be used in other tools like vcpkg
+steps:
+  - task: NuGetToolInstaller@0
+    displayName: 'Use NuGet 6.2.1 (required for X.509 certificate chain validation retries during restore)'
+    inputs:
+      versionSpec: 6.2.1
+
+  - task: NuGetAuthenticate@1
