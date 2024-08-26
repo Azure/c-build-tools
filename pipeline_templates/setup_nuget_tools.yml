@@ -1,0 +1,16 @@
+# File: templates/setup_nuget_tools.yml
+# this template file sets up NuGet tools to install the correct version consistently
+
+steps:
+- task: NuGetAuthenticate@1
+
+- task: UseDotNet@2
+  displayName: Use .NET 6 SDK
+  inputs:
+    packageType: sdk
+    version: 6.x
+
+- task: NuGetToolInstaller@1
+  displayName: 'Use NuGet 6.2'
+  inputs:
+    versionSpec: 6.2.*
