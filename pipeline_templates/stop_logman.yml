@@ -14,10 +14,10 @@ steps:
     continueOnError: true
     condition: always()
 
-  - task: PublishBuildArtifacts@1
+  - task: PublishPipelineArtifact@1
     displayName: 'Publish etl files'
     inputs:
-      pathtoPublish: '$(Build.ArtifactStagingDirectory)\etl_logs'
+      targetPath: '$(Build.ArtifactStagingDirectory)\etl_logs'
       artifactName: 'etl_logs_$(System.JobName)_$(System.JobAttempt)_$(System.JobId)'
       parallel: true
       parallelCount: 8
