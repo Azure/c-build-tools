@@ -4,12 +4,6 @@
 steps:
 - task: NuGetAuthenticate@1
 
-- task: UseDotNet@2
-  displayName: Use .NET 6 SDK
-  inputs:
-    packageType: sdk
-    version: 6.x
-
 - task: NuGetToolInstaller@1
   displayName: 'Use NuGet 6.2'
   inputs:
