@@ -5,7 +5,7 @@ resources:
 jobs:
 - job: Build_Windows_x64_Debug
   pool:
-    name: Azure-MessagingStore-WinBuildPool0
+    name: Azure-MessagingStore-WinBuildPoolVS2022_0
     demands:
     - Cmd
     - msbuild
@@ -58,7 +58,7 @@ jobs:
 
 - job: Build_Windows_x64_RelWithDebInfo
   pool:
-    name: Azure-MessagingStore-WinBuildPool0
+    name: Azure-MessagingStore-WinBuildPoolVS2022_0
     demands:
     - Cmd
     - msbuild
