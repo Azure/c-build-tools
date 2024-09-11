@@ -137,14 +137,28 @@ macro(set_default_build_options)
 
         # /guard:cf is Enable Control Flow Guard https://docs.microsoft.com/en-us/cpp/build/reference/guard-enable-control-flow-guard, working for compiler and the linker
         # /CETCOMPAT (CET Shadow Stack compatible) https://learn.microsoft.com/en-us/cpp/build/reference/cetcompat. Also mitigates: warning BA2025: 'latency_test_server.exe' does not enable the Control-flow Enforcement Technology (CET) Shadow Stack mitigation. To resolve this issue, pass /CETCOMPAT on the linker command lines.
-        set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
-        set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+        # /LTCG is Link-time Code Generation https://docs.microsoft.com/en-us/cpp/build/reference/ltcg-link-time-code-generation?view=msvc-160
+        if(${use_ltcg})
+            set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+            set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+        else()
+            set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+            set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+        endif()
+
         set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX")
 
 
         # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf /sdl")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf /sdl")
+        # /GL (Whole Program Optimization) https://docs.microsoft.com/en-us/cpp/build/reference/gl-whole-program-optimization?view=msvc-160
+        if(${use_ltcg})
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf /sdl")
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf /sdl")
+        else()
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /guard:cf /sdl")
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /guard:cf /sdl")
+        endif()
+
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
