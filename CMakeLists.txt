@@ -49,10 +49,6 @@ else()
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL $ENV{BUILD_BINARIESDIRECTORY}/MinSizeRel)
 endif()
 
-if(${use_vld})
-    add_compile_definitions(USE_VLD)
-endif()
-
 add_subdirectory(build_functions)
 
 enable_testing()
