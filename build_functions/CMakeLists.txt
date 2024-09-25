@@ -375,7 +375,7 @@ endmacro()
 function(add_source_if_no_cs target additional_source)
     # Get the list of source files for the target
     get_target_property(SOURCES ${target} SOURCES)
-    
+
     # Check if any source files end with .cs
     set(FOUND_CS FALSE)
     foreach(src IN LISTS SOURCES)
@@ -384,7 +384,7 @@ function(add_source_if_no_cs target additional_source)
             break()
         endif()
     endforeach()
-    
+
     # Conditionally add the additional source file
     if(NOT FOUND_CS)
         target_sources(${target} PRIVATE ${additional_source})
@@ -399,8 +399,8 @@ function(add_vld_if_defined DIR)
         foreach(TGT IN LISTS TARGETS)
             get_target_property(TARGET_TYPE ${TGT} TYPE)
             if(TARGET_TYPE STREQUAL "EXECUTABLE")
-                #if the target is an executable which is not build from any .cs files then assume vld would work... 
-                add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_SOURCE_DIR}/use_vld.c)
+                #if the target is an executable which is not build from any .cs files then assume vld would work...
+                add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/use_vld.c)
             endif()
         endforeach()
 
