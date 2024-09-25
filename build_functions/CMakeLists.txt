@@ -394,27 +394,25 @@ endfunction()
 
 #Function to parse all targets in a given directory and its subdirectories
 function(add_vld_if_defined_impl DIR)
-    if(${use_vld})
-        get_property(TARGETS DIRECTORY "${DIR}" PROPERTY BUILDSYSTEM_TARGETS)
-        foreach(TGT IN LISTS TARGETS)
-            get_target_property(TARGET_TYPE ${TGT} TYPE)
-            if(TARGET_TYPE STREQUAL "EXECUTABLE")
-                #if the target is an executable which is not build from any .cs files then assume vld would work...
-                add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/use_vld.c)
-            endif()
-        endforeach()
+    get_property(TARGETS DIRECTORY "${DIR}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(TGT IN LISTS TARGETS)
+        get_target_property(TARGET_TYPE ${TGT} TYPE)
+        if(TARGET_TYPE STREQUAL "EXECUTABLE")
+            #if the target is an executable which is not build from any .cs files then assume vld would work...
+            add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/use_vld.c)
+        endif()
+    endforeach()
 
-        # Get all subdirectories
-        get_property(SUBDIRS DIRECTORY "${DIR}" PROPERTY SUBDIRECTORIES)
-        foreach(SUBDIR IN LISTS SUBDIRS)
+    # Get all subdirectories
+    get_property(SUBDIRS DIRECTORY "${DIR}" PROPERTY SUBDIRECTORIES)
+    foreach(SUBDIR IN LISTS SUBDIRS)
         add_vld_if_defined_impl("${SUBDIR}")
-        endforeach()
-    endif()
+    endforeach()
 endfunction()
 
 macro(add_vld_if_defined)
     if(${use_vld})
         add_compile_definitions(USE_VLD)
+        add_vld_if_defined_impl(${CMAKE_CURRENT_LIST_DIR})
     endif()
-    add_vld_if_defined_impl(${CMAKE_CURRENT_LIST_DIR})
 endmacro()
