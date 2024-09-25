@@ -162,8 +162,6 @@ macro(set_default_build_options)
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FIvld.h")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /FIvld.h")
         include_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include")
         if (${ARCHITECTURE} STREQUAL "x86_64")
             link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win64")
