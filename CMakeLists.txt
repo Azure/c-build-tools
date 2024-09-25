@@ -74,3 +74,8 @@ endif()
 if((CMAKE_GENERATOR MATCHES "Visual Studio") AND (${build_sarif_results_checker}))
     add_subdirectory(sarif_results_checker)
 endif()
+
+#Insert vld in all executables if so required
+if(${use_vld})
+    parse_all_targets_recursive_for_vld(${CMAKE_CURRENT_SOURCE_DIR})
+endif()

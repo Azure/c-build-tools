@@ -371,3 +371,41 @@ macro(use_vcpkg vcpkgPath)
 
     set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports;${VCPKG_OVERLAY_PORTS}")
 endmacro()
+
+function(add_source_if_no_cs target additional_source)
+    # Get the list of source files for the target
+    get_target_property(SOURCES ${target} SOURCES)
+    
+    # Check if any source files end with .cs
+    set(FOUND_CS FALSE)
+    foreach(src IN LISTS SOURCES)
+        if(src MATCHES "\\.cs$")
+            set(FOUND_CS TRUE)
+            break()
+        endif()
+    endforeach()
+    
+    # Conditionally add the additional source file
+    if(NOT FOUND_CS)
+        target_sources(${target} PRIVATE ${additional_source})
+        #message(STATUS "Added ${additional_source} to ${target}")
+    endif()
+endfunction()
+
+#Function to parse all targets in a given directory and its subdirectories
+function(parse_all_targets_recursive_for_vld DIR)
+    get_property(TARGETS DIRECTORY "${DIR}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(TGT IN LISTS TARGETS)
+        get_target_property(TARGET_TYPE ${TGT} TYPE)
+        if(TARGET_TYPE STREQUAL "EXECUTABLE")
+            #if the target is an executable which is not build from any .cs files then assume vld would work... 
+            add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_SOURCE_DIR}/build_functions/ctestrunnerswitcher.c)
+        endif()
+    endforeach()
+
+    # Get all subdirectories
+    get_property(SUBDIRS DIRECTORY "${DIR}" PROPERTY SUBDIRECTORIES)
+    foreach(SUBDIR IN LISTS SUBDIRS)
+        parse_all_targets_recursive_for_vld("${SUBDIR}")
+    endforeach()
+endfunction()
