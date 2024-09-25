@@ -399,7 +399,7 @@ function(parse_all_targets_recursive_for_vld DIR)
         get_target_property(TARGET_TYPE ${TGT} TYPE)
         if(TARGET_TYPE STREQUAL "EXECUTABLE")
             #if the target is an executable which is not build from any .cs files then assume vld would work... 
-            add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_SOURCE_DIR}/build_functions/ctestrunnerswitcher.c)
+            add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_SOURCE_DIR}/use_vld.c)
         endif()
     endforeach()
 
