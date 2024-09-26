@@ -410,9 +410,27 @@ function(add_vld_if_defined_impl DIR)
     endforeach()
 endfunction()
 
-macro(add_vld_if_defined)
+function(add_vld_if_defined DIR)
+    #this function will add a COMPILE_DEFINTION to the top CMakeLists.txt if -Duse_vld:BOOL=ON has been used on the command line
+    #this function is sort of self-idempotent, as calling it multiple times will only add USE_VLD as a define once
+    #in addition to that, the function will scan all the targets which are defined "so far" and if the target is an executable and if the target is not built from any .cs files then the function will add use_vld.c to that target
+    #obviously this function should be called after all the targets have been defined
+    #due to the recursive nature of CMake, it will first be called from CMakeLists.txt/deps/c-build-tools/CMakeLists.txt so at the first call it will set the COMPILE_DEFINITIONS for the top CMakeLists.txt. This ensured that all subsequent projects will have USE_VLD defined.
+    #the last time it will be called will be from top CMakeLists.txt's last lines of code where it will parse all the targets defined and insert vld.c.
+    
     if(${use_vld})
-        add_compile_definitions(USE_VLD)
-        add_vld_if_defined_impl(${CMAKE_CURRENT_LIST_DIR})
+        #"Adds definitions to the compiler command line for targets in the current directory, whether added before or after this command is invoked, and for the ones in sub-directories added after."
+        #keywords: "[...]current directory, whether added before or after[...]", [...]in sub-directories added after[...].
+        #source: https://cmake.org/cmake/help/latest/command/add_definitions.html
+        #this is a problem in general because while COMPILE _DEFINITIONS are propagated to subdirectories, they should exist BEFORE the subdirectories are parsed.
+        #solution here is to stuck the COMPILE_DEFINITIONS to the top CMakeLists.txt as first thing
+        #${CMAKE_SOURCE_DIR} is always top CMakeLists.txt's directory.
+        get_property(EXISTING_COMPILE_DEFITIONS DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+        if(NOT "USE_VLD" IN_LIST EXISTING_COMPILE_DEFITIONS)
+            list(APPEND EXISTING_COMPILE_DEFITIONS USE_VLD)
+            set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS ${EXISTING_COMPILE_DEFITIONS})
+        endif()
+
+        add_vld_if_defined_impl(${DIR})
     endif()
-endmacro()
+endfunction()
