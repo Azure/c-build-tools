@@ -16,8 +16,14 @@ steps:
         #get information about the processor
         Get-WmiObject -class win32_processor | Select * 
 
-        # Get the Azure VM size
-        (Invoke-RestMethod -Headers @{"Metadata"="true"} -Method GET -Uri http://169.254.169.254/metadata/instance?api-version=2020-09-01).Compute.VmSize
+        try {
+          # Get the Azure VM size, this usually fails
+          (Invoke-RestMethod -Headers @{"Metadata"="true"} -Method GET -Uri http://169.254.169.254/metadata/instance?api-version=2020-09-01).Compute.VmSize
+        }
+        catch
+        {
+          Write-Output $_
+        }
 
     continueOnError: true
     condition: always()
