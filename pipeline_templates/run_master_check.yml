@@ -1,10 +1,21 @@
-# verifies that all submodules are ancestors of their master branchg
+# verifies that all submodules are ancestors of their master branch
 
 parameters:
- - name: repo_root
-   default: $(Build.SourcesDirectory)/deps/c-build-tools
+  - name: repo_root
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
 
-steps:
+jobs:
+- job: run_master_check
+  displayName: 'Run submodule master check'
+  pool:
+    name: Azure-MessagingStore-WinBuildPoolVS2022_0
+    demands:
+    - Cmd
+
+  workspace:
+    clean: all
+
+  steps:
   - task: PowerShell@2
     displayName: 'Verify submodules are ancestors of their master branch'
     inputs:
