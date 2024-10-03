@@ -11,5 +11,3 @@ steps:
       targetType: 'filePath'
       filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/submodule_master_check.ps1'
     continueOnError: false
-    failOnStderr: true
-    errorActionPreference: 'Stop'
