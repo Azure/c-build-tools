@@ -1,0 +1,13 @@
+# verifies that all submodules are ancestors of their master branchg
+
+parameters:
+ - name: repo_root
+   default: $(Build.SourcesDirectory)/deps/c-build-tools
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Verify submodules are ancestors of their master branch'
+    inputs:
+      targetType: 'filePath'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/submodule_master_check.ps1'
+    continueOnError: false
