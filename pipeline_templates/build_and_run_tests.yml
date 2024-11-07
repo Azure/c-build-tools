@@ -16,10 +16,21 @@ parameters:
     default: "x64"
   - name: cmake_options
     type: string
-    default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON"
+    default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_traceability:BOOL=ON"
   # If this parameter is specified the specified test suite will be run without invoking ctest
   # This is very useful for debugging a single test suite because ctest still does not allow Watson dumps to be collected
   - name: run_test_suite_without_ctest
+    type: string
+    default: ""
+  # Settings to add an app verifier step for ctest
+  - name: with_app_verifier
+    type: boolean
+    default: false
+  - name: repo_root_override
+    default: ""
+  - name: binary_name_suffix
+    default: ".exe"
+  - name: appverifier_skip_tests_list
     type: string
     default: ""
 
@@ -34,7 +45,7 @@ jobs:
       use_vld_option: '-Duse_vld:bool=ON'
 
   pool:
-    name: Azure-MessagingStore-WinBuildPoolVS2022
+    name: Azure-MessagingStore-WinBuildPoolVS2022_0
     demands:
     - Cmd
     - msbuild
@@ -73,6 +84,12 @@ jobs:
       filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
       modifyEnvironment: true
 
+  # Cleanup appverifier from any previous runs
+  - template : disable_appverifier.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
+
   - task: CMake@1
     displayName: 'CMake .. ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
     inputs:
@@ -91,7 +108,7 @@ jobs:
 
   # in the gate address sanitizer has problems running which are not reproducible locally, so skipping Address Sanitizer for vstest (note: ctest is perfectly fine with Address Sanitizer)
   # here's example:
-  #   vstest.console will output 
+  #   vstest.console will output
   # Starting test execution, please wait...
   #A total of 257 test files matched the specified pattern.
   ##[error]The active test run was aborted. Reason: Test host process crashed : AddressSanitizer: CHECK failed: asan_thread.cpp:273 "((tid())) == ((0))" (0x1, 0x0) (tid=11016)
@@ -115,6 +132,26 @@ jobs:
         arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
         workingFolder: 'cmake_build'
 
+  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier)) }}:
+    - template : run_ctests_with_appverifier.yml
+      parameters:
+        ${{ if ne(parameters.repo_root_override, '') }}:
+          repo_root: ${{ parameters.repo_root_override }}
+        binary_name_suffix: ${{ parameters.binary_name_suffix }}
+        ctest_tests_bin_directory: 'cmake_build'
+        ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
+          ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
+        test_steps:
+        - task: CmdLine@1
+          displayName: 'Run ctest'
+          inputs:
+            filename: ctest
+            ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
+              arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests_list }}'
+            ${{ else }}:
+              arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
+            workingFolder: 'cmake_build'
+
   - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
     - task: CmdLine@1
       displayName: 'Run ${{ parameters.run_test_suite_without_ctest }}'
@@ -124,10 +161,10 @@ jobs:
 
   - template : stop_logman.yml
 
-  - task: PublishBuildArtifacts@1
+  - task: PublishPipelineArtifact@1
     displayName: 'Publish ${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration}} Artifacts'
     inputs:
-      pathtoPublish: $(Build.BinariesDirectory)
+      targetPath: $(Build.BinariesDirectory)
       artifactName: ${{ parameters.build_configuration}}_${{ parameters.ARCH_TYPE }}_artifacts
       parallel: true
     condition: failed()

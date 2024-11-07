@@ -35,6 +35,7 @@ option(use_vld "use VLD for leak detection (default is OFF)" OFF)
 option(fsanitize_address "enable /fsanitize=address compiler switch (default is OFF)" OFF) # see https://docs.microsoft.com/en-us/cpp/build/reference/fsanitize
 option(build_csharp_projects "Build csharp projects? (default is ON)" ON)
 option(build_sarif_results_checker "Build Sarif results checker? (default is ON)" ON)
+option(use_ltcg "use link time code generation (default is ON)" ON)
 
 # BUILD_BINARIESDIRECTORY is an environment variable used to designate where the binaries resulting from the build go
 # It exists because we usually build using Azure DevOps (it maps to the Build.BinariesDirectory predefined variable of DevOps: https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables?view=azure-devops&tabs=yaml)
@@ -73,3 +74,6 @@ endif()
 if((CMAKE_GENERATOR MATCHES "Visual Studio") AND (${build_sarif_results_checker}))
     add_subdirectory(sarif_results_checker)
 endif()
+
+#Insert vld in all executables if so required
+add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})

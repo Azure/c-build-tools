@@ -137,19 +137,31 @@ macro(set_default_build_options)
 
         # /guard:cf is Enable Control Flow Guard https://docs.microsoft.com/en-us/cpp/build/reference/guard-enable-control-flow-guard, working for compiler and the linker
         # /CETCOMPAT (CET Shadow Stack compatible) https://learn.microsoft.com/en-us/cpp/build/reference/cetcompat. Also mitigates: warning BA2025: 'latency_test_server.exe' does not enable the Control-flow Enforcement Technology (CET) Shadow Stack mitigation. To resolve this issue, pass /CETCOMPAT on the linker command lines.
-        set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
-        set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+        # /LTCG is Link-time Code Generation https://docs.microsoft.com/en-us/cpp/build/reference/ltcg-link-time-code-generation?view=msvc-160
+        if(${use_ltcg})
+            set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+            set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+        else()
+            set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+            set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
+        endif()
+
         set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX")
 
 
         # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf /sdl")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf /sdl")
+        # /GL (Whole Program Optimization) https://docs.microsoft.com/en-us/cpp/build/reference/gl-whole-program-optimization?view=msvc-160 Note: GL and LTCG are together used.
+        if(${use_ltcg})
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf /sdl")
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf /sdl")
+        else()
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /guard:cf /sdl")
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /guard:cf /sdl")
+        endif()
+
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FIvld.h")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /FIvld.h")
         include_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include")
         if (${ARCHITECTURE} STREQUAL "x86_64")
             link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win64")
@@ -336,6 +348,9 @@ macro(use_vcpkg vcpkgPath)
     # Only obtain assets from Terrapin project. See Asset Caching (https://vcpkg.io/en/docs/users/assetcaching.html)
     set(ENV{X_VCPKG_ASSET_SOURCES} "clear;x-azurl,https://vcpkg.storage.devpackages.microsoft.io/artifacts/;x-block-origin")
 
+    #Use vcpkg package caching into an ADO artifact feed
+    set(ENV{VCPKG_BINARY_SOURCES} "clear;nuget,https://msazure.pkgs.visualstudio.com/One/_packaging/azure-messagingstore-vcpkg-cache/nuget/v3/index.json,readwrite")
+
     if (EXISTS ${vcpkgPath}/scripts/buildsystems/vcpkg.cmake)
         set(VCPKG_OVERLAY_TRIPLETS "${build_c_tests_internal_dir}/../vcpkg_triplets/")
         if (${ARCHITECTURE} STREQUAL "x86_64")
@@ -356,3 +371,66 @@ macro(use_vcpkg vcpkgPath)
 
     set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports;${VCPKG_OVERLAY_PORTS}")
 endmacro()
+
+function(add_source_if_no_cs target additional_source)
+    # Get the list of source files for the target
+    get_target_property(SOURCES ${target} SOURCES)
+
+    # Check if any source files end with .cs
+    set(FOUND_CS FALSE)
+    foreach(src IN LISTS SOURCES)
+        if(src MATCHES "\\.cs$")
+            set(FOUND_CS TRUE)
+            break()
+        endif()
+    endforeach()
+
+    # Conditionally add the additional source file
+    if(NOT FOUND_CS)
+        target_sources(${target} PRIVATE ${additional_source})
+        #message(STATUS "Added ${additional_source} to ${target}")
+    endif()
+endfunction()
+
+#Function to parse all targets in a given directory and its subdirectories
+function(add_vld_if_defined_impl DIR)
+    get_property(TARGETS DIRECTORY "${DIR}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(TGT IN LISTS TARGETS)
+        get_target_property(TARGET_TYPE ${TGT} TYPE)
+        if(TARGET_TYPE STREQUAL "EXECUTABLE")
+            #if the target is an executable which is not build from any .cs files then assume vld would work...
+            add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/use_vld.c)
+        endif()
+    endforeach()
+
+    # Get all subdirectories
+    get_property(SUBDIRS DIRECTORY "${DIR}" PROPERTY SUBDIRECTORIES)
+    foreach(SUBDIR IN LISTS SUBDIRS)
+        add_vld_if_defined_impl("${SUBDIR}")
+    endforeach()
+endfunction()
+
+function(add_vld_if_defined DIR)
+    #this function will add a COMPILE_DEFINTION to the top CMakeLists.txt if -Duse_vld:BOOL=ON has been used on the command line
+    #this function is sort of self-idempotent, as calling it multiple times will only add USE_VLD as a define once
+    #in addition to that, the function will scan all the targets which are defined "so far" and if the target is an executable and if the target is not built from any .cs files then the function will add use_vld.c to that target
+    #obviously this function should be called after all the targets have been defined
+    #due to the recursive nature of CMake, it will first be called from CMakeLists.txt/deps/c-build-tools/CMakeLists.txt so at the first call it will set the COMPILE_DEFINITIONS for the top CMakeLists.txt. This ensured that all subsequent projects will have USE_VLD defined.
+    #the last time it will be called will be from top CMakeLists.txt's last lines of code where it will parse all the targets defined and insert vld.c.
+    
+    if(${use_vld})
+        #"Adds definitions to the compiler command line for targets in the current directory, whether added before or after this command is invoked, and for the ones in sub-directories added after."
+        #keywords: "[...]current directory, whether added before or after[...]", [...]in sub-directories added after[...].
+        #source: https://cmake.org/cmake/help/latest/command/add_definitions.html
+        #this is a problem in general because while COMPILE _DEFINITIONS are propagated to subdirectories, they should exist BEFORE the subdirectories are parsed.
+        #solution here is to stuck the COMPILE_DEFINITIONS to the top CMakeLists.txt as first thing
+        #${CMAKE_SOURCE_DIR} is always top CMakeLists.txt's directory.
+        get_property(EXISTING_COMPILE_DEFITIONS DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+        if(NOT "USE_VLD" IN_LIST EXISTING_COMPILE_DEFITIONS)
+            list(APPEND EXISTING_COMPILE_DEFITIONS USE_VLD)
+            set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS ${EXISTING_COMPILE_DEFITIONS})
+        endif()
+
+        add_vld_if_defined_impl(${DIR})
+    endif()
+endfunction()
