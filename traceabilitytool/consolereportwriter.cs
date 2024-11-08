@@ -89,6 +89,7 @@ namespace TraceabilityTool
 
             foreach (var entry in ReportGenerator.repeatingRequirements)
             {
+                sb.AppendLine(entry.Key + ",Repeated," + entry.Value.First());
                 if (!requirementsToFix.ContainsKey(entry.Key))
                 {
                     requirementsToFix.Add(entry.Key, entry.Value.First());
