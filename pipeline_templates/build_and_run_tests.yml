@@ -47,7 +47,6 @@ jobs:
   pool:
     name: Azure-MessagingStore-WinBuildPoolVS2022_0
     demands:
-    - Cmd
     - msbuild
     - cmake
     - visualstudio
