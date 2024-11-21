@@ -47,7 +47,6 @@ jobs:
   pool:
     name: Azure-MessagingStore-WinBuildPoolVS2022_0
     demands:
-    - Cmd
     - msbuild
     - cmake
     - visualstudio
@@ -125,12 +124,11 @@ jobs:
         otherConsoleOptions: '-- RunConfiguration.ExecutionThreadApartmentState=MTA'
 
   - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
-    - task: CmdLine@1
+    - task: CmdLine@2
       displayName: 'Run ctest'
       inputs:
-        filename: ctest
-        arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
-        workingFolder: 'cmake_build'
+        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure'
+        workingDirectory: 'cmake_build'
 
   - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier)) }}:
     - template : run_ctests_with_appverifier.yml
@@ -142,22 +140,21 @@ jobs:
         ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
           ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
         test_steps:
-        - task: CmdLine@1
+        - task: CmdLine@2
           displayName: 'Run ctest'
           inputs:
-            filename: ctest
             ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
-              arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests_list }}'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests_list }}'
             ${{ else }}:
-              arguments: '-C "${{ parameters.build_configuration }}" --output-on-failure'
-            workingFolder: 'cmake_build'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure'
+            workingDirectory: 'cmake_build'
 
   - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
-    - task: CmdLine@1
+    - task: CmdLine@2
       displayName: 'Run ${{ parameters.run_test_suite_without_ctest }}'
       inputs:
-        filename: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}\${{ parameters.run_test_suite_without_ctest }}.exe'
-        workingFolder: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}'
+        script: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}\${{ parameters.run_test_suite_without_ctest }}.exe'
+        workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}'
 
   - template : stop_logman.yml
 

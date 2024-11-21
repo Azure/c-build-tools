@@ -3,9 +3,15 @@
 # - disable sn verification (for Azure.Messaging.SarifResultsChecker)
 # - initializes the Code QL 3000 engine
 
+parameters:
+ - name: repo_root
+   default: $(Build.SourcesDirectory)/deps/c-build-tools
+
 steps:
 - template : get_machine_information.yml
 - template : disable_sn_verification.yml
+  parameters:
+    repo_root: ${{ parameters.repo_root }}
 
 - task: CodeQL3000Init@0
   inputs:
