@@ -7,7 +7,6 @@ jobs:
   pool:
     name: Azure-MessagingStore-WinBuildPoolVS2022_0
     demands:
-    - Cmd
     - msbuild
     - visualstudio
     - Build
@@ -49,12 +48,11 @@ jobs:
       customCommand: 'run test --verbose'
       workingDir: srs_extension
 
-  - task: CmdLine@1
+  - task: CmdLine@2
     displayName: 'Run ctest Debug'
     inputs:
-      filename: ctest
-      arguments: '-C "Debug" --output-on-failure'
-      workingFolder: 'build_x64'
+      script: 'ctest -C "Debug" --output-on-failure'
+      workingDirectory: 'build_x64'
 
 - job: Build_Windows_x64_RelWithDebInfo
   pool:
@@ -99,12 +97,11 @@ jobs:
       customCommand: 'run test --verbose'
       workingDir: srs_extension
 
-  - task: CmdLine@1
+  - task: CmdLine@2
     displayName: 'Run ctest RelWithDebInfo'
     inputs:
-      filename: ctest
-      arguments: '-C "RelWithDebInfo" --output-on-failure'
-      workingFolder: 'build_x64'
+      script: 'ctest -C "RelWithDebInfo" --output-on-failure'
+      workingDirectory: 'build_x64'
 
 - template: /pipeline_templates/codeql3000_default.yml
 
