@@ -1,10 +1,6 @@
 # This is the job template for running CodeQL on a repository
 
 parameters:
- - name: repo_root
-   default: $(Build.SourcesDirectory)/deps/c-build-tools
-
-parameters:
 - name: 'cmake_command'
   type: string
   default: '.. -G "Visual Studio 17 2022" -A x64'
