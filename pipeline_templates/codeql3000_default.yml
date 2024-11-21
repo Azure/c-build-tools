@@ -57,7 +57,7 @@ jobs:
 
   - template: codeql3000_init.yml
     parameters:
-      repo_root: $(Build.SourcesDirectory)
+      repo_root: ${{ parameters.repo_root }}
 
   - task: CMake@1
     displayName: 'CMake ${{parameters.cmake_command}} -DCMAKE_BUILD_TYPE=${{parameters.configuration}}'
