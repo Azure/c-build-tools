@@ -257,6 +257,7 @@ function set-autocomplete-azure {
         }
         completionOptions=@{
             mergeStrategy="squash"
+            deleteSourceBranch=$true
         }
     }
     $body = $body | ConvertTo-Json
