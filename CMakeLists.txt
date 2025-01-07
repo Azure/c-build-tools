@@ -58,6 +58,12 @@ include (CheckIncludeFiles)
 CHECK_INCLUDE_FILES(stdint.h HAVE_STDINT_H)
 CHECK_INCLUDE_FILES(stdbool.h HAVE_STDBOOL_H)
 
+#build a linkable lib called use_vld that can be indicated to targets as "to link with" rather than compiling "use_vld.c" in every target
+if(${use_vld})
+    add_library(use_vld STATIC use_vld.c)
+endif()
+
+
 #vld and address sanitizer do not play nice with each other (stack overflow will happen)
 if(${fsanitize_address} AND ${use_vld})
     MESSAGE(FATAL_ERROR "using both \${fsanitize_address}=${fsanitize_address} and \${use_vld}=${use_vld} at the same time will result in stack overflow. Refusing to generate.")
