@@ -388,7 +388,7 @@ function(add_use_vld_if_no_cs target)
     # Conditionally add the additional source file
     if(NOT FOUND_CS)
         target_link_libraries(${target} use_vld)
-        message(STATUS "Added use_vld to ${target}")
+        #message(STATUS "Added use_vld to ${target}")
     endif()
 endfunction()
 
