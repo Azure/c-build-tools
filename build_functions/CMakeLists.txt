@@ -1,6 +1,8 @@
 #Copyright (c) Microsoft. All rights reserved.
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+#this file should contain only macro/functions and no other CMakelists commands if possible
+
 set(build_c_tests_internal_dir ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
 
 #add_custom_target... below exists so that a project (called "c_build_functions") is created in Visual Studio so it can be edited easily in the IDE
@@ -391,11 +393,6 @@ function(add_use_vld_if_no_cs target)
         #message(STATUS "Added use_vld to ${target}")
     endif()
 endfunction()
-
-#build a linkable lib called use_vld that can be indicated to targets as "to link with" rather than compiling "use_vld.c" in every target
-if(${use_vld})
-    add_library(use_vld STATIC use_vld.c)
-endif()
 
 #Function to parse all targets in a given directory and its subdirectories
 function(add_vld_if_defined_impl DIR)
