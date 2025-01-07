@@ -1,6 +1,8 @@
 #Copyright (c) Microsoft. All rights reserved.
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+#this file should contain only macro/functions and no other CMakelists commands if possible (hint: it is located in "build_functions" folder)
+
 set(build_c_tests_internal_dir ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
 
 #add_custom_target... below exists so that a project (called "c_build_functions") is created in Visual Studio so it can be edited easily in the IDE
@@ -372,7 +374,7 @@ macro(use_vcpkg vcpkgPath)
     set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports;${VCPKG_OVERLAY_PORTS}")
 endmacro()
 
-function(add_source_if_no_cs target additional_source)
+function(add_use_vld_if_no_cs target)
     # Get the list of source files for the target
     get_target_property(SOURCES ${target} SOURCES)
 
@@ -387,8 +389,8 @@ function(add_source_if_no_cs target additional_source)
 
     # Conditionally add the additional source file
     if(NOT FOUND_CS)
-        target_sources(${target} PRIVATE ${additional_source})
-        #message(STATUS "Added ${additional_source} to ${target}")
+        target_link_libraries(${target} use_vld)
+        #message(STATUS "Added use_vld to ${target}")
     endif()
 endfunction()
 
@@ -399,7 +401,7 @@ function(add_vld_if_defined_impl DIR)
         get_target_property(TARGET_TYPE ${TGT} TYPE)
         if(TARGET_TYPE STREQUAL "EXECUTABLE")
             #if the target is an executable which is not build from any .cs files then assume vld would work...
-            add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/use_vld.c)
+            add_use_vld_if_no_cs(${TGT})
         endif()
     endforeach()
 

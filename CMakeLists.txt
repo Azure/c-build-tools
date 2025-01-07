@@ -9,7 +9,6 @@ endif()
 
 #if ((NOT TARGET c_build_tools) AND (EXISTS ${CMAKE_CURRENT_LIST_DIR}/deps/c-build-tools/CMakeLists.txt))
 #    add_subdirectory(deps/c-build-tools)
-#    set_default_build_options()
 #endif()
 
 if(TARGET c_build_tools)
@@ -57,6 +56,14 @@ include (CheckIncludeFiles)
 
 CHECK_INCLUDE_FILES(stdint.h HAVE_STDINT_H)
 CHECK_INCLUDE_FILES(stdbool.h HAVE_STDBOOL_H)
+
+set_default_build_options()
+
+#build a linkable lib called use_vld that can be indicated to targets as "to link with" rather than compiling "use_vld.c" in every target
+if(${use_vld})
+    add_library(use_vld STATIC build_functions/use_vld.c)
+endif()
+
 
 #vld and address sanitizer do not play nice with each other (stack overflow will happen)
 if(${fsanitize_address} AND ${use_vld})
