@@ -1,7 +1,7 @@
 #Copyright (c) Microsoft. All rights reserved.
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-#this file should contain only macro/functions and no other CMakelists commands if possible
+#this file should contain only macro/functions and no other CMakelists commands if possible (hint: it is located in "build_functions" folder)
 
 set(build_c_tests_internal_dir ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
 

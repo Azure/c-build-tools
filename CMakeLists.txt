@@ -60,7 +60,7 @@ CHECK_INCLUDE_FILES(stdbool.h HAVE_STDBOOL_H)
 
 #build a linkable lib called use_vld that can be indicated to targets as "to link with" rather than compiling "use_vld.c" in every target
 if(${use_vld})
-    add_library(use_vld STATIC use_vld.c)
+    add_library(use_vld STATIC build_functions/use_vld.c)
 endif()
 
 
