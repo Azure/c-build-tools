@@ -372,7 +372,7 @@ macro(use_vcpkg vcpkgPath)
     set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports;${VCPKG_OVERLAY_PORTS}")
 endmacro()
 
-function(add_source_if_no_cs target additional_source)
+function(add_use_vld_if_no_cs target)
     # Get the list of source files for the target
     get_target_property(SOURCES ${target} SOURCES)
 
@@ -387,10 +387,15 @@ function(add_source_if_no_cs target additional_source)
 
     # Conditionally add the additional source file
     if(NOT FOUND_CS)
-        target_sources(${target} PRIVATE ${additional_source})
-        #message(STATUS "Added ${additional_source} to ${target}")
+        target_link_libraries(${target} use_vld)
+        message(STATUS "Added use_vld to ${target}")
     endif()
 endfunction()
+
+#build a linkable lib called use_vld that can be indicated to targets as "to link with" rather than compiling "use_vld.c" in every target
+if(${use_vld})
+    add_library(use_vld STATIC use_vld.c)
+endif()
 
 #Function to parse all targets in a given directory and its subdirectories
 function(add_vld_if_defined_impl DIR)
@@ -399,7 +404,7 @@ function(add_vld_if_defined_impl DIR)
         get_target_property(TARGET_TYPE ${TGT} TYPE)
         if(TARGET_TYPE STREQUAL "EXECUTABLE")
             #if the target is an executable which is not build from any .cs files then assume vld would work...
-            add_source_if_no_cs(${TGT} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/use_vld.c)
+            add_use_vld_if_no_cs(${TGT})
         endif()
     endforeach()
 
