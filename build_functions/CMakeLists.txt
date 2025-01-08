@@ -390,7 +390,7 @@ function(add_use_vld_if_no_cs target)
     # Conditionally add the additional source file
     if(NOT FOUND_CS)
         target_link_libraries(${target} $<LINK_LIBRARY:WHOLE_ARCHIVE,use_vld>) #WHOLE_ARCHIVE forces the linker to not discard use_vld lib
-        message(STATUS "Added use_vld to ${target}")
+        #message(STATUS "Added use_vld to ${target}")
     endif()
 endfunction()
 
