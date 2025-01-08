@@ -389,7 +389,7 @@ function(add_use_vld_if_no_cs target)
 
     # Conditionally add the additional source file
     if(NOT FOUND_CS)
-        target_link_libraries(${target} use_vld)
+        target_link_libraries(${target} $<LINK_LIBRARY:WHOLE_ARCHIVE,use_vld>) #WHOLE_ARCHIVE forces the linker to not discard use_vld lib
         #message(STATUS "Added use_vld to ${target}")
     endif()
 endfunction()
@@ -419,7 +419,7 @@ function(add_vld_if_defined DIR)
     #obviously this function should be called after all the targets have been defined
     #due to the recursive nature of CMake, it will first be called from CMakeLists.txt/deps/c-build-tools/CMakeLists.txt so at the first call it will set the COMPILE_DEFINITIONS for the top CMakeLists.txt. This ensured that all subsequent projects will have USE_VLD defined.
     #the last time it will be called will be from top CMakeLists.txt's last lines of code where it will parse all the targets defined and insert vld.c.
-    
+
     if(${use_vld})
         #"Adds definitions to the compiler command line for targets in the current directory, whether added before or after this command is invoked, and for the ones in sub-directories added after."
         #keywords: "[...]current directory, whether added before or after[...]", [...]in sub-directories added after[...].
