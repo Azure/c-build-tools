@@ -90,13 +90,36 @@ macro(set_default_build_options)
         #use _CRT_SECURE_NO_WARNINGS by default
         add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
-        # warning C4200: nonstandard extension used: zero-sized array in struct/union : looks very standard in C99 and it is called flexible array. Documentation-wise is a flexible array, but called "unsized" in Microsoft's docs
-        # https://msdn.microsoft.com/en-us/library/b6fae073.aspx
-        # /WX is "treats all compiler warnings as error". (https://docs.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=vs-2019)
-        # /bigobj is "increase number of sections in .obj file" (https://docs.microsoft.com/en-us/cpp/build/reference/bigobj-increase-number-of-sections-in-dot-obj-file?view=vs-2019)
-        # /W4 displays level 1, level 2, and level 3 warnings, and all level 4 (informational) warnings that aren't off by default. (https://docs.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=msvc-160)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX /wd4200 /bigobj")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX /wd4200 /bigobj")
+        #add a compile option to use link time code generation (or not)
+        if(${use_ltcg})
+
+            # /GL (Whole Program Optimization) https://docs.microsoft.com/en-us/cpp/build/reference/gl-whole-program-optimization?view=msvc-160 Note: GL and LTCG are together used.
+            set(USE_LTCG_CMAKE_C_FLAGS " /GL")
+            set(USE_LTCG_CMAKE_CXX_FLAGS " /GL")
+
+            # /LTCG is Link-time Code Generation https://docs.microsoft.com/en-us/cpp/build/reference/ltcg-link-time-code-generation?view=msvc-160
+            set(USE_LTCG_CMAKE_EXE_LINKER_FLAGS " /LTCG")
+            set(USE_LTCG_CMAKE_SHARED_LINKER_FLAGS " /LTCG")
+
+        else()
+            set(USE_LTCG_CMAKE_C_FLAGS " ")
+            set(USE_LTCG_CMAKE_CXX_FLAGS " ")
+            set(USE_LTCG_CMAKE_EXE_LINKER_FLAGS " ")
+            set(USE_LTCG_CMAKE_SHARED_LINKER_FLAGS " ")
+        endif()
+
+        #add a compile option to use guard:cf or not. Note: guard:cf is enabled by default but can be disabled in debug cases (such as when stepping into a function through a function pointer would not step into the function)
+        if(${use_guard_cf})
+            set(USE_GUARD_CF_CMAKE_C_FLAGS " /guard:cf")
+            set(USE_GUARD_CF_CMAKE_CXX_FLAGS " /guard:cf")
+            set(USE_GUARD_CF_CMAKE_EXE_LINKER_FLAGS " /guard:cf")
+            set(USE_GUARD_CF_CMAKE_SHARED_LINKER_FLAGS " /guard:cf")
+        else()
+            set(USE_GUARD_CF_CMAKE_C_FLAGS "$ /guard:cf-")
+            set(USE_GUARD_CF_CMAKE_CXX_FLAGS " /guard:cf-")
+            set(USE_GUARD_CF_CMAKE_EXE_LINKER_FLAGS " /guard:cf-")
+            set(USE_GUARD_CF_CMAKE_SHARED_LINKER_FLAGS " /guard:cf-")
+        endif()
 
         if(${CMAKE_GENERATOR} STREQUAL "Visual Studio 15 2017")
             #do nothing about preprocesor - automatically for C/C++ the "traditional preprocessor will be used
@@ -107,7 +130,6 @@ macro(set_default_build_options)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:preprocessor /wd5105")
             set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Zc:preprocessor /wd5105")
         endif()
-
 
         # replace other warning levels (just in case - CMake used to add /W3 in previous versions, in 3.18 magically has /W1 for projects) with /W4 (warning level 4)
         string(REGEX REPLACE "/W[1-3]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
@@ -137,29 +159,31 @@ macro(set_default_build_options)
             endif()
         endif()
 
-        # /guard:cf is Enable Control Flow Guard https://docs.microsoft.com/en-us/cpp/build/reference/guard-enable-control-flow-guard, working for compiler and the linker
-        # /CETCOMPAT (CET Shadow Stack compatible) https://learn.microsoft.com/en-us/cpp/build/reference/cetcompat. Also mitigates: warning BA2025: 'latency_test_server.exe' does not enable the Control-flow Enforcement Technology (CET) Shadow Stack mitigation. To resolve this issue, pass /CETCOMPAT on the linker command lines.
-        # /LTCG is Link-time Code Generation https://docs.microsoft.com/en-us/cpp/build/reference/ltcg-link-time-code-generation?view=msvc-160
-        if(${use_ltcg})
-            set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
-            set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /LTCG /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
-        else()
-            set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
-            set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /guard:cf /CETCOMPAT")
-        endif()
+        #add always used flags for the compiler:
+        # warning C4200: nonstandard extension used: zero-sized array in struct/union : looks very standard in C99 and it is called flexible array. Documentation-wise is a flexible array, but called "unsized" in Microsoft's docs
+        # https://msdn.microsoft.com/en-us/library/b6fae073.aspx
+        # /WX is "treats all compiler warnings as error". (https://docs.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=vs-2019)
+        # /bigobj is "increase number of sections in .obj file" (https://docs.microsoft.com/en-us/cpp/build/reference/bigobj-increase-number-of-sections-in-dot-obj-file?view=vs-2019)
+        # /W4 displays level 1, level 2, and level 3 warnings, and all level 4 (informational) warnings that aren't off by default. (https://docs.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level?view=msvc-160)
+        # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX /wd4200 /bigobj /sdl")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX /wd4200 /bigobj /sdl")
 
+        #add optional flags for the compiler:
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${USE_LTCG_CMAKE_C_FLAGS} ${USE_GUARD_CF_CMAKE_C_FLAGS}")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_LTCG_CMAKE_CXX_FLAGS} ${USE_GUARD_CF_CMAKE_CXX_FLAGS}")
+
+        #add always used static linker flags:
         set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /WX")
 
+        #add always used flags for the linker:
+        # /CETCOMPAT (CET Shadow Stack compatible) https://learn.microsoft.com/en-us/cpp/build/reference/cetcompat. Also mitigates: warning BA2025: 'latency_test_server.exe' does not enable the Control-flow Enforcement Technology (CET) Shadow Stack mitigation. To resolve this issue, pass /CETCOMPAT on the linker command lines.
+        set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
+        set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
 
-        # /sdl (Enable Additional Security Checks) https://learn.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks. This also mitigates  warning BA2026: 'geo_replication_service.exe' is a Windows PE that wasn't compiled with recommended Security Development Lifecycle (SDL) checks. As a result some critical compile-time and runtime checks may be disabled, increasing the possibility of an exploitable runtime issue [...]
-        # /GL (Whole Program Optimization) https://docs.microsoft.com/en-us/cpp/build/reference/gl-whole-program-optimization?view=msvc-160 Note: GL and LTCG are together used.
-        if(${use_ltcg})
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GL /guard:cf /sdl")
-            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GL /guard:cf /sdl")
-        else()
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /guard:cf /sdl")
-            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /guard:cf /sdl")
-        endif()
+        #add optional flags for the linker:
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${USE_LTCG_CMAKE_EXE_LINKER_FLAGS} ${USE_GUARD_CF_CMAKE_EXE_LINKER_FLAGS}")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${USE_LTCG_CMAKE_SHARED_LINKER_FLAGS} ${USE_GUARD_CF_CMAKE_SHARED_LINKER_FLAGS}")
 
     endif()
 

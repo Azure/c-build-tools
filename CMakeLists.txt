@@ -35,6 +35,7 @@ option(fsanitize_address "enable /fsanitize=address compiler switch (default is 
 option(build_csharp_projects "Build csharp projects? (default is ON)" ON)
 option(build_sarif_results_checker "Build Sarif results checker? (default is ON)" ON)
 option(use_ltcg "use link time code generation (default is ON)" ON)
+option(use_guard_cf "use /guard:cf compiler switch (default is ON). Set this to OFF to workaround not stepping into functions through function pointers." ON)
 
 # BUILD_BINARIESDIRECTORY is an environment variable used to designate where the binaries resulting from the build go
 # It exists because we usually build using Azure DevOps (it maps to the Build.BinariesDirectory predefined variable of DevOps: https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables?view=azure-devops&tabs=yaml)
