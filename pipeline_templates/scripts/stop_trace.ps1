@@ -28,16 +28,22 @@ try
     # then stop or reboot machine if it doesn't complete in 10 seconds
     Write-Output "Stopping any old trace (or dump logman and kernel) ..."
 
-    $timeout = 10000 # 10 seconds
+    $timeout = 10 # 10 seconds
 
-    # Setup a timer
-    $timer = New-Object System.Timers.Timer
-    $timer.Interval = $timeout
-    $timer.AutoReset = $false
+    # Run logman stop in a job 
+    #(note: using timers and callbacks did not work as timers execute on the same thread), while jobs execute as background.
+    
+    $job = Start-Job -ScriptBlock {
+        logman stop testgate
+    }
 
-    # Define the action to take when the timer elapses
-    $timerEvent = Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action {
-        Write-Host "Timeout reached. Will awdump logman... Restarting the machine! Expect the build to (eventually) fail... "
+    # Wait for the job to complete or timeout
+    $job | Wait-Job -Timeout $timeout
+
+    # Check if the job is still running
+    if ($job.State -eq 'Running') {
+        # Job is still running, handle the timeout
+        Write-Host "Timeout reached. Will do:`nRun-Awdump -ProcessName `"`logman.exe`"` `nRun-AwdumpKernel`nand then restart the machine! Expect the build to (eventually) fail... "
         Run-Awdump -ProcessName "logman.exe"
         Write-Host "Running Run-AwdumpKernel to produce a kernel dump"
         Run-AwdumpKernel
@@ -45,21 +51,15 @@ try
         Start-Sleep -Seconds 300
         Write-Host "Restarting the machine now..."
         Restart-Computer -Force
+    } else {
+        # Job completed, clean up
+        Remove-Job -Job $job
+        Write-Output "Logman stopped naturally."
     }
-
-    # Start the timer
-    $timer.Start()
-
-    # timer watches over logman stop... 
-    logman stop testgate
-
-    # If we get here, that means the event was not fired, that can only mean that logman stopped naturally. Undo the watchdog.
-    Unregister-Event -SourceIdentifier $timerEvent.Name
-    $timer.Dispose()
 }
 catch
 {
-    Write-Warning "logman stop testgate failed"
+    Write-Output "An error occurred: $_"
 }
 
 Write-Output "Deleting trace ..."
