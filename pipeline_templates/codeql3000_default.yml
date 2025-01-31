@@ -78,3 +78,5 @@ jobs:
     parameters:
       ignore_paths: 'deps/jemalloc;deps/mimalloc;deps/vcpkg;build/vcpkg_installed'
       configuration: ${{parameters.configuration}}
+
+  - template : clean_ado_folders.yml
