@@ -1,0 +1,17 @@
+# File: clean_ado_folders.yml
+# this template file clean up the build and artifacts staging directory so that we do not accumulate unwanted files that take up space
+
+steps:
+- task: DeleteFiles@1
+  displayName: 'Clean build binaries directory'
+  inputs:
+    sourceFolder: $(Build.BinariesDirectory)
+    contents: \*
+  condition: always()
+
+- task: DeleteFiles@1
+  displayName: 'Clean artifacts staging directory'
+  inputs:
+    sourceFolder: $(Build.ArtifactStagingDirectory)
+    contents: \*
+  condition: always()
