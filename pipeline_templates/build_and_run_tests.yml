@@ -165,3 +165,5 @@ jobs:
       artifactName: ${{ parameters.build_configuration}}_${{ parameters.ARCH_TYPE }}_artifacts
       parallel: true
     condition: failed()
+
+  - template : clean_ado_folders.yml
