@@ -30,6 +30,10 @@ set_property(TARGET traceabilitytool
 )
 
 set_property(TARGET traceabilitytool
+    PROPERTY VS_GLOBAL_RuntimeIdentifier "win-${CMAKE_VS_PLATFORM_NAME}"
+)
+
+set_property(TARGET traceabilitytool
     PROPERTY VS_GLOBAL_CompilerGeneratedFilesOutputPath Generated
 )
 

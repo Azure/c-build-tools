@@ -31,6 +31,10 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
     PROPERTY VS_GLOBAL_CompilerGeneratedFilesOutputPath Generated
 )
 
+set_property(TARGET Azure.Messaging.SarifResultsChecker
+    PROPERTY VS_GLOBAL_RuntimeIdentifier "win-${CMAKE_VS_PLATFORM_NAME}"
+)
+
 set_output_folder_properties(Azure.Messaging.SarifResultsChecker)
 
 set_target_properties(Azure.Messaging.SarifResultsChecker PROPERTIES
