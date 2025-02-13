@@ -1,5 +1,7 @@
 #Copyright (C) Microsoft Corporation. All rights reserved.
 
+set(CMAKE_CSharp_FLAGS "/langversion:latest /platform:x64")
+
 add_executable(Azure.Messaging.SarifResultsChecker
     Program.cs
     Options.cs

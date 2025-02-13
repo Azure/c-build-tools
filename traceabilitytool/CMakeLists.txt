@@ -2,7 +2,7 @@
 
 enable_language(CSharp)
 
-set(CMAKE_CSharp_FLAGS "/langversion:latest")
+set(CMAKE_CSharp_FLAGS "/langversion:latest /platform:x64")
 
 remove_definitions(-DBUILD_CONFIG=$<CONFIG>)
 
