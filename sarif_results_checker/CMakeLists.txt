@@ -1,5 +1,7 @@
 #Copyright (C) Microsoft Corporation. All rights reserved.
 
+set(CMAKE_CSharp_FLAGS "/langversion:latest /platform:x64")
+
 add_executable(Azure.Messaging.SarifResultsChecker
     Program.cs
     Options.cs
@@ -29,6 +31,10 @@ endif()
 
 set_property(TARGET Azure.Messaging.SarifResultsChecker
     PROPERTY VS_GLOBAL_CompilerGeneratedFilesOutputPath Generated
+)
+
+set_property(TARGET Azure.Messaging.SarifResultsChecker
+    PROPERTY VS_GLOBAL_RuntimeIdentifier "win-${CMAKE_VS_PLATFORM_NAME}"
 )
 
 set_output_folder_properties(Azure.Messaging.SarifResultsChecker)
