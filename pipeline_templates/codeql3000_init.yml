@@ -17,3 +17,4 @@ steps:
   inputs:
     Enabled: true
     AnalyzeInPipeline: true
+    languages: 'cpp,csharp,rust'
