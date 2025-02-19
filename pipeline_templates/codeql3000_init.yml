@@ -17,4 +17,5 @@ steps:
   inputs:
     Enabled: true
     AnalyzeInPipeline: true
-    languages: 'cpp,csharp,powershell,rust'
+    # https://eng.ms/docs/cloud-ai-platform/devdiv/one-engineering-system-1es/1es-docs/codeql/1es-codeql has documentation about language
+    language: 'cpp,csharp,powershell,rust'
