@@ -15,3 +15,4 @@ steps:
     sourceFolder: $(Build.ArtifactStagingDirectory)
     contents: \*
   condition: always()
+  continueOnError: true
