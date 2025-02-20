@@ -2,7 +2,7 @@
 
 enable_language(CSharp)
 
-set(CMAKE_CSharp_FLAGS "/langversion:latest")
+set(CMAKE_CSharp_FLAGS "/langversion:latest /platform:x64")
 
 remove_definitions(-DBUILD_CONFIG=$<CONFIG>)
 
@@ -27,6 +27,10 @@ set_property(TARGET traceabilitytool
 
 set_property(TARGET traceabilitytool
     PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.7.2"
+)
+
+set_property(TARGET traceabilitytool
+    PROPERTY VS_GLOBAL_RuntimeIdentifier "win-${CMAKE_VS_PLATFORM_NAME}"
 )
 
 set_property(TARGET traceabilitytool
