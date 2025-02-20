@@ -8,6 +8,7 @@ steps:
     sourceFolder: $(Build.BinariesDirectory)
     contents: \*
   condition: always()
+  continueOnError: true
 
 - task: DeleteFiles@1
   displayName: 'Clean artifacts staging directory'
