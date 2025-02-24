@@ -109,16 +109,18 @@ macro(set_default_build_options)
         endif()
 
         #add a compile option to use guard:cf or not. Note: guard:cf is enabled by default but can be disabled in debug cases (such as when stepping into a function through a function pointer would not step into the function)
+        # as of 25 Feb 2025 https://learn.microsoft.com/en-us/cpp/build/reference/guard-enable-control-flow-guard?view=msvc-170 misstates that "The /guard:cf option must be passed to both the compiler and linker to build code that uses the CFG exploit mitigation technique."
+        # instead, the linker needs to use "/GUARD:NO" switch 
         if(${use_guard_cf})
             set(USE_GUARD_CF_CMAKE_C_FLAGS " /guard:cf")
             set(USE_GUARD_CF_CMAKE_CXX_FLAGS " /guard:cf")
-            set(USE_GUARD_CF_CMAKE_EXE_LINKER_FLAGS " /guard:cf")
-            set(USE_GUARD_CF_CMAKE_SHARED_LINKER_FLAGS " /guard:cf")
+            set(USE_GUARD_CF_CMAKE_EXE_LINKER_FLAGS " /GUARD:CF")
+            set(USE_GUARD_CF_CMAKE_SHARED_LINKER_FLAGS " /GUARD:CF")
         else()
             set(USE_GUARD_CF_CMAKE_C_FLAGS " /guard:cf-")
             set(USE_GUARD_CF_CMAKE_CXX_FLAGS " /guard:cf-")
-            set(USE_GUARD_CF_CMAKE_EXE_LINKER_FLAGS " /guard:cf-")
-            set(USE_GUARD_CF_CMAKE_SHARED_LINKER_FLAGS " /guard:cf-")
+            set(USE_GUARD_CF_CMAKE_EXE_LINKER_FLAGS " /GUARD:NO")
+            set(USE_GUARD_CF_CMAKE_SHARED_LINKER_FLAGS " /GUARD:NO")
         endif()
 
         if(${CMAKE_GENERATOR} STREQUAL "Visual Studio 15 2017")
