@@ -110,7 +110,7 @@ macro(set_default_build_options)
 
         #add a compile option to use guard:cf or not. Note: guard:cf is enabled by default but can be disabled in debug cases (such as when stepping into a function through a function pointer would not step into the function)
         # as of 25 Feb 2025 https://learn.microsoft.com/en-us/cpp/build/reference/guard-enable-control-flow-guard?view=msvc-170 misstates that "The /guard:cf option must be passed to both the compiler and linker to build code that uses the CFG exploit mitigation technique."
-        # instead, the linker needs to use "/GUARD:NO" switch 
+        # instead, the linker needs to use "/GUARD:NO" switch
         if(${use_guard_cf})
             set(USE_GUARD_CF_CMAKE_C_FLAGS " /guard:cf")
             set(USE_GUARD_CF_CMAKE_CXX_FLAGS " /guard:cf")
@@ -206,7 +206,8 @@ macro(set_default_build_options)
     enable_testing()
 endmacro()
 
-function(build_as_csharp_net6_project_with_framework targetname framework)
+# .NET6 or newer
+function(build_as_csharp_netcore_project_with_framework targetname framework)
     set_target_properties(${targetname} PROPERTIES
         DOTNET_SDK "Microsoft.NET.Sdk"
         DOTNET_TARGET_FRAMEWORK ${framework}
@@ -228,22 +229,23 @@ function(build_as_csharp_net6_project_with_framework targetname framework)
     # Enable native debugging in the managed projects
     set(PROFILE_NAME ${targetname})
     configure_file(${build_c_tests_internal_dir}/launchSettings.json.in ${CMAKE_CURRENT_BINARY_DIR}/Properties/launchSettings.json @ONLY)
-    # As of cmake 3.24-3.26 (not sure exactly), this is required or Debug will be warning level 3 and Release will be warning level 1
-    target_compile_options(${targetname} PRIVATE /warn:4)
+    # As of cmake 3.24-3.26 (not sure exactly), need to force warning level 4 here or Debug will be warning level 3 and Release will be warning level 1
+    # Also fix so that RelWithDebInfo and MinSizeRel are optimized
+    target_compile_options(${targetname} PRIVATE /warn:4 $<$<OR:$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:/optimize>)
 endfunction()
 
 # The following helper will enable C# .NET6 for projects
 # Assumes MSSharedLibSN1024.snk is available at the project root
 # Note: csharp_sdk_fix must be used in the project
 function(build_as_csharp_net6_project targetname)
-    build_as_csharp_net6_project_with_framework(${targetname} "net6.0")
+    build_as_csharp_netcore_project_with_framework(${targetname} "net6.0")
 endfunction()
 
 # The following helper will enable C# .NET6 for Windows only projects
 # Assumes MSSharedLibSN1024.snk is available at the project root
 # Note: csharp_sdk_fix must be used in the project
 function(build_as_csharp_net6_windows_project targetname)
-    build_as_csharp_net6_project_with_framework(${targetname} "net6.0-windows")
+    build_as_csharp_netcore_project_with_framework(${targetname} "net6.0-windows")
 endfunction()
 
 # variable to store list of libs that must be checked for reals
