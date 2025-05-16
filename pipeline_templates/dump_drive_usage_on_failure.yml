@@ -22,11 +22,12 @@ steps:
       ignoreLASTEXITCODE: false
       script: |
         Write-Output "Checking ${{ parameters.drive_letter }} drive..."
+        Write-Output "Re-enable du usage reporting below with task https://msazure.visualstudio.com/One/_sprints/taskboard/Azure%20Messaging%20Store/One/Custom/AzureMessaging/Bromine/BrM1?workitem=32920581"
         # Get the size of all directories recursively down to the "depth" level
         # Extract the size of the directory (in MB), its path, and the depth
         # Filter out directories to only show greater than "min_size_MB"
         # Sort by depth ascending (so root folders show first) then by size descending (show largest folders)
         # Table formatting such that the path is wrapped to a new line if needed
-        du -nobanner -accepteula -c -l ${{ parameters.depth }} ${{ parameters.drive_letter }}:\ | ConvertFrom-Csv | select @{Name="DirectorySize";expression={$_.DirectorySize / 1MB }},Path,@{Name="Depth";expression={$_.Path.Split('\').count - 1}} | Where-Object { $_.DirectorySize -gt ${{ parameters.min_size_MB }} } | Sort-Object -Property @{Expression="Depth"; Descending=$false},@{Expression="DirectorySize"; Descending=$true} | Format-Table -Wrap
+        # du -nobanner -accepteula -c -l ${{ parameters.depth }} ${{ parameters.drive_letter }}:\ | ConvertFrom-Csv | select @{Name="DirectorySize";expression={$_.DirectorySize / 1MB }},Path,@{Name="Depth";expression={$_.Path.Split('\').count - 1}} | Where-Object { $_.DirectorySize -gt ${{ parameters.min_size_MB }} } | Sort-Object -Property @{Expression="Depth"; Descending=$false},@{Expression="DirectorySize"; Descending=$true} | Format-Table -Wrap
         Write-Output "Done"
     condition: failed()
