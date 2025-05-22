@@ -23,9 +23,11 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
     PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.7.2"
 )
 
-if (EXISTS ${PROJECT_SOURCE_DIR}/import_for_signing.not_propz_at_all)
-    set_property(TARGET Azure.Messaging.SarifResultsChecker
-        PROPERTY VS_PROJECT_IMPORT ${PROJECT_SOURCE_DIR}/import_for_signing.not_propz_at_all
+if (EXISTS ${PROJECT_SOURCE_DIR}/MSSharedLibSN1024.snk)
+    set_target_properties(Azure.Messaging.SarifResultsChecker PROPERTIES
+        VS_GLOBAL_AssemblyOriginatorKeyFile "${PROJECT_SOURCE_DIR}/MSSharedLibSN1024.snk"
+        VS_GLOBAL_SignAssembly true
+        VS_GLOBAL_DelaySign true
     )
 endif()
 
