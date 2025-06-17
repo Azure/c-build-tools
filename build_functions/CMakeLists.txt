@@ -142,7 +142,7 @@ macro(set_default_build_options)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror -Wall -Wno-unused-function -Wno-missing-braces -g -fPIC")
     endif()
 
-    if(${run_valgrind} OR ${run_helgrind} OR ${run_drd})
+    if((${run_valgrind} OR ${run_helgrind} OR ${run_drd}) AND (UNIX)) # only define USE_VALGRIND for *nix
         add_definitions(-DUSE_VALGRIND)
     endif()
 
