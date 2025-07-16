@@ -7,7 +7,7 @@ Param(
     $ignoreSubmodules = "",
     # Custom branches to check against instead of the default master branch, can be specified as a comma-separated list in format "submodulePath:branchName"
     # Example: "deps/submodule1:main,deps/submodule2:develop"
-    $customSubmoduleBranches = "",
+    $customSubmoduleBranches = ""
 )
 
 # Initialize return code to 0
