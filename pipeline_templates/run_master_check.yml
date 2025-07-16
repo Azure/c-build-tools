@@ -49,5 +49,5 @@ jobs:
     inputs:
       targetType: 'filePath'
       filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/submodule_master_check.ps1'
-      arguments: '-ignoreSubmodules ${{ parameters.ignore_submodules }} -customSubmoduleBranches ${{ parameters.custom_submodule_branches }}'
+      arguments: '-ignoreSubmodules "${{ parameters.ignore_submodules }}" -customSubmoduleBranches "${{ parameters.custom_submodule_branches }}"'
     continueOnError: false
