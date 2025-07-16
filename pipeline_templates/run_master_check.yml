@@ -3,6 +3,12 @@
 parameters:
   - name: repo_root
     default: $(Build.SourcesDirectory)/deps/c-build-tools
+  - name: ignore_submodules # Comma-separated list of submodules to ignore
+    default: ""
+    type: string
+  - name: custom_submodule_branches # Comma-separated list of custom submodule branches, in the format "submodulePath:branchName", e.g. "deps/libuv:master,submodule2:develop"
+    default: ""
+    type: string
 
 jobs:
 - job: run_master_check
@@ -43,4 +49,5 @@ jobs:
     inputs:
       targetType: 'filePath'
       filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/submodule_master_check.ps1'
+      arguments: '-ignoreSubmodules "${{ parameters.ignore_submodules }}" -customSubmoduleBranches "${{ parameters.custom_submodule_branches }}"'
     continueOnError: false
