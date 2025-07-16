@@ -2,8 +2,14 @@
 
 #this script checks for every submodule of the current repo if its SHA is an ancestor of SHA at the current the master branch of the submodule
 
+Param(
+    $ignoreSubmodules = ""
+)
+
 # Initialize return code to 0
 $global:returnCode = 0
+
+$ignoreSubmoduleParts = $ignoreSubmodules -split ','
 
 # Iterate over each submodule
 $submodules = git submodule foreach --quiet 'echo $name $sha1'
@@ -11,6 +17,12 @@ foreach ($submodule in $submodules) {
     $parts = $submodule -split ' '
     $submodulePath = $parts[0]
     $submoduleSHA = $parts[1]
+
+    if ($ignoreSubmoduleParts -contains $submodulePath)
+    {
+        Write-Host "Ignoring submodule $submodulePath"
+        continue
+    }
 
     # Navigate to the submodule directory
     Push-Location -LiteralPath $submodulePath
