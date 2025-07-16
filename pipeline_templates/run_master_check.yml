@@ -3,6 +3,9 @@
 parameters:
   - name: repo_root
     default: $(Build.SourcesDirectory)/deps/c-build-tools
+  - name: ignore_submodules # Comma-separated list of submodules to ignore
+    default: ""
+    type: string
 
 jobs:
 - job: run_master_check
@@ -42,5 +45,5 @@ jobs:
     displayName: 'Verify submodules are ancestors of their master branch'
     inputs:
       targetType: 'filePath'
-      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/submodule_master_check.ps1'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/submodule_master_check.ps1 -ignoreSubmodules ${{ parameters.ignore_submodules }}'
     continueOnError: false
