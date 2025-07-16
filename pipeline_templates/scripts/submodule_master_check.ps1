@@ -54,27 +54,16 @@ foreach ($submodule in $submodules) {
     $ref = "refs/remotes/origin/$branchToCheck"
     $originBranch = "origin/$branchToCheck"
 
-    # Check if the master branch exists
-    git show-ref --verify --quiet $ref
+    # Check if the SHA is an ancestor of the desired branch
+    git merge-base --is-ancestor $submoduleSHA $originBranch
 
-    # Capture the exit code
-    $exitCode = $LASTEXITCODE
+    $isAncestor = $LASTEXITCODE -eq 0
 
-    if ($exitCode -gt 0) {
-        Write-Host "$branchToCheck branch not found in $submodulePath, skipping..."
+    if ($isAncestor) {
+        Write-Host "SHA $submoduleSHA found in $branchToCheck branch of $submodulePath"
     } else {
-        # Check if the SHA is an ancestor of the master branch
-        git merge-base --is-ancestor $submoduleSHA $originBranch
-
-        $isAncestor = $LASTEXITCODE -eq 0
-
-        if ($isAncestor) {
-           Write-Host "SHA $submoduleSHA found in $branchToCheck branch of $submodulePath"
-        } else {
-
-            Write-Host "SHA $submoduleSHA not found in $branchToCheck branch of $submodulePath"
-            $global:returnCode = 1
-        }
+        Write-Host "SHA $submoduleSHA not found in $branchToCheck branch of $submodulePath"
+        $global:returnCode = 1
     }
 
     # Navigate back to the main repo
