@@ -76,7 +76,7 @@ jobs:
 
   - template: codeql3000_finalize.yml
     parameters:
-      ignore_paths: 'deps/jemalloc;deps/mimalloc;deps/vcpkg;build/vcpkg_installed'
+      ignore_paths: 'deps/jemalloc;deps/mimalloc;deps/vcpkg;deps/libuv;build/vcpkg_installed'
       configuration: ${{parameters.configuration}}
 
   - template : clean_ado_folders.yml
