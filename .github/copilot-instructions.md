@@ -72,7 +72,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 ### Static Analysis
 - **Reals Check**: Scans static libraries for unexpected "real" function symbols
 - **CodeQL3000**: Pipeline integration with SARIF validation
-- **Traceability**: Requirement coverage analysis across Word docs and source
+- **Traceability**: Requirement coverage analysis across .md files and source
 
 ## Dependency Management
 
@@ -85,7 +85,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 
 ### File Patterns
 - Test executables: `*_ut_lib`, `*_int_lib`, `*_perf_lib` suffixes
-- Binary naming: Often ends with `_exe_ebs.exe` in AppVerifier scenarios
+- Binary naming: Often ends with `_exe_X.exe`, where X is the name of the project (for example, ebs, zrpc, etc.)
 - C# assemblies: Auto-signed, delay-signed with strong names
 
 ### Security Defaults
