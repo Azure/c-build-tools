@@ -1,5 +1,15 @@
 # c-build-tools AI Coding Instructions
 
+## General Coding Standards
+**IMPORTANT**: All code changes must follow the comprehensive coding standards defined in [`general_coding_instructions.md`](general_coding_instructions.md). This includes:
+- Function naming conventions (snake_case, module prefixes, internal function patterns)
+- Parameter validation rules and error handling patterns
+- Variable naming and result variable conventions
+- Header inclusion order and memory management requirements
+- Requirements traceability system (SRS/Codes_SRS/Tests_SRS patterns)
+- Async callback patterns and goto usage rules
+- Indentation, formatting, and code structure guidelines
+
 ## Project Overview
 This is a comprehensive C/C++ build infrastructure and quality assurance toolkit for Azure projects. It provides reusable CMake functions, Azure DevOps pipeline templates, C# analysis tools, and VS Code extensions for requirement tracking.
 
