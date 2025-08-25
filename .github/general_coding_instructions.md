@@ -97,9 +97,12 @@ int my_operation_async(MY_HANDLE handle, const char* param, MY_ASYNC_CALLBACK ca
     int result;
     
     // Parameter validation
-    if (handle == NULL || callback == NULL)
+    if (
+        (handle == NULL) ||
+        (callback == NULL)
+        )
     {
-        LogError("Invalid arguments");
+        LogError("Invalid arguments MY_HANDLE handle=%p, MY_ASYNC_CALLBACK callback=%p, void* context=%p", handle, callback, context);
         result = MU_FAILURE;
     }
     else
@@ -138,7 +141,7 @@ uint32_t record_count = 0;
 bool is_success = false;
 
 // Function parameters
-BSDL_FILE_HL_HANDLE handle
+BSDL_FILE_HL_HANDLE bsdl_file_hl_handle
 const char* full_file_name
 CONSTBUFFER_HANDLE user_metadata
 void* user_context
