@@ -29,6 +29,10 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
 ### Quality Tools
 - **Sarif Results Checker** (`sarif_results_checker/`): .NET 6 console app that fails builds on security violations
 - **Traceability Tool** (`traceabilitytool/`): WinForms .NET 6 app for requirement-to-code mapping
+  - **Configuration**: Add to CMakeLists.txt with `add_custom_target(project_traceability ALL COMMAND traceabilitytool -buildcheck ...)`
+  - **Exclusions**: Use separate `-e` options for each excluded directory (e.g., `-e ${CMAKE_CURRENT_LIST_DIR}/deps -e ${CMAKE_CURRENT_LIST_DIR}/.github`)
+  - **Includes**: Use `-i ${CMAKE_CURRENT_LIST_DIR}` to specify root directory to scan
+  - **Common Exclusions**: Always exclude `deps/` (dependencies) and `.github/` (documentation) folders
 - **Reals Check** (`reals_check/reals_check.ps1`): PowerShell script ensuring no unintended real function calls in test mocks
 
 ### vcpkg Integration
@@ -83,6 +87,9 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 - **Reals Check**: Scans static libraries for unexpected "real" function symbols
 - **CodeQL3000**: Pipeline integration with SARIF validation
 - **Traceability**: Requirement coverage analysis across .md files and source
+  - **Purpose**: Ensures all SRS requirements have corresponding Codes_SRS implementations and Tests_SRS test coverage
+  - **Exclusion Strategy**: Use multiple `-e` flags to exclude directories that shouldn't be scanned (deps, .github, build artifacts)
+  - **Quality Gate**: Build fails if requirements are duplicated, missing implementation, or missing tests
 
 ## Dependency Management
 
