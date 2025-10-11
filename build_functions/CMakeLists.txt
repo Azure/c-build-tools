@@ -180,12 +180,9 @@ macro(set_default_build_options)
 
         #add always used flags for the linker:
         # /CETCOMPAT (CET Shadow Stack compatible) https://learn.microsoft.com/en-us/cpp/build/reference/cetcompat. Also mitigates: warning BA2025: 'latency_test_server.exe' does not enable the Control-flow Enforcement Technology (CET) Shadow Stack mitigation. To resolve this issue, pass /CETCOMPAT on the linker command lines.
-        set(CMAKE_EXE_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
-        set(CMAKE_SHARED_LINKER_FLAGS "/INCREMENTAL:NO ${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
 
         #add optional flags for the linker:
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${USE_LTCG_CMAKE_EXE_LINKER_FLAGS} ${USE_GUARD_CF_CMAKE_EXE_LINKER_FLAGS}")
-        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${USE_LTCG_CMAKE_SHARED_LINKER_FLAGS} ${USE_GUARD_CF_CMAKE_SHARED_LINKER_FLAGS}")
 
     endif()
 
@@ -199,8 +196,19 @@ macro(set_default_build_options)
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${fsanitize_address}))
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fsanitize=address")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /fsanitize=address")
+        # Disable incremental linking globally for Debug and RelWithDebInfo
+        # This is required for Address Sanitizer to work (https://learn.microsoft.com/en-us/cpp/sanitizers/asan-known-issues?view=msvc-170#incompatible-options)
+
+        string(REPLACE "/INCREMENTAL" "/INCREMENTAL:NO" CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG}")
+        string(REPLACE "/INCREMENTAL" "/INCREMENTAL:NO" CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG}")
+        string(REPLACE "/INCREMENTAL" "/INCREMENTAL:NO" CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO}")
+        string(REPLACE "/INCREMENTAL" "/INCREMENTAL:NO" CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO}")
+
+        # Ensure /INCREMENTAL:NO is set even if /INCREMENTAL wasn't there
+        set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /INCREMENTAL:NO")
+        set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} /INCREMENTAL:NO")
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} /INCREMENTAL:NO")
+        set(CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO} /INCREMENTAL:NO")
     endif()
 
     enable_testing()
@@ -238,14 +246,14 @@ endfunction()
 # Assumes MSSharedLibSN1024.snk is available at the project root
 # Note: csharp_sdk_fix must be used in the project
 function(build_as_csharp_net6_project targetname)
-    build_as_csharp_netcore_project_with_framework(${targetname} "net6.0")
+    build_as_csharp_netcore_project_with_framework(${targetname} "net8.0")
 endfunction()
 
 # The following helper will enable C# .NET6 for Windows only projects
 # Assumes MSSharedLibSN1024.snk is available at the project root
 # Note: csharp_sdk_fix must be used in the project
 function(build_as_csharp_net6_windows_project targetname)
-    build_as_csharp_netcore_project_with_framework(${targetname} "net6.0-windows")
+    build_as_csharp_netcore_project_with_framework(${targetname} "net8.0-windows")
 endfunction()
 
 # variable to store list of libs that must be checked for reals
