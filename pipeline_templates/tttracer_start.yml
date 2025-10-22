@@ -2,17 +2,18 @@
 
 # this file contains the yml template that downloads tttracer + starts a -onLaunch session with target process name.
 # it should be used with its pair (tttracer_stop.yml) that would upload the recorded trace.
-# This file contains a list of yml tasks
+# This file contains a list of yml tasks.
+# The update of az tools is needed because service connections + az tools need version 2.178 at least to work. By default version is 2.77 as of Oct 2025...
 # parameters:
 #   `tttracer_target` - the target process name that is to be recorded (default NUL and records nothing)
 #   `maxFileSize` - the parameter value for -maxFile parameter of tttracer.exe [in MB]
 #   `azure_subscription` - is the name of the service connection to the subscription
 #   `blob_account` - storage account with tttracer
 # prerequisites:
-# - AzureCLI should be installed on the machine
-# - The service connection to the subscription is setup
+# - AzureCLI should be installed on the machine. Powershell will download an update to the latest version of az tools. service connection + az tool need version 2.l78 at least to work
+# - The service connection to the subscription is setup (we are using AAMsgStoreGate2AA)
 # - $(Build.BinariesDirectory) is a variable pointing to an existing folder with write access
-# - Blob account has tttracer tool for download
+# - Blob account has tttracer tool for download. The blob maintain several version of the TTD tool (just in case we ever need to use an older one), but the one in TTD is the latest one. 
 
 parameters:
 - name: tttracer_target # process name to record
@@ -30,6 +31,15 @@ parameters:
   default: msgstoregate
 
 steps:
+- powershell: |
+    Write-Host "Downloading latest Azure CLI MSI..."
+    az --version
+    Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile AzureCLI.msi
+    Write-Host "Installing Azure CLI silently..."
+    Start-Process msiexec.exe -Wait -ArgumentList '/I AzureCLI.msi /quiet /norestart'
+    az --version
+  displayName: 'Upgrade Azure CLI silently'
+
 - task: AzureCLI@2
   displayName: '[tttracer] download'
   inputs:
@@ -41,6 +51,6 @@ steps:
 # tttracer command line options are here: https://www.osgwiki.com/wiki/TTTracer_Command_Line_Options
 - script: |
     mkdir $(Build.BinariesDirectory)\tttracer
-    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -maxFile ${{ parameters.maxFileSize }} -onlaunch ${{ parameters.tttracer_target }} -out $(Build.BinariesDirectory)\tttracer
-    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -status
+    $(Build.BinariesDirectory)\TTD\TTTracer.exe -maxFile ${{ parameters.maxFileSize }} -onlaunch ${{ parameters.tttracer_target }} -out $(Build.BinariesDirectory)\tttracer
+    $(Build.BinariesDirectory)\TTD\TTTracer.exe -status
   displayName: '[tttracer] -onlaunch ${{ parameters.tttracer_target }}'
