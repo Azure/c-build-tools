@@ -23,9 +23,9 @@ steps:
     dir $(Build.BinariesDirectory)\tttracer
     echo "This is what is going to be published:"
     dir $(Build.BinariesDirectory) /s
-    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -stop "all"
-    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -cleanup
-    $(Build.BinariesDirectory)\02_06_2023\TTTracer.exe -status
+    $(Build.BinariesDirectory)\TTD\TTTracer.exe -stop "all"
+    $(Build.BinariesDirectory)\TTD\TTTracer.exe -cleanup
+    $(Build.BinariesDirectory)\TTD\TTTracer.exe -status
   displayName: '[tttracer] stop all'
   condition: always()
 - task: PublishPipelineArtifact@1
