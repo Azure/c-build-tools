@@ -25,7 +25,7 @@ parameters:
   default: 10000 #maxFile "Maximum size of the trace file in MB." So 30000 is about ~30GB of file size
 - name: azure_subscription
   type: string
-  default: AAMsgStoreGateAA
+  default: AAMsgStoreGate2AA
 - name: blob_account
   type: string
   default: msgstoregate
