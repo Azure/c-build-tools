@@ -2,8 +2,11 @@
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 if(NOT DEFINED CMAKE_MINIMUM_REQUIRED_VERSION)
-    cmake_minimum_required(VERSION 3.24) #3.24 brings in support for WHOLE_ARCHIVE which is needed for vld
+    cmake_minimum_required(VERSION 3.31) #3.31 comes default with Visual Studio 2022 17.14.0 which we are using (16 May 2025). also changes the policy CMP0177 (for the better)
+    #cmake_minimum_required(VERSION 3.24) #3.24 brings in support for WHOLE_ARCHIVE which is needed for vld
 endif()
+
+cmake_policy(SET CMP0177 NEW) #cmake --help-policy CMP0177
 
 # canon way of using build_tools from another repo is below. It assumes the using repo has placed c-build-tools in "deps"
 

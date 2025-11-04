@@ -87,6 +87,12 @@ macro(set_default_build_options)
     # System-specific compiler flags
     if(MSVC)
 
+        
+        if(CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+            add_compile_options(-fno-ms-compatibility) #this is needed (globally) because otherwise clang-cl maintains some default compatibiliy with OLD Microsoft stuff which in turn does not allow the macro-utils to build
+        endif()
+
+
         #use _CRT_SECURE_NO_WARNINGS by default
         add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
