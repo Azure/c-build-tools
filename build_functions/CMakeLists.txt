@@ -275,6 +275,13 @@ function(build_as_csharp_net8_project targetname)
     build_as_csharp_netcore_project_with_framework(${targetname} "net8.0" "win-${CMAKE_VS_PLATFORM_NAME}")
 endfunction()
 
+# The following helper will enable C# .NET8 for Windows only projects
+# Assumes MSSharedLibSN1024.snk is available at the project root
+# Note: csharp_sdk_fix must be used in the project
+function(build_as_csharp_net8_windows_project targetname)
+    build_as_csharp_netcore_project_with_framework(${targetname} "net8.0-windows" "win-${CMAKE_VS_PLATFORM_NAME}")
+endfunction()
+
 # variable to store list of libs that must be checked for reals
 set(LIBS_TO_BE_REAL_CHECKED CACHE INTERNAL "LIBS_TO_BE_CHECKED")
 
