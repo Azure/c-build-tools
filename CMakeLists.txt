@@ -2,8 +2,10 @@
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 if(NOT DEFINED CMAKE_MINIMUM_REQUIRED_VERSION)
-    cmake_minimum_required(VERSION 3.24) #3.24 brings in support for WHOLE_ARCHIVE which is needed for vld
+    cmake_minimum_required(VERSION 3.31) #3.31 brings in support for cmake_policy CMP0177
 endif()
+
+cmake_policy(SET CMP0177 NEW) #cmake --help-policy CMP0177 explains
 
 # canon way of using build_tools from another repo is below. It assumes the using repo has placed c-build-tools in "deps"
 
