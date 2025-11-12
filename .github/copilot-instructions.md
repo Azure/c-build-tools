@@ -34,6 +34,23 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
   - **Includes**: Use `-i ${CMAKE_CURRENT_LIST_DIR}` to specify root directory to scan
   - **Common Exclusions**: Always exclude `deps/` (dependencies) and `.github/` (documentation) folders
 - **Reals Check** (`reals_check/reals_check.ps1`): PowerShell script ensuring no unintended real function calls in test mocks
+- **Repository Validation** (`repo_validation/`): Extensible framework for repository-wide validation checks
+  - **Purpose**: Runs standardized validation scripts across the entire repository
+  - **Dependency Exclusion**: Automatically excludes specified directories from scanning and modification
+  - **CMake Options**:
+    - `run_repo_validation=ON` - Enable the validation target (default is OFF)
+    - `fix_repo_validation_errors=ON` - Automatically fix validation errors (default is OFF)
+  - **Usage**: Call `add_repo_validation(project_name [EXCLUDE_FOLDERS folder1 folder2 ...])` in CMakeLists.txt
+    - Default exclusions if not specified: `cmake deps`
+    - Base exclusions (always excluded): `.git dependencies build`
+  - **Examples**: 
+    - `add_repo_validation(my_project)` - Uses default exclusions (cmake, deps)
+    - `add_repo_validation(my_project EXCLUDE_FOLDERS deps cmake external)` - Custom exclusions
+  - **Running**: `cmake --build . --target project_name_repo_validation`
+  - **Fix Mode**: When `fix_repo_validation_errors=ON`, scripts receive `-Fix` parameter to auto-correct issues (excluding specified directories)
+  - **Available Validations**: See `repo_validation/README.md` for list of validation scripts and details
+  - **Adding Validations**: Create `.ps1` scripts in `repo_validation/scripts/` accepting `-RepoRoot`, `-ExcludeFolders`, and optional `-Fix` parameters
+  - **CI/CD Integration**: Include in pipelines with `-Drun_repo_validation=ON` to enforce validation as quality gate
 
 ### vcpkg Integration
 - **Custom Triplets**: `x64-windows-static-cbt.cmake` with security flags (`/guard:cf`) and ABI workarounds
