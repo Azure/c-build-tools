@@ -48,7 +48,7 @@ param(
     [string]$RepoRoot,
     
     [Parameter(Mandatory=$false)]
-    [string]$ExcludeFolders = "",
+    [string]$ExcludeFolders = "deps,cmake",
     
     [Parameter(Mandatory=$false)]
     [switch]$Fix
@@ -65,14 +65,7 @@ Write-Host "Fix Mode: $($Fix.IsPresent)" -ForegroundColor White
 Write-Host ""
 
 # Parse excluded directories (default: deps, cmake)
-$excludeDirs = @()
-if ($ExcludeFolders -eq "") {
-    # Use defaults if not specified
-    $excludeDirs = @("deps", "cmake")
-}
-else {
-    $excludeDirs = $ExcludeFolders -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
-}
+$excludeDirs = $ExcludeFolders -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 
 Write-Host "Excluded directories: $($excludeDirs -join ', ')" -ForegroundColor White
 Write-Host ""
