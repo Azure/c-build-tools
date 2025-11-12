@@ -95,7 +95,7 @@ cmake --build build --target your_project_name_repo_validation
 
 ### File Ending Newline Validation
 
-**Script:** `scripts/validate_crlf_line_endings.ps1`
+**Script:** `scripts/validate_file_endings.ps1`
 
 **Purpose:** Ensures all source code files (`.h`, `.hpp`, `.c`, `.cpp`, `.cs`) end with a newline character (CRLF on Windows).
 

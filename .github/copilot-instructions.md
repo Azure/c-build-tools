@@ -49,7 +49,7 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
   - **Running**: `cmake --build . --target project_name_repo_validation`
   - **Fix Mode**: When `fix_repo_validation_errors=ON`, scripts receive `-Fix` parameter to auto-correct issues (excluding specified directories)
   - **Available Validations**: 
-    - **File Ending Newline**: Ensures source files (`.h`, `.hpp`, `.c`, `.cpp`, `.cs`) end with proper newline (CRLF on Windows)
+    - **File Ending Newline** (`validate_file_endings.ps1`): Ensures source files (`.h`, `.hpp`, `.c`, `.cpp`, `.cs`) end with proper newline (CRLF on Windows)
     - **Requirements Document Naming**: Ensures requirement documents in `devdoc/` folders follow `{module_name}_requirements.md` convention (detects files with SRS tags)
     - **SRS Requirement Consistency**: Validates that SRS requirement text matches between markdown documentation and C code comments (`Codes_SRS_` and `Tests_SRS_` patterns)
     - **Tab Character Validation**: Ensures source files do not contain tab characters (replaces with 4 spaces in fix mode)
