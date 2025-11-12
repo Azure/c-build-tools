@@ -148,6 +148,46 @@ cmake --build build --target your_project_name_repo_validation
 - Rename requirement documents to follow `{module_name}_requirements.md` convention
 - Ensure the module name matches the component being documented
 
+### SRS Requirement Consistency Validation
+
+**Script:** `scripts/validate_srs_consistency.ps1`
+
+**Purpose:** Ensures that SRS (Software Requirements Specification) requirement text is identical between requirement documents and C code comments.
+
+**Detection:** The script:
+1. Extracts all SRS tags from markdown files in `devdoc/` folders (pattern: `**SRS_MODULE_ID_NUM: [** text **]**`)
+2. Finds corresponding SRS tags in C source files (patterns: `/* Codes_SRS_MODULE_ID_NUM: [ text ]*/` or `/* Tests_SRS_MODULE_ID_NUM: [ text ]*/`)
+3. Strips markdown formatting (backticks, bold, italics) from markdown text
+4. Compares the cleaned text content for exact matches
+
+**Exclusions:**
+- Base exclusions (always excluded): `.git`, `dependencies`, `build`
+- Default exclusions (if not customized): `deps`, `cmake`
+- Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
+
+**Rationale:** Keeping requirements synchronized between documentation and code:
+- Ensures code comments accurately reflect documented requirements
+- Maintains traceability between specifications and implementation
+- Prevents drift between requirements and actual code behavior
+- Supports requirement coverage analysis tools
+
+**Fix Mode:** When run with `-Fix` parameter, the script automatically updates C code comments:
+- Replaces C comment text with the text from requirement documents (after stripping markdown)
+- Updates both `Codes_SRS_` and `Tests_SRS_` prefixed comments
+- Preserves comment structure and formatting
+- **Does not modify any files in excluded directories**
+- **Does not modify markdown requirement documents** (they are the source of truth)
+
+**Common Inconsistencies Detected:**
+- Wrong variable/function names in C comments (e.g., `state` vs `waiter_state`)
+- Missing or incomplete text in C comments
+- Extra or missing whitespace
+- Typographical errors in C comments
+
+**Manual Fix Options:**
+- Update C code comments to match the requirement document text exactly
+- Ensure markdown formatting is used correctly in requirement documents
+
 ## Adding New Validations
 
 To add a new validation script:
