@@ -63,19 +63,17 @@ Write-Host ""
 # Define file extensions to check
 $extensions = @("*.h", "*.hpp", "*.c", "*.cpp", "*.cs")
 
-# Base excluded directories (always excluded)
-$baseExcludeDirs = @("deps", "dependencies", ".git", "cmake", "build")
-
-# Parse and add custom excluded directories
-$customExcludeDirs = @()
-if ($ExcludeFolders -ne "") {
-    $customExcludeDirs = $ExcludeFolders -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
-    Write-Host "Custom excluded directories: $($customExcludeDirs -join ', ')" -ForegroundColor Yellow
+# Parse excluded directories (default: deps, cmake)
+$excludeDirs = @()
+if ($ExcludeFolders -eq "") {
+    # Use defaults if not specified
+    $excludeDirs = @("deps", "cmake")
+}
+else {
+    $excludeDirs = $ExcludeFolders -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 }
 
-# Combine base and custom exclusions
-$excludeDirs = $baseExcludeDirs + $customExcludeDirs
-Write-Host "Total excluded directories: $($excludeDirs -join ', ')" -ForegroundColor White
+Write-Host "Excluded directories: $($excludeDirs -join ', ')" -ForegroundColor White
 Write-Host ""
 
 # Initialize counters

@@ -43,14 +43,16 @@ add_repo_validation(my_project EXCLUDE_FOLDERS cmake deps)
 
 **Default exclusions**: If `EXCLUDE_FOLDERS` is not specified, the default is `cmake deps`.
 
-**Base exclusions**: The following directories are always excluded regardless of `EXCLUDE_FOLDERS`:
-- `.git` - Git metadata
-- `dependencies` - Alternative dependency directory name
-- `build` - Build artifacts
+**How Exclusions Work:**
+- The `EXCLUDE_FOLDERS` parameter completely controls which folders are excluded
+- If not specified, defaults to `cmake deps`
+- You can override with any list of folders: `EXCLUDE_FOLDERS .git build external`
+- Exclusions are relative paths from repository root
+- Matching is done on path prefixes (e.g., `deps` excludes `deps/` and all subdirectories)
 
 This approach ensures that:
-- Critical directories like `.git` are always protected
-- Common dependency patterns are excluded by default
+- You have full control over which directories are excluded
+- Common patterns (cmake, deps) are excluded by default for convenience
 - You can add project-specific exclusions as needed
 
 ### Generating with Validation Enabled
@@ -98,7 +100,6 @@ cmake --build build --target your_project_name_repo_validation
 **Purpose:** Ensures all source code files (`.h`, `.hpp`, `.c`, `.cpp`, `.cs`) end with a newline character (CRLF on Windows).
 
 **Exclusions:** 
-- Base exclusions (always excluded): `.git`, `dependencies`, `build`
 - Default exclusions (if not customized): `deps`, `cmake`
 - Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
 
@@ -128,7 +129,6 @@ cmake --build build --target your_project_name_repo_validation
 **Detection:** A markdown file in a `devdoc` folder is considered a requirements document if it contains SRS (Software Requirements Specification) tags matching the pattern: `SRS_{MODULE}_{DEVID}_{REQID}` (e.g., `SRS_MY_MODULE_01_001`)
 
 **Exclusions:**
-- Base exclusions (always excluded): `.git`, `dependencies`, `build`
 - Default exclusions (if not customized): `deps`, `cmake`
 - Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
 
@@ -161,7 +161,6 @@ cmake --build build --target your_project_name_repo_validation
 4. Compares the cleaned text content for exact matches
 
 **Exclusions:**
-- Base exclusions (always excluded): `.git`, `dependencies`, `build`
 - Default exclusions (if not customized): `deps`, `cmake`
 - Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
 
@@ -202,7 +201,6 @@ cmake --build build --target your_project_name_repo_validation
 - Standard coding conventions require spaces for indentation
 
 **Exclusions:**
-- Base exclusions (always excluded): `.git`, `dependencies`, `build`
 - Default exclusions (if not customized): `deps`, `cmake`
 - Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
 
@@ -224,11 +222,10 @@ To add a new validation script:
 
 1. Create a PowerShell script in the `scripts/` directory
 2. The script **must** accept a `-RepoRoot` parameter (mandatory)
-3. The script **should** accept an optional `-ExcludeFolders` parameter (comma-separated string)
+3. The script **should** accept an optional `-ExcludeFolders` parameter (comma-separated string, defaults to "deps,cmake")
 4. The script **should** accept an optional `-Fix` switch parameter
-5. **Must exclude dependency directories** from scanning and modification
-6. Return exit code 0 for success, non-zero for failure
-7. Follow the naming convention: `validate_*.ps1`
+5. Return exit code 0 for success, non-zero for failure
+6. Follow the naming convention: `validate_*.ps1`
 
 Example template:
 
@@ -244,21 +241,19 @@ param(
     [switch]$Fix
 )
 
-# Base excluded directories (always excluded)
-$baseExcludeDirs = @("deps", "dependencies", ".git", "cmake", "build")
-
-# Parse and add custom excluded directories
-$customExcludeDirs = @()
-if ($ExcludeFolders -ne "") {
-    $customExcludeDirs = $ExcludeFolders -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+# Parse excluded directories (default: deps, cmake)
+$excludeDirs = @()
+if ($ExcludeFolders -eq "") {
+    # Use defaults if not specified
+    $excludeDirs = @("deps", "cmake")
+}
+else {
+    $excludeDirs = $ExcludeFolders -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 }
 
-# Combine base and custom exclusions
-$excludeDirs = $baseExcludeDirs + $customExcludeDirs
-
 # Your validation logic here
-Write-Host "Running validation..."
-Write-Host "Excluded directories: $($excludeDirs -join ', ')"
+Write-Host "Running validation..." -ForegroundColor White
+Write-Host "Excluded directories: $($excludeDirs -join ', ')" -ForegroundColor White
 
 # Check if file should be excluded
 $relativePath = $file.FullName.Substring($RepoRoot.Length).TrimStart('\', '/')
