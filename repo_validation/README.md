@@ -188,6 +188,36 @@ cmake --build build --target your_project_name_repo_validation
 - Update C code comments to match the requirement document text exactly
 - Ensure markdown formatting is used correctly in requirement documents
 
+### Tab Character Validation
+
+**Script:** `scripts/validate_no_tabs.ps1`
+
+**Purpose:** Ensures that source code files do not contain tab characters (ASCII 9).
+
+**Rationale:** Tab characters should not be used in source files because:
+- Different editors render tabs with different widths (2, 4, or 8 spaces)
+- Causes inconsistent code alignment and formatting
+- Can break code that depends on specific indentation
+- Mixing tabs and spaces creates confusing visual formatting
+- Standard coding conventions require spaces for indentation
+
+**Exclusions:**
+- Base exclusions (always excluded): `.git`, `dependencies`, `build`
+- Default exclusions (if not customized): `deps`, `cmake`
+- Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
+
+**File Types Checked:** `.h`, `.hpp`, `.c`, `.cpp`, `.cs`
+
+**Fix Mode:** When run with `-Fix` parameter, the script automatically replaces all tabs with 4 spaces:
+- Replaces every tab character (`\t`) with exactly 4 space characters
+- Preserves file encoding (uses UTF-8 without BOM)
+- **Does not modify any files in excluded directories**
+
+**Manual Fix Options:**
+- Configure your editor to use spaces instead of tabs
+- Set tab width to 4 spaces in editor settings
+- Use "Convert Indentation to Spaces" feature in your editor
+
 ## Adding New Validations
 
 To add a new validation script:
