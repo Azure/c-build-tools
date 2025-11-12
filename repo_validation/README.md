@@ -119,6 +119,35 @@ cmake --build build --target your_project_name_repo_validation
 - In VS Code: Add a final newline at the end of the file
 - Configure `.editorconfig` with `insert_final_newline = true`
 
+### Requirements Document Naming Validation
+
+**Script:** `scripts/validate_requirements_naming.ps1`
+
+**Purpose:** Ensures that requirement documents in `devdoc` folders follow the naming convention `{module_name}_requirements.md`.
+
+**Detection:** A markdown file in a `devdoc` folder is considered a requirements document if it contains SRS (Software Requirements Specification) tags matching the pattern: `SRS_{MODULE}_{DEVID}_{REQID}` (e.g., `SRS_MY_MODULE_01_001`)
+
+**Exclusions:**
+- Base exclusions (always excluded): `.git`, `dependencies`, `build`
+- Default exclusions (if not customized): `deps`, `cmake`
+- Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
+
+**Rationale:** Consistent naming conventions for requirement documents:
+- Makes requirements easier to locate by module name
+- Clearly identifies files as containing formal requirements
+- Improves traceability tooling and automation
+- Follows established project conventions
+
+**Fix Mode:** When run with `-Fix` parameter, the script automatically renames files:
+- Appends `_requirements` to the base filename (e.g., `module.md` → `module_requirements.md`)
+- Preserves the original module name from the filename
+- **Does not rename if target file already exists** (to prevent overwriting)
+- **Does not modify any files in excluded directories**
+
+**Manual Fix Options:**
+- Rename requirement documents to follow `{module_name}_requirements.md` convention
+- Ensure the module name matches the component being documented
+
 ## Adding New Validations
 
 To add a new validation script:

@@ -48,7 +48,10 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
     - `add_repo_validation(my_project EXCLUDE_FOLDERS deps cmake external)` - Custom exclusions
   - **Running**: `cmake --build . --target project_name_repo_validation`
   - **Fix Mode**: When `fix_repo_validation_errors=ON`, scripts receive `-Fix` parameter to auto-correct issues (excluding specified directories)
-  - **Available Validations**: See `repo_validation/README.md` for list of validation scripts and details
+  - **Available Validations**: 
+    - **File Ending Newline**: Ensures source files (`.h`, `.hpp`, `.c`, `.cpp`, `.cs`) end with proper newline (CRLF on Windows)
+    - **Requirements Document Naming**: Ensures requirement documents in `devdoc/` folders follow `{module_name}_requirements.md` convention (detects files with SRS tags)
+    - See `repo_validation/README.md` for complete list and details
   - **Adding Validations**: Create `.ps1` scripts in `repo_validation/scripts/` accepting `-RepoRoot`, `-ExcludeFolders`, and optional `-Fix` parameters
   - **CI/CD Integration**: Include in pipelines with `-Drun_repo_validation=ON` to enforce validation as quality gate
 
