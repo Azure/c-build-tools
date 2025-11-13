@@ -102,7 +102,9 @@ function Remove-MarkdownFormatting {
     $Text = $Text.Trim()
 
     return $Text
-}# Function to extract SRS tags from markdown content
+}
+
+# Function to extract SRS tags from markdown content
 function Get-SrsTagsFromMarkdown {
     param([string]$Content, [string]$FilePath)
     
