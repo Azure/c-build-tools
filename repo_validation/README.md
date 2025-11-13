@@ -111,9 +111,9 @@ cmake --build build --target your_project_name_repo_validation
 - **Does not modify any files in excluded directories**
 
 **Manual Fix Options:**
-- In Visual Studio: Ensure the cursor can move one line past the last line of code
-- In VS Code: Add a final newline at the end of the file
-- Configure `.editorconfig` with `insert_final_newline = true`
+- **Manual Verification**: Check that the cursor can move one line past the last line of code in your editor
+- **Manual Fix**: Add a final newline (CRLF on Windows) at the end of the file
+- **Automated Prevention**: Configure `.editorconfig` with `insert_final_newline = true`
 
 ### Requirements Document Naming Validation
 
