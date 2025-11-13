@@ -86,23 +86,24 @@ function Test-IsExcluded {
 # Function to strip markdown formatting from text
 function Remove-MarkdownFormatting {
     param([string]$Text)
-
+    
     # Remove bold/italics markers (**text**, *text*)
-    # Handle cases with asterisks used in text (e.g., pointers like "char*" or multiplication "1 * 2")
-    $Text = $Text -replace '\*\*([^*]+)\*\*', '$1'
-    $Text = $Text -replace '\*([^*]+)\*', '$1'
-
+    $Text = $Text -replace '\*\*([^\*]+)\*\*', '$1'
+    $Text = $Text -replace '\*([^\*]+)\*', '$1'
+    
     # Remove backticks
     $Text = $Text -replace '`([^`]+)`', '$1'
-
+    
     # Normalize whitespace (multiple spaces to single space)
     $Text = $Text -replace '\s+', ' '
-
+    
     # Trim leading/trailing whitespace
     $Text = $Text.Trim()
-
+    
     return $Text
-}# Function to extract SRS tags from markdown content
+}
+
+# Function to extract SRS tags from markdown content
 function Get-SrsTagsFromMarkdown {
     param([string]$Content, [string]$FilePath)
     
@@ -141,10 +142,10 @@ function Get-SrsTagsFromCCode {
     
     # Pattern to match SRS tags in C comments: /* Codes_SRS_MODULE_ID_NUM: [ text ]*/
     # or /* Tests_SRS_MODULE_ID_NUM: [ text ]*/ (for test files)
-    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]\s*\*+/'
-
+    $blockPattern = '/\*+\s*(?:Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]\s*\*+/'
+    
     # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
-    $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]'
+    $linePattern = '//\s*(?:Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]'
     
     # Match both block and line comments
     $blockMatches = [regex]::Matches($Content, $blockPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
@@ -154,11 +155,10 @@ function Get-SrsTagsFromCCode {
     $allMatches = @($blockMatches) + @($lineMatches)
     
     foreach ($match in $allMatches) {
-        $prefix = $match.Groups[1].Value  # Captures "Tests" or "Codes"
-        $module = $match.Groups[2].Value
-        $devId = $match.Groups[3].Value
-        $reqId = $match.Groups[4].Value
-        $text = $match.Groups[5].Value
+        $module = $match.Groups[1].Value
+        $devId = $match.Groups[2].Value
+        $reqId = $match.Groups[3].Value
+        $text = $match.Groups[4].Value
         
         $srsTag = "SRS_${module}_${devId}_${reqId}"
         
@@ -169,7 +169,6 @@ function Get-SrsTagsFromCCode {
         $srsTags += [PSCustomObject]@{
             Tag = $srsTag
             Text = $cleanText
-            Prefix = $prefix  # Store the original prefix (Tests or Codes)
             FilePath = $FilePath
             OriginalMatch = $match.Value
             MatchIndex = $match.Index
@@ -246,7 +245,6 @@ foreach ($cFile in $cFiles) {
             if ($cTag.Text -ne $requirement.CleanText) {
                 $inconsistency = [PSCustomObject]@{
                     Tag = $cTag.Tag
-                    Prefix = $cTag.Prefix
                     CFile = $cFile.FullName
                     MdFile = $requirement.FilePath
                     CText = $cTag.Text
@@ -297,8 +295,8 @@ if ($inconsistentRequirements.Count -gt 0) {
                 $modified = $false
                 
                 foreach ($inconsistency in $fileInconsistencies) {
-                    # Build the correct comment using the original prefix
-                    $correctComment = "/* $($inconsistency.Prefix)_$($inconsistency.Tag): [ $($inconsistency.MdText) ]*/"
+                    # Build the correct comment
+                    $correctComment = "/* Codes_$($inconsistency.Tag): [ $($inconsistency.MdText) ]*/"
                     
                     # Replace the original match
                     $oldComment = $inconsistency.OriginalMatch
