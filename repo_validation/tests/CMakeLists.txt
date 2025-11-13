@@ -17,7 +17,8 @@ add_subdirectory(validate_no_tabs)
 add_subdirectory(validate_file_endings)
 add_subdirectory(validate_srs_consistency)
 add_subdirectory(validate_srs_uniqueness)
-add_subdirectory(validate_requirements_naming)# Optional: Add to the main test suite if CTest is enabled
+add_subdirectory(validate_requirements_naming)
+
 if(run_unittests)
     enable_testing()
     
