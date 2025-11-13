@@ -33,6 +33,8 @@ option(run_drd "run DRD on tests (Linux only) (default is OFF)." OFF)
 option(run_traceability "run traceability tool (default is ON)" ON)
 option(build_traceability_tool "build traceability tool (default is ON)" ON)
 option(run_reals_check "run reals check tool (default is OFF)" OFF)
+option(run_repo_validation "add repository validation target (default is OFF)" OFF)
+option(fix_repo_validation_errors "automatically fix validation errors when running repo validation (default is OFF)" OFF)
 option(use_vld "use VLD for leak detection (default is OFF)" OFF)
 option(fsanitize_address "enable /fsanitize=address compiler switch (default is OFF)" OFF) # see https://docs.microsoft.com/en-us/cpp/build/reference/fsanitize
 option(build_csharp_projects "Build csharp projects? (default is ON)" ON)
@@ -53,6 +55,7 @@ else()
 endif()
 
 add_subdirectory(build_functions)
+add_subdirectory(repo_validation)
 
 enable_testing()
 
