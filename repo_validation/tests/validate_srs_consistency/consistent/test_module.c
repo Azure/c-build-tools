@@ -10,15 +10,15 @@ typedef struct TEST_MODULE_TAG {
 TEST_MODULE_HANDLE test_module_create(void) {
     TEST_MODULE* result;
     
-    /* Codes_SRS_TEST_MODULE_01_001: [ test_module_create shall allocate memory for a new test module instance. ]*/
+    /* Codes_SRS_TEST_MODULE_66_001: [ test_module_create shall allocate memory for a new test module instance. ]*/
     result = malloc(sizeof(TEST_MODULE));
     
-    /* Codes_SRS_TEST_MODULE_01_002: [ If memory allocation fails, test_module_create shall return NULL. ]*/
+    /* Codes_SRS_TEST_MODULE_66_002: [ If memory allocation fails, test_module_create shall return NULL. ]*/
     if (result == NULL) {
         // Memory allocation failed
     }
     else {
-        /* Codes_SRS_TEST_MODULE_01_003: [ On success, test_module_create shall initialize all fields to their default values. ]*/
+        /* Codes_SRS_TEST_MODULE_66_003: [ On success, test_module_create shall initialize all fields to their default values. ]*/
         result->initialized = 1;
         result->data = NULL;
     }
