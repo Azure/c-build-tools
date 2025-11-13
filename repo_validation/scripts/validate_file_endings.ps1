@@ -87,6 +87,10 @@ foreach ($extension in $extensions) {
         $isExcluded = $false
         
         foreach ($excludeDir in $excludeDirs) {
+            # Check both path separator types for compatibility
+            # While PowerShell often handles path separators interchangeably, the -like operator
+            # with wildcards is literal about separators, so we check both to ensure exclusions
+            # work regardless of how paths are constructed or normalized
             if ($relativePath -like "$excludeDir\*" -or $relativePath -like "$excludeDir/*") {
                 $isExcluded = $true
                 $skippedFiles++

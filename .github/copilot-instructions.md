@@ -42,7 +42,6 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
     - `fix_repo_validation_errors=ON` - Automatically fix validation errors (default is OFF)
   - **Usage**: Call `add_repo_validation(project_name [EXCLUDE_FOLDERS folder1 folder2 ...])` in CMakeLists.txt
     - Default exclusions if not specified: `cmake deps`
-    - Base exclusions (always excluded): `.git dependencies build`
   - **Examples**: 
     - `add_repo_validation(my_project)` - Uses default exclusions (cmake, deps)
     - `add_repo_validation(my_project EXCLUDE_FOLDERS deps cmake external)` - Custom exclusions

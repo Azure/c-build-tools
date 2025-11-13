@@ -60,9 +60,6 @@ This approach ensures that:
 ```bash
 # Enable validation during CMake generation
 cmake -S . -B build -Drun_repo_validation=ON
-
-# Enable validation AND auto-fix
-cmake -S . -B build -Drun_repo_validation=ON -Dfix_repo_validation_errors=ON
 ```
 
 ### Running Validation
@@ -104,9 +101,7 @@ cmake --build build --target your_project_name_repo_validation
 - Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
 
 **Rationale:** Source files must end with a newline to comply with:
-- C/C++ language standards (files should end with a newline)
-- Compiler warnings and requirements
-- Git and version control best practices
+- C language standards (files should end with a newline)
 - Consistent file formatting across the codebase
 
 **Fix Mode:** When run with `-Fix` parameter, the script automatically corrects files:
