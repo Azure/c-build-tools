@@ -14,11 +14,10 @@ set(VALIDATION_SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../scripts")
 
 # Add test targets for each validation script
 add_subdirectory(validate_no_tabs)
-add_subdirectory(validate_file_endings) 
+add_subdirectory(validate_file_endings)
 add_subdirectory(validate_srs_consistency)
-add_subdirectory(validate_requirements_naming)
-
-# Optional: Add to the main test suite if CTest is enabled
+add_subdirectory(validate_srs_uniqueness)
+add_subdirectory(validate_requirements_naming)# Optional: Add to the main test suite if CTest is enabled
 if(run_unittests)
     enable_testing()
     
@@ -34,7 +33,11 @@ if(run_unittests)
     add_test(NAME validate_srs_consistency_test
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target test_validate_srs_consistency
     )
-    
+
+    add_test(NAME validate_srs_uniqueness_test
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target test_validate_srs_uniqueness
+    )
+
     add_test(NAME validate_requirements_naming_test
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target test_validate_requirements_naming
     )

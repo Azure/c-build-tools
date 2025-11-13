@@ -50,7 +50,8 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
   - **Available Validations**: 
     - **File Ending Newline** (`validate_file_endings.ps1`): Ensures source files (`.h`, `.hpp`, `.c`, `.cpp`, `.cs`) end with proper newline (CRLF on Windows)
     - **Requirements Document Naming**: Ensures requirement documents in `devdoc/` folders follow `{module_name}_requirements.md` convention (detects files with SRS tags)
-    - **SRS Requirement Consistency**: Validates that SRS requirement text matches between markdown documentation and C code comments (`Codes_SRS_` and `Tests_SRS_` patterns)
+    - **SRS Requirement Consistency** (`validate_srs_consistency.ps1`): Validates that SRS requirement text matches between markdown documentation and C code comments (`Codes_SRS_` and `Tests_SRS_` patterns). Preserves original prefix (Tests_ or Codes_) when fixing inconsistencies.
+    - **SRS Tag Uniqueness** (`validate_srs_uniqueness.ps1`): Detects duplicate SRS tags across all requirement documents. **Never auto-fixes** - requires manual resolution to ensure proper requirement management.
     - **Tab Character Validation**: Ensures source files do not contain tab characters (replaces with 4 spaces in fix mode)
     - See `repo_validation/README.md` for complete list and details
   - **Adding Validations**: Create `.ps1` scripts in `repo_validation/scripts/` accepting `-RepoRoot`, `-ExcludeFolders`, and optional `-Fix` parameters
@@ -154,3 +155,4 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 - **VLD Setup**: Call `add_vld_if_defined()` after all targets defined, auto-skips C# projects
 - **vcpkg Usage**: Call `use_vcpkg(path)` with overlay triplets for consistent package management
 - **Error Handling**: All builds treat warnings as errors (`/WX`, `-Werror`)
+

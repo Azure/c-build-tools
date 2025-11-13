@@ -223,6 +223,54 @@ This validation enforces CRLF line endings on Windows to ensure consistency acro
 - Set tab width to 4 spaces in editor settings
 - Use "Convert Indentation to Spaces" feature in your editor
 
+
+### SRS Tag Uniqueness Validation
+
+**Script:** `scripts/validate_srs_uniqueness.ps1`
+
+**Purpose:** Ensures that all SRS (Software Requirements Specification) requirement tags are unique across all requirement documents in the repository.
+
+**Rationale:** Each SRS tag must be unique to:
+- Prevent ambiguity in requirement tracking and traceability
+- Ensure accurate mapping between requirements, implementation, and tests
+- Avoid confusion when referencing requirements in code comments
+- Maintain integrity of the requirements management system
+
+**Exclusions:**
+- Default exclusions (if not customized): `deps`, `cmake`
+- Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
+
+**File Types Checked:** Markdown files (`.md`) in `devdoc/` directories
+
+**Fix Mode:** **This script NEVER auto-fixes duplicate SRS tags**, even when run with `-Fix` parameter:
+- Duplicate SRS tags require manual resolution by the developer
+- The script will display an informational message that fix mode is ignored
+- Exit code 1 is always returned when duplicates are found
+- **Rationale**: Fixing duplicate SRS IDs requires understanding the requirements to determine if they should be:
+  - Merged (if truly the same requirement)
+  - Renumbered (if different requirements with accidentally duplicated IDs)
+
+**Detection:** The script scans all markdown files in `devdoc/` folders and reports:
+- Each duplicate SRS tag found
+- File names and line numbers for both occurrences
+- Clear error messages indicating manual action is required
+
+**Manual Fix Required:**
+When duplicates are found, resolve them by:
+1. **If requirements are identical**: Consolidate into a single requirement and update all code references
+2. **If requirements are different**: Assign a new unique SRS ID to one of the duplicate tags and update code comments
+
+**Example Error Output:**
+```
+[ERROR] Duplicate SRS tag: SRS_MODULE_01_001
+        First occurrence: module_a_requirements.md:45
+        Duplicate found in: module_b_requirements.md:123
+
+[VALIDATION FAILED]
+Please manually resolve the duplicates by:
+1. Assigning new unique SRS IDs to duplicate requirements
+2. Or consolidating duplicate requirements if they are truly the same
+```
 ## Adding New Validations
 
 To add a new validation script:
@@ -484,3 +532,4 @@ add_test(NAME test_validate_your_feature_fix
 ```
 
 The testing framework ensures validation scripts are robust, reliable, and maintain consistent behavior across changes and updates.
+
