@@ -162,15 +162,9 @@ if ($filesWithTabs.Count -gt 0 -and -not $Fix) {
     Write-Host ""
     Write-Host "The following files contain tab characters:" -ForegroundColor Yellow
     
-    # Show first 50 files
-    $displayCount = [Math]::Min(50, $filesWithTabs.Count)
-    for ($i = 0; $i -lt $displayCount; $i++) {
-        $item = $filesWithTabs[$i]
+    # Show all files
+    foreach ($item in $filesWithTabs) {
         Write-Host "  - $($item.FilePath) ($($item.TabCount) tab(s))" -ForegroundColor White
-    }
-    
-    if ($filesWithTabs.Count -gt 50) {
-        Write-Host "  ... and $($filesWithTabs.Count - 50) more files" -ForegroundColor Yellow
     }
     
     Write-Host ""
@@ -184,8 +178,7 @@ $unfixedFiles = $filesWithTabs.Count - $fixedFiles.Count
 if ($unfixedFiles -eq 0) {
     Write-Host "[VALIDATION PASSED]" -ForegroundColor Green
     exit 0
-}
-else {
+} else {
     Write-Host "[VALIDATION FAILED]" -ForegroundColor Red
     if ($Fix) {
         Write-Host "$unfixedFiles file(s) could not be fixed automatically." -ForegroundColor Yellow

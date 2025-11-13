@@ -125,18 +125,16 @@ foreach ($extension in $extensions) {
                         # It's LF only, should be CRLF
                         $needsFixing = $true
                     }
-                }
-                else {
-                    # Single byte file ending with LF, should be CRLF
-                    $needsFixing = $true
-                }
+                } else {
+                # Single byte file ending with LF, should be CRLF
+                $needsFixing = $true
+            }
             }
             elseif ($lastByte -eq 0x0D) {
                 # Ends with CR only (old Mac style) - needs LF
                 $endsWithNewline = $true
                 $needsFixing = $true
-            }
-            else {
+            } else {
                 # Does not end with any newline character
                 $endsWithNewline = $false
                 $needsFixing = $true
@@ -210,8 +208,7 @@ if ($Fix) {
     Write-Host "Files fixed: $($fixedFiles.Count)" -ForegroundColor $(if ($fixedFiles.Count -gt 0) { "Green" } else { "White" })
     $remainingInvalid = $invalidFiles.Count - $fixedFiles.Count
     Write-Host "Files without proper newline (could not fix): $remainingInvalid" -ForegroundColor $(if ($remainingInvalid -eq 0) { "Green" } else { "Red" })
-}
-else {
+} else {
     Write-Host "Files without proper newline: $($invalidFiles.Count)" -ForegroundColor $(if ($invalidFiles.Count -eq 0) { "Green" } else { "Red" })
 }
 
@@ -227,8 +224,7 @@ if ($Fix -and $fixedFiles.Count -gt 0) {
 $remainingInvalidFiles = @()
 if ($Fix) {
     $remainingInvalidFiles = $invalidFiles | Where-Object { $_ -notin $fixedFiles }
-}
-else {
+} else {
     $remainingInvalidFiles = $invalidFiles
 }
 
@@ -247,13 +243,11 @@ if ($remainingInvalidFiles.Count -gt 0) {
     Write-Host ""
     Write-Host "[VALIDATION FAILED]" -ForegroundColor Red -BackgroundColor Black
     exit 1
-}
-else {
+} else {
     Write-Host ""
     if ($Fix -and $fixedFiles.Count -gt 0) {
         Write-Host "[VALIDATION PASSED] All files fixed successfully" -ForegroundColor Green -BackgroundColor Black
-    }
-    else {
+    } else {
         Write-Host "[VALIDATION PASSED]" -ForegroundColor Green -BackgroundColor Black
     }
     exit 0

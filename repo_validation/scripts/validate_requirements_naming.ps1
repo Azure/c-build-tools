@@ -127,6 +127,11 @@ foreach ($file in $allFiles) {
             Write-Host "  [FAIL] $($file.FullName)" -ForegroundColor Red
             Write-Host "         Should be renamed to: $newFileName" -ForegroundColor Yellow
             
+            # Check if target file already exists (show warning even if not in fix mode)
+            if (Test-Path $newFilePath) {
+                Write-Host "         [WARN] Target file already exists: $newFileName" -ForegroundColor Yellow
+            }
+            
             $invalidFiles += $file.FullName
             
             if ($Fix) {
@@ -135,8 +140,7 @@ foreach ($file in $allFiles) {
                     if (Test-Path $newFilePath) {
                         Write-Host "         [ERROR] Target file already exists: $newFileName" -ForegroundColor Red
                         Write-Host "         Skipping rename to avoid overwriting existing file." -ForegroundColor Yellow
-                    }
-                    else {
+                    } else {
                         Rename-Item -Path $file.FullName -NewName $newFileName -ErrorAction Stop
                         Write-Host "         [FIXED] Renamed to: $newFileName" -ForegroundColor Green
                         $fixedFiles += $file.FullName
@@ -182,8 +186,7 @@ $unfixedFiles = $invalidFiles.Count - $fixedFiles.Count
 if ($unfixedFiles -eq 0) {
     Write-Host "[VALIDATION PASSED]" -ForegroundColor Green
     exit 0
-}
-else {
+} else {
     Write-Host "[VALIDATION FAILED]" -ForegroundColor Red
     if ($Fix) {
         Write-Host "$unfixedFiles file(s) could not be fixed automatically." -ForegroundColor Yellow

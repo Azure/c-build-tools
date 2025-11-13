@@ -93,7 +93,6 @@ function Remove-MarkdownFormatting {
     
     # Remove backticks
     $Text = $Text -replace '`([^`]+)`', '$1'
-    $Text = $Text -replace '`', ''
     
     # Normalize whitespace (multiple spaces to single space)
     $Text = $Text -replace '\s+', ' '
@@ -143,12 +142,19 @@ function Get-SrsTagsFromCCode {
     
     # Pattern to match SRS tags in C comments: /* Codes_SRS_MODULE_ID_NUM: [ text ]*/
     # or /* Tests_SRS_MODULE_ID_NUM: [ text ]*/ (for test files)
-    # or // Codes_SRS_MODULE_ID_NUM: [ text ]
-    $pattern = '/\*+\s*(?:Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]\s*\*+/'
+    $blockPattern = '/\*+\s*(?:Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]\s*\*+/'
     
-    $matches = [regex]::Matches($Content, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
+    $linePattern = '//\s*(?:Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]'
     
-    foreach ($match in $matches) {
+    # Match both block and line comments
+    $blockMatches = [regex]::Matches($Content, $blockPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $lineMatches = [regex]::Matches($Content, $linePattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    
+    # Combine all matches
+    $allMatches = @($blockMatches) + @($lineMatches)
+    
+    foreach ($match in $allMatches) {
         $module = $match.Groups[1].Value
         $devId = $match.Groups[2].Value
         $reqId = $match.Groups[3].Value
@@ -176,6 +182,7 @@ function Get-SrsTagsFromCCode {
 $totalRequirements = 0
 $inconsistentRequirements = @()
 $fixedRequirements = @()
+$duplicateTagsCount = 0
 $skippedFiles = 0
 
 Write-Host "Phase 1: Scanning requirement documents..." -ForegroundColor White
@@ -200,10 +207,10 @@ foreach ($mdFile in $requirementFiles) {
         if (-not $srsRequirements.ContainsKey($tag.Tag)) {
             $srsRequirements[$tag.Tag] = $tag
             $totalRequirements++
-        }
-        else {
+        } else {
             # Duplicate SRS tag in markdown - use first occurrence
             Write-Host "  [WARN] Duplicate SRS tag $($tag.Tag) found in $($mdFile.FullName)" -ForegroundColor Yellow
+            $duplicateTagsCount++
         }
     }
 }
@@ -263,6 +270,9 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Total SRS requirements: $totalRequirements" -ForegroundColor White
 Write-Host "C source files scanned: $($cFiles.Count)" -ForegroundColor White
 Write-Host "Inconsistencies found: $($inconsistentRequirements.Count)" -ForegroundColor White
+if ($duplicateTagsCount -gt 0) {
+    Write-Host "Duplicate SRS tags found: $duplicateTagsCount" -ForegroundColor Yellow
+}
 Write-Host ""
 
 if ($inconsistentRequirements.Count -gt 0) {
@@ -296,8 +306,9 @@ if ($inconsistentRequirements.Count -gt 0) {
                         $modified = $true
                         $fixedRequirements += $inconsistency.Tag
                         Write-Host "  [FIXED] $($inconsistency.Tag) in $([System.IO.Path]::GetFileName($filePath))" -ForegroundColor Green
-                    }
-                    else {
+                        Write-Host "         Old: '$($inconsistency.CText)'" -ForegroundColor Gray
+                        Write-Host "         New: '$($inconsistency.MdText)'" -ForegroundColor Gray
+                    } else {
                         Write-Host "  [ERROR] Could not locate text to replace in $([System.IO.Path]::GetFileName($filePath))" -ForegroundColor Red
                         Write-Host "          Tag: $($inconsistency.Tag)" -ForegroundColor Red
                     }
@@ -314,26 +325,17 @@ if ($inconsistentRequirements.Count -gt 0) {
         
         Write-Host ""
         Write-Host "Fixed $($fixedRequirements.Count) inconsistencies" -ForegroundColor Green
-    }
-    else {
+    } else {
         Write-Host "Inconsistent SRS requirements found:" -ForegroundColor Red
         Write-Host ""
         
-        # Show first 20 inconsistencies
-        $displayCount = [Math]::Min(20, $inconsistentRequirements.Count)
-        
-        for ($i = 0; $i -lt $displayCount; $i++) {
-            $item = $inconsistentRequirements[$i]
+        # Show all inconsistencies
+        foreach ($item in $inconsistentRequirements) {
             Write-Host "  [FAIL] $($item.Tag)" -ForegroundColor Red
             Write-Host "         C file: $($item.CFile)" -ForegroundColor White
             Write-Host "         MD file: $($item.MdFile)" -ForegroundColor White
             Write-Host "         C text:  '$($item.CText)'" -ForegroundColor Yellow
             Write-Host "         MD text: '$($item.MdText)'" -ForegroundColor Cyan
-            Write-Host ""
-        }
-        
-        if ($inconsistentRequirements.Count -gt 20) {
-            Write-Host "  ... and $($inconsistentRequirements.Count - 20) more inconsistencies" -ForegroundColor Yellow
             Write-Host ""
         }
         
@@ -349,8 +351,7 @@ $unfixedCount = $inconsistentRequirements.Count - $fixedRequirements.Count
 if ($unfixedCount -eq 0) {
     Write-Host "[VALIDATION PASSED]" -ForegroundColor Green
     exit 0
-}
-else {
+} else {
     Write-Host "[VALIDATION FAILED]" -ForegroundColor Red
     if ($Fix) {
         Write-Host "$unfixedCount inconsistency(ies) could not be fixed automatically." -ForegroundColor Yellow
