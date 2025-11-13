@@ -87,8 +87,8 @@ function Test-IsExcluded {
 function Remove-MarkdownFormatting {
     param([string]$Text)
 
-    # Remove bold/italics markers (**text**, *text*) - be more careful about nested formatting
-    # Handle nested bold like **unsigned char** properly
+    # Remove bold/italics markers (**text**, *text*)
+    # Handle cases with asterisks used in text (e.g., pointers like "char*" or multiplication "1 * 2")
     $Text = $Text -replace '\*\*([^*]+)\*\*', '$1'
     $Text = $Text -replace '\*([^*]+)\*', '$1'
 
@@ -102,7 +102,9 @@ function Remove-MarkdownFormatting {
     $Text = $Text.Trim()
 
     return $Text
-}# Function to extract SRS tags from markdown content
+}
+
+# Function to extract SRS tags from markdown content
 function Get-SrsTagsFromMarkdown {
     param([string]$Content, [string]$FilePath)
     
@@ -144,7 +146,9 @@ function Get-SrsTagsFromCCode {
     $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]\s*\*+/'
 
     # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
-    $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]'    # Match both block and line comments
+    $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*(.*?)\s*\]'
+    
+    # Match both block and line comments
     $blockMatches = [regex]::Matches($Content, $blockPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
     $lineMatches = [regex]::Matches($Content, $linePattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
     

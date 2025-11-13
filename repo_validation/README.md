@@ -392,6 +392,10 @@ Potential validations to add:
 - File naming convention checks
 - Maximum file size limits
 
+## Future Enhancements
+
+- **Shared Helper Functions**: Refactor common functionality like SRS pattern matching, file exclusion logic, and boilerplate code into shared PowerShell helper modules to reduce duplication and improve maintainability across validation scripts.
+
 ## Testing Framework
 
 The validation scripts include a comprehensive testing framework to ensure the validation logic works correctly and to prevent regressions.
