@@ -84,3 +84,8 @@ function(add_repo_validation project_name)
     # Add a message to indicate the target was created
     message(STATUS "Added repository validation target: ${project_name}_repo_validation (excluding: ${REPO_VAL_EXCLUDE_FOLDERS})")
 endfunction()
+
+# Include testing framework if tests directory exists and testing is enabled
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/tests" AND run_unittests)
+    add_subdirectory(tests)
+endif()

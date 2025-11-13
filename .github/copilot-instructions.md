@@ -55,6 +55,18 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
     - **Tab Character Validation**: Ensures source files do not contain tab characters (replaces with 4 spaces in fix mode)
     - See `repo_validation/README.md` for complete list and details
   - **Adding Validations**: Create `.ps1` scripts in `repo_validation/scripts/` accepting `-RepoRoot`, `-ExcludeFolders`, and optional `-Fix` parameters
+  - **Testing Requirements**: **Every new validation script MUST include corresponding test cases** following the established template:
+    - Create test module directory: `repo_validation/tests/validate_your_feature/`
+    - Include realistic test data with positive cases (compliant files) and negative cases (files with violations)
+    - Create `CMakeLists.txt` with three test targets following the pattern:
+      - **Detection test**: Verify script correctly identifies violations in negative test cases
+      - **Clean test**: Verify script doesn't modify files that are already compliant  
+      - **Fix test**: Verify script correctly fixes violations and files pass validation afterward
+    - Follow naming pattern: `test_validate_your_feature_detection`, `test_validate_your_feature_clean`, `test_validate_your_feature_fix`
+    - Use temporary directories for fix tests to avoid contamination between test runs
+    - Test targets must be available via `cmake --build . --target test_validate_your_feature`
+    - Tests automatically registered with CTest when `run_unittests=ON`
+    - Reference existing test modules (e.g., `validate_no_tabs/`, `validate_file_endings/`) for implementation patterns
   - **CI/CD Integration**: Include in pipelines with `-Drun_repo_validation=ON` to enforce validation as quality gate
 
 ### vcpkg Integration

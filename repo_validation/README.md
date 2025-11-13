@@ -336,3 +336,144 @@ Potential validations to add:
 - Dependency version verification
 - File naming convention checks
 - Maximum file size limits
+
+## Testing Framework
+
+The validation scripts include a comprehensive testing framework to ensure the validation logic works correctly and to prevent regressions.
+
+### Running the Tests
+
+To run validation tests:
+
+```bash
+# Configure CMake with testing enabled
+cmake -S . -B build -Drun_unittests=ON
+
+# Run individual test modules
+cmake --build build --target test_validate_no_tabs
+cmake --build build --target test_validate_file_endings
+cmake --build build --target test_validate_srs_consistency
+cmake --build build --target test_validate_requirements_naming
+
+# Or use CTest to run all tests
+cd build && ctest -C Debug
+```
+
+### Test Structure
+
+The testing framework is organized under the `tests/` directory:
+
+```
+tests/
+├── CMakeLists.txt                    # Main test coordination
+├── validate_no_tabs/                 # Tab validation tests
+│   ├── CMakeLists.txt
+│   ├── has_tabs/                     # Files with tab characters
+│   │   ├── sample.c
+│   │   └── sample.h
+│   └── no_tabs/                      # Files without tab characters  
+│       ├── sample.c
+│       └── sample.h
+├── validate_file_endings/            # File ending tests
+│   ├── CMakeLists.txt
+│   ├── missing_crlf/                 # Files without proper endings
+│   │   ├── sample.c
+│   │   └── sample.h
+│   └── proper_crlf/                  # Files with correct endings
+│       ├── sample.c
+│       └── sample.h
+├── validate_srs_consistency/         # SRS consistency tests
+│   ├── CMakeLists.txt
+│   ├── consistent/                   # Matching SRS tags
+│   │   ├── devdoc/
+│   │   │   └── module_requirements.md
+│   │   └── src/
+│   │       └── module.c
+│   └── inconsistent/                 # Mismatched SRS tags
+│       ├── devdoc/
+│       │   └── module_requirements.md
+│       └── src/
+│           └── module.c
+└── validate_requirements_naming/     # Requirements naming tests
+    ├── CMakeLists.txt
+    ├── correct_naming/               # Properly named files
+    │   └── devdoc/
+    │       └── module_requirements.md
+    └── incorrect_naming/             # Improperly named files
+        └── devdoc/
+            └── module.md
+```
+
+### Test Types
+
+Each validation script has three types of tests:
+
+1. **Detection Tests**: Verify the script correctly identifies issues
+   - Tests that violations are detected in problematic files
+   - Tests that no issues are reported for compliant files
+
+2. **Clean Tests**: Verify the script doesn't modify compliant files
+   - Runs validation with `-Fix` on already-compliant files
+   - Confirms no changes are made to correct files
+
+3. **Fix Tests**: Verify the script correctly fixes issues
+   - Runs validation with `-Fix` on files with violations
+   - Confirms files are corrected and pass subsequent validation
+
+### Test Implementation Details
+
+Each test module includes:
+
+- **Realistic test data**: Sample C/C# files, headers, and markdown documents that reflect actual project content
+- **Positive test cases**: Files that should pass validation (no violations)
+- **Negative test cases**: Files with deliberate violations to test detection
+- **Fix mode verification**: Tests that verify auto-fix functionality works correctly
+- **CMake integration**: Automated test execution with clear pass/fail reporting
+
+### Adding Tests for New Validations
+
+When adding a new validation script, create a corresponding test module:
+
+1. Create a test directory: `tests/validate_your_feature/`
+2. Add test data with positive and negative cases
+3. Create `CMakeLists.txt` with detection, clean, and fix test targets
+4. Follow the existing pattern for test structure and naming
+
+Example test module structure:
+
+```cmake
+# tests/validate_your_feature/CMakeLists.txt
+
+# Test that the script detects violations correctly
+add_test(NAME test_validate_your_feature_detection
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File 
+        "${PROJECT_SOURCE_DIR}/../scripts/validate_your_feature.ps1"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/negative_cases"
+        -ExcludeFolders ""
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(test_validate_your_feature_detection PROPERTIES 
+    WILL_FAIL TRUE  # Expect failure due to violations
+)
+
+# Test that the script doesn't modify compliant files
+add_test(NAME test_validate_your_feature_clean
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File 
+        "${PROJECT_SOURCE_DIR}/../scripts/validate_your_feature.ps1"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/positive_cases"
+        -ExcludeFolders ""
+        -Fix
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(test_validate_your_feature_clean PROPERTIES 
+    WILL_FAIL FALSE  # Expect success
+)
+
+# Test that the script fixes violations correctly
+add_test(NAME test_validate_your_feature_fix
+    COMMAND ${CMAKE_COMMAND} -P test_fix_validation.cmake
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+```
+
+The testing framework ensures validation scripts are robust, reliable, and maintain consistent behavior across changes and updates.
