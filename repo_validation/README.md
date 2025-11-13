@@ -62,9 +62,9 @@ This approach ensures that:
 cmake -S . -B build -Drun_repo_validation=ON
 ```
 
-### Running Validation
+### Running Repo Validation
 
-To run all validation checks:
+To run all repo validation checks:
 
 ```bash
 # Using CMake (validation only, report errors)
@@ -109,6 +109,18 @@ cmake --build build --target your_project_name_repo_validation
 - Converts LF-only endings to CRLF (Windows standard)
 - Converts CR-only endings to CRLF
 - **Does not modify any files in excluded directories**
+
+**Git Configuration Considerations:**
+This validation enforces CRLF line endings on Windows to ensure consistency across the codebase. To work effectively with this validation:
+
+- **Recommended Git setting**: `git config core.autocrlf input` 
+  - This preserves CRLF in working directory but converts to LF in repository
+  - Prevents Git from auto-converting line endings and potentially breaking the validation
+- **Repository uses**: `* text=auto` in `.gitattributes` (auto line ending normalization)
+- **Mixed line endings**: Many repositories currently contain a mix of CRLF and LF endings
+- **Goal**: Standardize all source files to CRLF endings on Windows for consistency
+
+**Note**: The `autocrlf=input` setting works best with this validation because it preserves the CRLF endings that the script enforces while still normalizing to LF for storage in Git.
 
 **Manual Fix Options:**
 - **Manual Verification**: Check that the cursor can move one line past the last line of code in your editor
