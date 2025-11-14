@@ -299,11 +299,35 @@ if ($inconsistentRequirements.Count -gt 0) {
                 $modified = $false
                 
                 foreach ($inconsistency in $fileInconsistencies) {
-                    # Build the correct comment using the original prefix
-                    $correctComment = "/* $($inconsistency.Prefix)_$($inconsistency.Tag): [ $($inconsistency.MdText) ]*/"
-                    
-                    # Replace the original match
+                    # Build the correct comment by preserving the original format
+                    # Use regex to replace only the text portion while keeping the comment structure
                     $oldComment = $inconsistency.OriginalMatch
+                    
+                    # Detect the comment type and structure
+                    # Note: Make closing ] optional to handle malformed comments
+                    if ($oldComment -match '^(/\*+)\s*((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):\s*\[\s*(.*?)\s*\]?(\s*\*+/)$') {
+                        $commentStart = $matches[1]
+                        $srsPrefix = $matches[2]
+                        $oldText = $matches[3]
+                        $commentEnd = $matches[4]
+                        
+                        # Build the corrected comment preserving the original structure
+                        $correctComment = "$commentStart $srsPrefix`: [ $($inconsistency.MdText) ]$commentEnd"
+                    }
+                    elseif ($oldComment -match '^(//)\s*((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):\s*\[\s*(.*?)\s*\]?$') {
+                        $commentStart = $matches[1]
+                        $srsPrefix = $matches[2]
+                        $oldText = $matches[3]
+                        
+                        # Build the corrected comment for line-style comments
+                        $correctComment = "$commentStart $srsPrefix`: [ $($inconsistency.MdText) ]"
+                    }
+                    else {
+                        Write-Host "  [ERROR] Could not parse comment format in $([System.IO.Path]::GetFileName($filePath))" -ForegroundColor Red
+                        Write-Host "          Tag: $($inconsistency.Tag)" -ForegroundColor Red
+                        Write-Host "          Comment: $oldComment" -ForegroundColor Red
+                        continue
+                    }
                     
                     if ($content.Contains($oldComment)) {
                         $content = $content.Replace($oldComment, $correctComment)
