@@ -93,11 +93,10 @@ add_custom_target(test_validate_srs_consistency_malformed_comment
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_malformed_test"
         -Fix
-    # Verify that code was NOT corrupted (all functions still present)
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "$content = Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_malformed_test/test_module.c' -Raw; if (-not $content.Contains('TEST_MODULE* test_module_create(void)')) { Write-Error 'Function was corrupted/deleted'; exit 1 }"
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "$content = Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_malformed_test/test_module.c' -Raw; if (-not $content.Contains('void test_module_destroy(TEST_MODULE* module)')) { Write-Error 'Function was corrupted/deleted'; exit 1 }"
-    # Verify that SRS text was actually fixed
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_malformed_test/test_module.c' -Raw) -notmatch 'test_module_create shall allocate memory for a test module') { Write-Error 'SRS text was not fixed'; exit 1 }"
+    # Compare output with expected file to verify correct behavior
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+        "${CMAKE_CURRENT_BINARY_DIR}/temp_malformed_test/test_module.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/malformed_comment/test_module_expected.c"
     # Run validation again to ensure it passes
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_malformed_test"
@@ -116,11 +115,10 @@ add_custom_target(test_validate_srs_consistency_line_comment
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_line_comment_test"
         -Fix
-    # Verify that // style was preserved (not converted to /* */)
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "$content = Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_line_comment_test/test_module.c' -Raw; if (-not $content.Contains('// Codes_SRS_LINE_COMMENT_TEST_02_001:')) { Write-Error 'Line comment style was not preserved'; exit 1 }"
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "$content = Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_line_comment_test/test_module.c' -Raw; if ($content.Contains('/* Codes_SRS_LINE_COMMENT_TEST_02_001')) { Write-Error 'Line comment was incorrectly converted to block comment'; exit 1 }"
-    # Verify that SRS text was actually fixed
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_line_comment_test/test_module.c' -Raw) -notmatch 'test_module_create shall allocate memory for a test module') { Write-Error 'SRS text was not fixed'; exit 1 }"
+    # Compare output with expected file to verify correct behavior
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+        "${CMAKE_CURRENT_BINARY_DIR}/temp_line_comment_test/test_module.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/line_comment/test_module_expected.c"
     # Run validation again to ensure it passes
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_line_comment_test"
@@ -139,14 +137,13 @@ add_custom_target(test_validate_srs_consistency_whitespace
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_whitespace_test"
         -Fix
-    # Verify that comment delimiters are preserved (/*** stays /***)
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "$content = Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_whitespace_test/test_module.c' -Raw; if (-not $content.Contains('/*** Codes_SRS_WHITESPACE_TEST_03_002:')) { Write-Error 'Multiple asterisks were not preserved'; exit 1 }"
-    # Verify that SRS text was actually fixed
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_whitespace_test/test_module.c' -Raw) -notmatch 'test_module_create shall allocate memory for a test module') { Write-Error 'SRS text was not fixed'; exit 1 }"
+    # Compare output with expected file to verify correct behavior
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+        "${CMAKE_CURRENT_BINARY_DIR}/temp_whitespace_test/test_module.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/whitespace_preservation/test_module_expected.c"
     # Run validation again to ensure it passes
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_whitespace_test"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing whitespace preservation in comments"
 )
-

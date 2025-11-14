@@ -1,6 +1,6 @@
 # Test Module Requirements
 
-This file contains requirements to test malformed comment handling (missing closing bracket).
+This file contains requirements to test the script's handling of malformed C comments (SRS tags missing the closing ] bracket).
 
 ## Requirements
 
