@@ -143,13 +143,13 @@ function Get-SrsTagsFromCCode {
     
     # Pattern to match SRS tags in C comments: /* Codes_SRS_MODULE_ID_NUM: [ text ]*/
     # or /* Tests_SRS_MODULE_ID_NUM: [ text ]*/ (for test files)
-    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*([^\]\r\n]*)\s*(\]?)\s*\*+/'
+    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[(\s*)((?:(?!\*/).)+?)(\s*)(\]?)\s*\*+/'
 
     # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
-    $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\s*([^\]]*)\s*(\]?)'
+    $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)'
     
     # Match both block and line comments
-    $blockMatches = [regex]::Matches($Content, $blockPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $blockMatches = [regex]::Matches($Content, $blockPattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
     $lineMatches = [regex]::Matches($Content, $linePattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
     
     # Combine all matches
@@ -160,7 +160,7 @@ function Get-SrsTagsFromCCode {
         $module = $match.Groups[2].Value
         $devId = $match.Groups[3].Value
         $reqId = $match.Groups[4].Value
-        $text = $match.Groups[5].Value
+        $text = $match.Groups[6].Value  # Text content (group 5 is leading whitespace)
         
         $srsTag = "SRS_${module}_${devId}_${reqId}"
         
@@ -306,7 +306,7 @@ if ($inconsistentRequirements.Count -gt 0) {
                     # Detect the comment type and structure
                     # Note: Make closing ] optional to handle malformed comments
                     # Capture whitespace separately to preserve exact formatting
-                    if ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):(\s*)\[(\s*)([^\]\r\n]*)(\s*)(\]?)(\s*\*+/)$') {
+                    if ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):(\s*)\[(\s*)((?:(?!\*/).)+?)(\s*)(\]?)(\s*\*+/)$') {
                         $commentStart = $matches[1]
                         $ws1 = $matches[2]  # whitespace between /* and SRS tag
                         $srsPrefix = $matches[3]
@@ -321,7 +321,7 @@ if ($inconsistentRequirements.Count -gt 0) {
                         # Build the corrected comment preserving all original whitespace
                         $correctComment = "$commentStart$ws1$srsPrefix`:$ws2[$ws3$($inconsistency.MdText)$ws4]$commentEnd"
                     }
-                    elseif ($oldComment -match '^(//)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):(\s*)\[(\s*)([^\]]*)(\s*)(\]?)$') {
+                    elseif ($oldComment -match '^(//)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):(\s*)\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)$') {
                         $commentStart = $matches[1]
                         $ws1 = $matches[2]  # whitespace between // and SRS tag
                         $srsPrefix = $matches[3]
