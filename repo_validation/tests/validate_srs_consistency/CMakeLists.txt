@@ -30,8 +30,8 @@ add_custom_target(test_validate_srs_consistency_clean
 add_custom_target(test_validate_srs_consistency_fix
     # Create a temporary directory and copy test files
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory 
-        "${CMAKE_CURRENT_SOURCE_DIR}/inconsistent" 
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/inconsistent"
         "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
     # Run the script with fix mode
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
@@ -44,17 +44,38 @@ add_custom_target(test_validate_srs_consistency_fix
     COMMENT "Testing SRS consistency fix functionality"
 )
 
-# Master target for all SRS consistency validation tests
+# Test 4: Verify Tests_/Codes_ prefix preservation
+add_custom_target(test_validate_srs_consistency_prefix_preservation
+    # Create a temporary directory and copy test files
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/prefix_preservation"
+        "${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test"
+    # Run the script with fix mode
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test"
+        -Fix
+    # Verify that Codes_ prefix was preserved in source file
+    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module.c' -Raw) -notmatch 'Codes_SRS_PREFIX_TEST_66_001') { Write-Error 'Codes_ prefix was not preserved'; exit 1 }"
+    # Verify that Tests_ prefix was preserved in test file
+    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module_ut.c' -Raw) -notmatch 'Tests_SRS_PREFIX_TEST_66_001') { Write-Error 'Tests_ prefix was not preserved'; exit 1 }"
+    # Verify that the text was actually fixed (should now match the markdown)
+    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module.c' -Raw) -notmatch 'test_module_create shall allocate memory for a test module') { Write-Error 'Text was not fixed correctly'; exit 1 }"
+    # Run validation again to ensure it passes
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing Tests_/Codes_ prefix preservation during fix"
+)# Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
 )
 
 # Add dependencies - clean test should pass, fix test validates fix functionality
-add_dependencies(test_validate_srs_consistency 
+add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_clean
     test_validate_srs_consistency_fix
-)
-
-# Note: We don't add test_validate_srs_consistency_detection as a dependency because 
+    test_validate_srs_consistency_prefix_preservation
+)# Note: We don't add test_validate_srs_consistency_detection as a dependency because 
 # it should fail with exit code 1 (which would fail the build). 
 # Instead, it's available to run manually to verify detection works.

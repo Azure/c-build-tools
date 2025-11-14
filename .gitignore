@@ -331,4 +331,18 @@ ASALocalRun/
 
 # MFractors (Xamarin productivity tool) working folder 
 .mfractor/
+
+# CMake build directories and cache files
 [Cc]make*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# VS Code workspace settings (if not wanted in repo)
+.vscode/settings.json
