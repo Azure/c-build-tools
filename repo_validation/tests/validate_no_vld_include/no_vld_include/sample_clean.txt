@@ -1,0 +1,6 @@
+This is a clean test file without any vld.h includes.
+
+#include <stdio.h>
+#include <stdlib.h>
+
+Some other content here that is perfectly fine.

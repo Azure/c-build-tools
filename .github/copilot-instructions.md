@@ -52,7 +52,8 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
     - **Requirements Document Naming**: Ensures requirement documents in `devdoc/` folders follow `{module_name}_requirements.md` convention (detects files with SRS tags)
     - **SRS Requirement Consistency** (`validate_srs_consistency.ps1`): Validates that SRS requirement text matches between markdown documentation and C code comments (`Codes_SRS_` and `Tests_SRS_` patterns). Preserves original prefix (Tests_ or Codes_) when fixing inconsistencies.
     - **SRS Tag Uniqueness** (`validate_srs_uniqueness.ps1`): Detects duplicate SRS tags across all requirement documents. **Never auto-fixes** - requires manual resolution to ensure proper requirement management.
-    - **Tab Character Validation**: Ensures source files do not contain tab characters (replaces with 4 spaces in fix mode)
+    - **Tab Character Validation** (`validate_no_tabs.ps1`): Ensures source files do not contain tab characters (replaces with 4 spaces in fix mode)
+    - **VLD Include Validation** (`validate_no_vld_include.ps1`): Ensures source files (`.h`, `.hpp`, `.c`, `.cpp`) do not explicitly include `vld.h`. VLD should be integrated through the build system via `add_vld_if_defined()` CMake function, not hardcoded in source files.
     - See `repo_validation/README.md` for complete list and details
   - **Adding Validations**: Create `.ps1` scripts in `repo_validation/scripts/` accepting `-RepoRoot`, `-ExcludeFolders`, and optional `-Fix` parameters
   - **Testing Requirements**: **Every new validation script MUST include corresponding test cases** following the established template:

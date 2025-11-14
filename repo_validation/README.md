@@ -224,6 +224,42 @@ This validation enforces CRLF line endings on Windows to ensure consistency acro
 - Use "Convert Indentation to Spaces" feature in your editor
 
 
+### VLD Include Validation
+
+**Script:** `scripts/validate_no_vld_include.ps1`
+
+**Purpose:** Ensures that source code files do not explicitly include `vld.h` (Visual Leak Detector header).
+
+**Rationale:** VLD should be integrated through the build system, not included directly in source files:
+- Prevents VLD from being accidentally enabled in production builds
+- Ensures VLD integration is controlled via CMake options (`use_vld`)
+- Avoids hardcoded dependencies on debugging tools in source code
+- Allows conditional VLD enabling without modifying source files
+- Follows best practice of separating debug tooling from production code
+
+**Exclusions:**
+- Default exclusions (if not customized): `deps`, `cmake`
+- Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
+
+**File Types Checked:** `.h`, `.hpp`, `.c`, `.cpp`, `.txt`
+
+**Detection:** The script scans for any form of `#include` directive that references `vld.h`:
+- `#include "vld.h"`
+- `#include <vld.h>`
+- `#  include "vld.h"` (with extra whitespace)
+- Reports the line number and content of each violation
+
+**Fix Mode:** When run with `-Fix` parameter, the script automatically removes lines containing `vld.h` includes:
+- Removes all lines matching the `#include` pattern for `vld.h`
+- Preserves file encoding (uses UTF-8 without BOM)
+- **Does not modify any files in excluded directories**
+
+**Manual Fix Options:**
+- Remove explicit `#include "vld.h"` or `#include <vld.h>` directives from source files
+- Use the `add_vld_if_defined()` CMake function to enable VLD integration when the `use_vld` option is set
+- VLD will be automatically linked to executables through the build system when enabled
+
+
 ### SRS Tag Uniqueness Validation
 
 **Script:** `scripts/validate_srs_uniqueness.ps1`
