@@ -87,17 +87,17 @@ function Test-IsExcluded {
 function Remove-MarkdownFormatting {
     param([string]$Text)
 
-    # Remove bold/italics markers (**text**, *text*)
+    # Remove bold markers (**text**)
     # Handle cases with asterisks used in text (e.g., pointers like "char*" or multiplication "1 * 2")
     $Text = $Text -replace '\*\*([^*]+)\*\*', '$1'
-    $Text = $Text -replace '\*([^*]+)\*', '$1'
-
+    
+    # Remove italics markers (*word*) - only match word boundaries to avoid C pointers
+    $Text = $Text -replace '\*(\w+)\*', '$1'
+    
     # Remove backticks
-    $Text = $Text -replace '`([^`]+)`', '$1'
+    $Text = $Text -replace '\`([^\`]+)\`', '$1'
 
     # Normalize whitespace (multiple spaces to single space)
-    $Text = $Text -replace '\s+', ' '
-
     # Trim leading/trailing whitespace
     $Text = $Text.Trim()
 
@@ -111,7 +111,7 @@ function Get-SrsTagsFromMarkdown {
     $srsTags = @()
     
     # Pattern to match SRS tags in markdown: **SRS_MODULE_ID_NUM: [** text **]**
-    $pattern = '\*\*SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\*\*\s*([^\*]+?)\s*\*\*\]\*\*'
+    $pattern = '\*\*SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\*\*\s*((?:(?!\*\*\]\*\*).)+?)\s*\*\*\]\*\*'
 
     $matches = [regex]::Matches($Content, $pattern)
 
