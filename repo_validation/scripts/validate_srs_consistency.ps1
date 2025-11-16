@@ -111,11 +111,9 @@ function Get-SrsTagsFromMarkdown {
     $srsTags = @()
     
     # Pattern to match SRS tags in markdown: **SRS_MODULE_ID_NUM: [** text **]**
-    $pattern = '\*\*SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\*\*\s*(.*?)\s*\*\*\]\*\*'
-    
-    $matches = [regex]::Matches($Content, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-    
-    foreach ($match in $matches) {
+    $pattern = '\*\*SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\*\*\s*([^\*]+?)\s*\*\*\]\*\*'
+
+    $matches = [regex]::Matches($Content, $pattern)    foreach ($match in $matches) {
         $module = $match.Groups[1].Value
         $devId = $match.Groups[2].Value
         $reqId = $match.Groups[3].Value
@@ -143,7 +141,7 @@ function Get-SrsTagsFromCCode {
     
     # Pattern to match SRS tags in C comments: /* Codes_SRS_MODULE_ID_NUM: [ text ]*/
     # or /* Tests_SRS_MODULE_ID_NUM: [ text ]*/ (for test files)
-    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[(\s*)((?:(?!\*/).)+?)(\s*)(\]?)\s*\*+/'
+    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[(\s*)[^\]]*?(\s*)(\]?)\s*\*+/'
 
     # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
     $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)'
@@ -306,7 +304,7 @@ if ($inconsistentRequirements.Count -gt 0) {
                     # Detect the comment type and structure
                     # Note: Make closing ] optional to handle malformed comments
                     # Capture whitespace separately to preserve exact formatting
-                    if ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):(\s*)\[(\s*)((?:(?!\*/).)+?)(\s*)(\]?)(\s*\*+/)$') {
+                    if ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):(\s*)\[(\s*)([^\]]*?)(\s*)(\]?)(\s*\*+/)$') {
                         $commentStart = $matches[1]
                         $ws1 = $matches[2]  # whitespace between /* and SRS tag
                         $srsPrefix = $matches[3]
