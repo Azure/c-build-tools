@@ -1,3 +1,10 @@
+<!--
+TEST CASE: This file is based on constbuffer_array_requirements.md from c-util.
+It reproduces a real bug where consecutive requirements (SRS_TESTCASE_REPR_CBA_05_006 and 05_007)
+appeaing on consecutive lines in the markdown caused the validation script to corrupt C file
+comments by merging requirement text from both markdown lines into a single C comment.
+-->
+
 # testcase_repr_cba_requirements
 ================
 

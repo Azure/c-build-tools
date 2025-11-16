@@ -1,4 +1,9 @@
 // Copyright (C) Microsoft Corporation. All rights reserved.
+//
+// TEST CASE: This file is based on constbuffer_array.c from c-util.
+// It reproduces a real bug where consecutive requirements in markdown
+// (SRS_TESTCASE_REPR_CBA_05_006 and 05_007) caused the validation script
+// to corrupt C file comments by merging requirement text from multiple lines.
 
 #include <stdlib.h>
 #include <stdbool.h>
