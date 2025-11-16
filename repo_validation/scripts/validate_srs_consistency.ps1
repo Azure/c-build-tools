@@ -113,7 +113,9 @@ function Get-SrsTagsFromMarkdown {
     # Pattern to match SRS tags in markdown: **SRS_MODULE_ID_NUM: [** text **]**
     $pattern = '\*\*SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\*\*\s*([^\*]+?)\s*\*\*\]\*\*'
 
-    $matches = [regex]::Matches($Content, $pattern)    foreach ($match in $matches) {
+    $matches = [regex]::Matches($Content, $pattern)
+
+    foreach ($match in $matches) {
         $module = $match.Groups[1].Value
         $devId = $match.Groups[2].Value
         $reqId = $match.Groups[3].Value
