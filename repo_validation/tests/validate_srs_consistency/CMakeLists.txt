@@ -66,7 +66,14 @@ add_custom_target(test_validate_srs_consistency_prefix_preservation
         -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing Tests_/Codes_ prefix preservation during fix"
-)# Master target for all SRS consistency validation tests
+)# Test 8: Verify pointer asterisk preservation in backticks
+add_custom_target(test_validate_srs_consistency_pointer_asterisks
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/pointer_asterisks"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing pointer asterisk preservation in backticks"
+)
+# Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
 )
@@ -79,7 +86,9 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_malformed_comment
     test_validate_srs_consistency_line_comment
     test_validate_srs_consistency_whitespace
-)# Note: We don't add test_validate_srs_consistency_detection as a dependency because 
+    test_validate_srs_consistency_pointer_asterisks
+)
+# Note: We don't add test_validate_srs_consistency_detection as a dependency because
 # it should fail with exit code 1 (which would fail the build). 
 # Instead, it's available to run manually to verify detection works.
 # Test 5: Verify malformed comment handling (missing closing bracket)
@@ -147,3 +156,6 @@ add_custom_target(test_validate_srs_consistency_whitespace
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing whitespace preservation in comments"
 )
+
+
+
