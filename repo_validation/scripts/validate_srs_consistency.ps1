@@ -98,10 +98,9 @@ function Remove-MarkdownFormatting {
     $Text = $Text -replace '\`([^\`]+)\`', '$1'
     
     # Unescape markdown escaped characters
-    # These are escaped in markdown to prevent interpretation but should match unescaped in C code
-    $Text = $Text -replace '\\<', '<'    # \< -> <
-    $Text = $Text -replace '\\>', '>'    # \> -> >
-    $Text = $Text -replace '\\\\', '\'   # \\ -> \
+    # Any backslash followed by a character should be unescaped (e.g., \< -> <, \> -> >, \\ -> \, \* -> *)
+    # This handles all markdown escape sequences to match unescaped text in C code
+    $Text = $Text -replace '\\(.)', '$1'
 
     # Normalize whitespace (multiple spaces to single space)
     # Trim leading/trailing whitespace
