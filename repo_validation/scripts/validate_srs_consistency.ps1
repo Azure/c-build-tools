@@ -96,6 +96,12 @@ function Remove-MarkdownFormatting {
     
     # Remove backticks
     $Text = $Text -replace '\`([^\`]+)\`', '$1'
+    
+    # Unescape markdown escaped characters
+    # These are escaped in markdown to prevent interpretation but should match unescaped in C code
+    $Text = $Text -replace '\\<', '<'    # \< -> <
+    $Text = $Text -replace '\\>', '>'    # \> -> >
+    $Text = $Text -replace '\\\\', '\'   # \\ -> \
 
     # Normalize whitespace (multiple spaces to single space)
     # Trim leading/trailing whitespace

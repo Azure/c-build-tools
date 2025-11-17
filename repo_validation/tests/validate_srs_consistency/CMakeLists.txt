@@ -73,6 +73,15 @@ add_custom_target(test_validate_srs_consistency_pointer_asterisks
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing pointer asterisk preservation in backticks"
 )
+
+# Test 9: Verify escaped character handling (\<, \>, \\)
+add_custom_target(test_validate_srs_consistency_escaped_characters
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/escaped_characters"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing escaped character handling (\\<, \\>, \\\\)"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -87,6 +96,7 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_line_comment
     test_validate_srs_consistency_whitespace
     test_validate_srs_consistency_pointer_asterisks
+    test_validate_srs_consistency_escaped_characters
 )
 # Note: We don't add test_validate_srs_consistency_detection as a dependency because
 # it should fail with exit code 1 (which would fail the build). 
