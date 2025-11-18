@@ -155,7 +155,9 @@ function Get-SrsTagsFromCCode {
     # Pattern to match SRS tags in C comments: /* Codes_SRS_MODULE_ID_NUM: [ text ]*/
     # or /* Tests_SRS_MODULE_ID_NUM: [ text ]*/ (for test files)
     # Allow optional whitespace before colon to handle cases like "SRS_TAG :" and "SRS_TAG:"
-    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\]]*?)(\s*)(\]?)\s*\*+/'
+    # NOTE: Use greedy .* to match entire comment including any duplicated text from previous bugs
+    # The pattern will match from /* to the LAST ]*/ on the line, capturing any garbage in between
+    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)(.*)(\s*)\]\s*\*+/'
 
     # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
     $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)'
@@ -176,6 +178,16 @@ function Get-SrsTagsFromCCode {
         
         $srsTag = "SRS_${module}_${devId}_${reqId}"
         
+        # Clean up any garbage/duplication from old bugs
+        # If the text contains patterns like "]*/, more text ]*/" (repeated closing), extract only the first portion
+        # This handles cases where previous script bugs duplicated text
+        $hasDuplication = $false
+        if ($text -match '^(.*?)\]\*/') {
+            # Found duplicated closing pattern, extract only the text before it
+            $text = $matches[1]
+            $hasDuplication = $true
+        }
+        
         # Normalize whitespace in C code text
         $cleanText = $text -replace '\s+', ' '
         $cleanText = $cleanText.Trim()
@@ -187,6 +199,7 @@ function Get-SrsTagsFromCCode {
             FilePath = $FilePath
             OriginalMatch = $match.Value
             MatchIndex = $match.Index
+            HasDuplication = $hasDuplication  # Flag to force fix even if text matches
         }
     }
     
@@ -257,7 +270,8 @@ foreach ($cFile in $cFiles) {
             $requirement = $srsRequirements[$cTag.Tag]
             
             # Compare text (case-insensitive, whitespace-normalized)
-            if ($cTag.Text -ne $requirement.CleanText) {
+            # Also treat comments with duplication as inconsistent even if text matches after cleanup
+            if ($cTag.Text -ne $requirement.CleanText -or $cTag.HasDuplication) {
                 $inconsistency = [PSCustomObject]@{
                     Tag = $cTag.Tag
                     Prefix = $cTag.Prefix
@@ -267,6 +281,7 @@ foreach ($cFile in $cFiles) {
                     MdText = $requirement.CleanText
                     OriginalMatch = $cTag.OriginalMatch
                     MatchIndex = $cTag.MatchIndex
+                    HasDuplication = $cTag.HasDuplication
                 }
                 
                 $inconsistentRequirements += $inconsistency
@@ -316,20 +331,20 @@ if ($inconsistentRequirements.Count -gt 0) {
                     $oldComment = $inconsistency.OriginalMatch
                     
                     # Detect the comment type and structure
-                    # Note: Make closing ] optional to handle malformed comments
                     # Capture whitespace separately to preserve exact formatting
                     # Allow optional whitespace before colon to handle cases like "SRS_TAG :" and "SRS_TAG:"
-                    if ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3})(\s*):(\s*)\[(\s*)([^\]]*?)(\s*)(\]?)(\s*\*+/)$') {
+                    # NOTE: The regex now uses greedy .* to capture the entire comment including any garbage/duplication
+                    # This ensures we replace the ENTIRE malformed comment, not just the first part
+                    if ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3})(\s*):(\s*)\[(\s*)(.*)(\s*)\](\s*\*+/)$') {
                         $commentStart = $matches[1]
                         $ws1 = $matches[2]  # whitespace between /* and SRS tag
                         $srsPrefix = $matches[3]
                         $wsBeforeColon = $matches[4]  # whitespace before colon
                         $ws2 = $matches[5]  # whitespace after colon
                         $ws3 = $matches[6]  # whitespace after opening [
-                        $oldText = $matches[7]
+                        $oldText = $matches[7]  # This now includes any garbage/duplication
                         $ws4 = $matches[8]  # whitespace before closing ]
-                        $closingBracket = $matches[9]
-                        $commentEnd = $matches[10]
+                        $commentEnd = $matches[9]
                         
                         # Build the corrected comment preserving all original whitespace
                         $correctComment = "$commentStart$ws1$srsPrefix$wsBeforeColon`:$ws2[$ws3$($inconsistency.MdText)$ws4]$commentEnd"
