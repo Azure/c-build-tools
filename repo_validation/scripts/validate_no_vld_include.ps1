@@ -89,6 +89,8 @@ Write-Host ""
 # Pattern to match vld.h includes (various forms)
 # Matches: #include "vld.h", #include <vld.h>, #  include "vld.h", etc.
 $vldIncludePattern = '^\s*#\s*include\s*[<"]vld\.h[>"]'
+$useVldIfdefPattern = '^\s*#\s*ifdef\s+USE_VLD\s*$'
+$endifPattern = '^\s*#\s*endif\s*(?://.*)?$'
 
 foreach ($file in $allFiles) {
     # Check if file should be excluded
@@ -151,8 +153,71 @@ foreach ($file in $allFiles) {
         
         if ($Fix) {
             try {
-                # Filter out lines that match the vld.h include pattern
-                $fixedLines = $lines | Where-Object { $_ -notmatch $vldIncludePattern }
+                # Process lines to remove vld.h includes and associated #ifdef USE_VLD/#endif blocks
+                $fixedLines = @()
+                $i = 0
+                $removedCount = 0
+                
+                while ($i -lt $lines.Count) {
+                    $currentLine = $lines[$i]
+                    
+                    # Check if this is an #ifdef USE_VLD line
+                    if ($currentLine -match $useVldIfdefPattern) {
+                        # Look ahead to find the vld.h include and endif
+                        $j = $i + 1
+                        $foundVldInclude = $false
+                        $foundEndif = $false
+                        $onlyVldInclude = $true
+                        
+                        # Scan forward to find what's inside this #ifdef block
+                        while ($j -lt $lines.Count) {
+                            $nextLine = $lines[$j]
+                            
+                            # Check if this is the vld.h include
+                            if ($nextLine -match $vldIncludePattern) {
+                                $foundVldInclude = $true
+                                $j++
+                                continue
+                            }
+                            
+                            # Check if this is the #endif
+                            if ($nextLine -match $endifPattern) {
+                                $foundEndif = $true
+                                break
+                            }
+                            
+                            # Check if there's any non-whitespace content (other than comments)
+                            if ($nextLine -match '^\s*$' -or $nextLine -match '^\s*//') {
+                                # Empty line or comment line - ignore
+                                $j++
+                                continue
+                            }
+                            
+                            # Found some other code - this block contains more than just vld.h
+                            $onlyVldInclude = $false
+                            break
+                        }
+                        
+                        # If we found an #ifdef USE_VLD block that only contains vld.h include, remove the entire block
+                        if ($foundVldInclude -and $foundEndif -and $onlyVldInclude) {
+                            Write-Host "         Removing #ifdef USE_VLD block (lines $($i+1)-$($j+1))" -ForegroundColor Yellow
+                            $removedCount++
+                            $i = $j + 1  # Skip past the #endif
+                            continue
+                        }
+                    }
+                    
+                    # Check if this line is a vld.h include (not inside a block we're removing)
+                    if ($currentLine -match $vldIncludePattern) {
+                        $removedCount++
+                        $i++
+                        continue
+                    }
+                    
+                    # Keep this line
+                    $fixedLines += $currentLine
+                    $i++
+                }
                 
                 # Write back to file, preserving encoding
                 # Use UTF8 without BOM for consistency
@@ -160,7 +225,7 @@ foreach ($file in $allFiles) {
                 $fixedContent = ($fixedLines -join "`r`n") + "`r`n"
                 [System.IO.File]::WriteAllText($file.FullName, $fixedContent, $utf8NoBom)
                 
-                Write-Host "         [FIXED] Removed $($matchingLines.Count) vld.h include(s)" -ForegroundColor Green
+                Write-Host "         [FIXED] Removed $removedCount vld.h include(s) and associated blocks" -ForegroundColor Green
                 $fixedFiles += $file.FullName
             }
             catch {
