@@ -82,6 +82,14 @@ add_custom_target(test_validate_srs_consistency_escaped_characters
     COMMENT "Testing escaped character handling (\\<, \\>, \\\\)"
 )
 
+# Test 10: Verify bold text only handling (entire bracketed text is bold: [** text **])
+add_custom_target(test_validate_srs_consistency_bold_text_only
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/bold_text_only"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing bold text only handling ([** text **])"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -97,6 +105,7 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_whitespace
     test_validate_srs_consistency_pointer_asterisks
     test_validate_srs_consistency_escaped_characters
+    test_validate_srs_consistency_bold_text_only
 )
 # Note: We don't add test_validate_srs_consistency_detection as a dependency because
 # it should fail with exit code 1 (which would fail the build). 
