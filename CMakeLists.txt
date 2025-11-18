@@ -54,10 +54,10 @@ else()
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL $ENV{BUILD_BINARIESDIRECTORY}/MinSizeRel)
 endif()
 
+enable_testing()
+
 add_subdirectory(build_functions)
 add_subdirectory(repo_validation)
-
-enable_testing()
 
 include (CheckIncludeFiles)
 
