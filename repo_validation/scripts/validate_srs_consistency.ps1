@@ -88,8 +88,12 @@ function Remove-MarkdownFormatting {
     param([string]$Text)
 
     # Remove bold markers (**text**)
-    # Handle cases with asterisks used in text (e.g., pointers like "char*" or multiplication "1 * 2")
-    $Text = $Text -replace '\*\*([^*]+)\*\*', '$1'
+    # Use a loop to handle multiple bold sections and nested cases
+    # Match any text between ** markers, including text with spaces and special characters
+    # The pattern [^*] prevents matching single asterisks (like in pointers)
+    while ($Text -match '\*\*(.+?)\*\*') {
+        $Text = $Text -replace '\*\*(.+?)\*\*', '$1'
+    }
     
     # Remove italics markers (*word*) - only match word boundaries to avoid C pointers
     $Text = $Text -replace '\*(\w+)\*', '$1'
@@ -103,6 +107,8 @@ function Remove-MarkdownFormatting {
     $Text = $Text -replace '\\(.)', '$1'
 
     # Normalize whitespace (multiple spaces to single space)
+    $Text = $Text -replace '\s+', ' '
+    
     # Trim leading/trailing whitespace
     $Text = $Text.Trim()
 
@@ -148,10 +154,11 @@ function Get-SrsTagsFromCCode {
     
     # Pattern to match SRS tags in C comments: /* Codes_SRS_MODULE_ID_NUM: [ text ]*/
     # or /* Tests_SRS_MODULE_ID_NUM: [ text ]*/ (for test files)
-    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[(\s*)([^\]]*?)(\s*)(\]?)\s*\*+/'
+    # Allow optional whitespace before colon to handle cases like "SRS_TAG :" and "SRS_TAG:"
+    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\]]*?)(\s*)(\]?)\s*\*+/'
 
     # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
-    $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)'
+    $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)'
     
     # Match both block and line comments
     $blockMatches = [regex]::Matches($Content, $blockPattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
@@ -311,33 +318,35 @@ if ($inconsistentRequirements.Count -gt 0) {
                     # Detect the comment type and structure
                     # Note: Make closing ] optional to handle malformed comments
                     # Capture whitespace separately to preserve exact formatting
-                    if ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):(\s*)\[(\s*)([^\]]*?)(\s*)(\]?)(\s*\*+/)$') {
+                    # Allow optional whitespace before colon to handle cases like "SRS_TAG :" and "SRS_TAG:"
+                    if ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3})(\s*):(\s*)\[(\s*)([^\]]*?)(\s*)(\]?)(\s*\*+/)$') {
                         $commentStart = $matches[1]
                         $ws1 = $matches[2]  # whitespace between /* and SRS tag
                         $srsPrefix = $matches[3]
-                        $ws2 = $matches[4]  # whitespace after colon
-                        $ws3 = $matches[5]  # whitespace after opening [
-                        $oldText = $matches[6]
-                        $ws4 = $matches[7]  # whitespace before closing ]
-                        $closingBracket = $matches[8]
-                        $closingBracket = $matches[8]
-                        $commentEnd = $matches[9]
+                        $wsBeforeColon = $matches[4]  # whitespace before colon
+                        $ws2 = $matches[5]  # whitespace after colon
+                        $ws3 = $matches[6]  # whitespace after opening [
+                        $oldText = $matches[7]
+                        $ws4 = $matches[8]  # whitespace before closing ]
+                        $closingBracket = $matches[9]
+                        $commentEnd = $matches[10]
                         
                         # Build the corrected comment preserving all original whitespace
-                        $correctComment = "$commentStart$ws1$srsPrefix`:$ws2[$ws3$($inconsistency.MdText)$ws4]$commentEnd"
+                        $correctComment = "$commentStart$ws1$srsPrefix$wsBeforeColon`:$ws2[$ws3$($inconsistency.MdText)$ws4]$commentEnd"
                     }
-                    elseif ($oldComment -match '^(//)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}):(\s*)\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)$') {
+                    elseif ($oldComment -match '^(//)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3})(\s*):(\s*)\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)$') {
                         $commentStart = $matches[1]
                         $ws1 = $matches[2]  # whitespace between // and SRS tag
                         $srsPrefix = $matches[3]
-                        $ws2 = $matches[4]  # whitespace after colon
-                        $ws3 = $matches[5]  # whitespace after opening [
-                        $oldText = $matches[6]
-                        $ws4 = $matches[7]  # whitespace before closing ]
-                        $closingBracket = $matches[8]
+                        $wsBeforeColon = $matches[4]  # whitespace before colon
+                        $ws2 = $matches[5]  # whitespace after colon
+                        $ws3 = $matches[6]  # whitespace after opening [
+                        $oldText = $matches[7]
+                        $ws4 = $matches[8]  # whitespace before closing ]
+                        $closingBracket = $matches[9]
                         
                         # Build the corrected comment for line-style comments, preserving whitespace
-                        $correctComment = "$commentStart$ws1$srsPrefix`:$ws2[$ws3$($inconsistency.MdText)$ws4]"
+                        $correctComment = "$commentStart$ws1$srsPrefix$wsBeforeColon`:$ws2[$ws3$($inconsistency.MdText)$ws4]"
                     }
                     else {
                         Write-Host "  [ERROR] Could not parse comment format in $([System.IO.Path]::GetFileName($filePath))" -ForegroundColor Red
