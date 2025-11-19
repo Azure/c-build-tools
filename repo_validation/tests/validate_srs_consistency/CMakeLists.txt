@@ -90,6 +90,26 @@ add_custom_target(test_validate_srs_consistency_bold_text_only
     COMMENT "Testing bold text only handling ([** text **])"
 )
 
+# Test 11: Verify escaped multiline duplication fix (bug from cert_rdn_attr_helper)
+add_custom_target(test_validate_srs_consistency_escaped_multiline_duplication
+    # Create a temporary directory and copy test files
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_escaped_multiline_test"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/escaped_multiline_duplication"
+        "${CMAKE_CURRENT_BINARY_DIR}/temp_escaped_multiline_test"
+    # Run the script with fix mode to clean up duplication
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_escaped_multiline_test"
+        -Fix
+    # Verify duplication was removed (should not contain multiple ]*/  patterns)
+    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_escaped_multiline_test/test_module.c' -Raw) -match '\\]\\*/.*?\\]\\*/') { Write-Error 'Duplication was not removed'; exit 1 }"
+    # Run validation again to ensure it passes
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_escaped_multiline_test"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing escaped multiline duplication fix"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -106,6 +126,7 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_pointer_asterisks
     test_validate_srs_consistency_escaped_characters
     test_validate_srs_consistency_bold_text_only
+    test_validate_srs_consistency_escaped_multiline_duplication
 )
 # Note: We don't add test_validate_srs_consistency_detection as a dependency because
 # it should fail with exit code 1 (which would fail the build). 
