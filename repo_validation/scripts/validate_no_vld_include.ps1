@@ -88,7 +88,9 @@ Write-Host ""
 
 # Pattern to match vld.h includes (various forms)
 # Matches: #include "vld.h", #include <vld.h>, #  include "vld.h", etc.
+# However, if the line contains a "// force" or "// FORCE" comment, it will be ignored
 $vldIncludePattern = '^\s*#\s*include\s*[<"]vld\.h[>"]'
+$forceCommentPattern = '//\s*force\s*$'
 $useVldIfdefPattern = '^\s*#\s*ifdef\s+USE_VLD\s*$'
 $endifPattern = '^\s*#\s*endif\s*(?://.*)?$'
 
@@ -130,9 +132,12 @@ foreach ($file in $allFiles) {
     foreach ($line in $lines) {
         $lineNumber++
         if ($line -match $vldIncludePattern) {
-            $matchingLines += [PSCustomObject]@{
-                LineNumber = $lineNumber
-                Content = $line.Trim()
+            # Ignore lines with "// force" or "// FORCE" comment (case-insensitive)
+            if ($line -notmatch '(?i)//\s*force\s*$') {
+                $matchingLines += [PSCustomObject]@{
+                    LineNumber = $lineNumber
+                    Content = $line.Trim()
+                }
             }
         }
     }
@@ -209,9 +214,12 @@ foreach ($file in $allFiles) {
                     
                     # Check if this line is a vld.h include (not inside a block we're removing)
                     if ($currentLine -match $vldIncludePattern) {
-                        $removedCount++
-                        $i++
-                        continue
+                        # Skip removal if line has "// force" or "// FORCE" comment (case-insensitive)
+                        if ($currentLine -notmatch '(?i)//\s*force\s*$') {
+                            $removedCount++
+                            $i++
+                            continue
+                        }
                     }
                     
                     # Keep this line
