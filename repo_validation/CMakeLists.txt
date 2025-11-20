@@ -74,7 +74,7 @@ function(add_repo_validation project_name)
     endforeach()
     
     # Create the validation target
-    add_custom_target(${project_name}_repo_validation
+    add_custom_target(${project_name}_repo_validation ALL
         ${VALIDATION_COMMANDS}
         WORKING_DIRECTORY ${REPO_ROOT}
         COMMENT "Running repository validation for ${project_name}"
