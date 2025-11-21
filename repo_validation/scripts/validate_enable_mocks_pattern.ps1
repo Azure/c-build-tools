@@ -15,6 +15,9 @@
     
     The script automatically excludes dependency directories to avoid modifying third-party code.
     
+    Lines with "// force" or "// FORCE" comments (case-insensitive) at the end will be ignored
+    by the validation, allowing intentional use of the deprecated pattern when necessary.
+    
     When the -Fix switch is provided, the script will automatically replace the deprecated
     #define/#undef patterns with the correct include statements.
 
@@ -123,16 +126,28 @@ foreach ($file in $allFiles) {
     }
     
     # Check for deprecated patterns
-    # Pattern 1: #define ENABLE_MOCKS (with optional whitespace)
-    # Pattern 2: #undef ENABLE_MOCKS (with optional whitespace)
-    $hasDefinePattern = $content -match '(?m)^\s*#\s*define\s+ENABLE_MOCKS\s*$'
-    $hasUndefPattern = $content -match '(?m)^\s*#\s*undef\s+ENABLE_MOCKS\s*$'
+    # Pattern 1: #define ENABLE_MOCKS (with optional whitespace, excluding lines with "// force" comment)
+    # Pattern 2: #undef ENABLE_MOCKS (with optional whitespace, excluding lines with "// force" comment)
     
-    if ($hasDefinePattern -or $hasUndefPattern) {
-        # Count occurrences for reporting
-        $defineMatches = ([regex]::Matches($content, '(?m)^\s*#\s*define\s+ENABLE_MOCKS\s*$')).Count
-        $undefMatches = ([regex]::Matches($content, '(?m)^\s*#\s*undef\s+ENABLE_MOCKS\s*$')).Count
-        $totalViolations = $defineMatches + $undefMatches
+    # Split content into lines for line-by-line validation
+    $lines = $content -split "`r?`n"
+    $defineMatches = 0
+    $undefMatches = 0
+    
+    foreach ($line in $lines) {
+        # Check for #define ENABLE_MOCKS (but not if it has "// force" comment - case-insensitive)
+        if ($line -match '^\s*#\s*define\s+ENABLE_MOCKS\s*$' -and $line -notmatch '(?i)//\s*force\s*$') {
+            $defineMatches++
+        }
+        # Check for #undef ENABLE_MOCKS (but not if it has "// force" comment - case-insensitive)
+        if ($line -match '^\s*#\s*undef\s+ENABLE_MOCKS\s*$' -and $line -notmatch '(?i)//\s*force\s*$') {
+            $undefMatches++
+        }
+    }
+    
+    $totalViolations = $defineMatches + $undefMatches
+    
+    if ($totalViolations -gt 0) {
         
         Write-Host "  [FAIL] $($file.FullName)" -ForegroundColor Red
         if ($defineMatches -gt 0) {
@@ -150,14 +165,38 @@ foreach ($file in $allFiles) {
         
         if ($Fix) {
             try {
-                # Replace #define ENABLE_MOCKS with include statement
-                $fixedContent = $content -replace '(?m)^\s*#\s*define\s+ENABLE_MOCKS\s*$', '#include "umock_c/umock_c_ENABLE_MOCKS.h" // ============================== ENABLE_MOCKS'
+                # Read the raw content to detect line ending style
+                $rawContent = [System.IO.File]::ReadAllText($file.FullName)
+                $hasTrailingNewline = $rawContent -match "(`r`n|`n)$"
                 
-                # Replace #undef ENABLE_MOCKS with include statement
-                $fixedContent = $fixedContent -replace '(?m)^\s*#\s*undef\s+ENABLE_MOCKS\s*$', '#include "umock_c/umock_c_DISABLE_MOCKS.h" // ============================== DISABLE_MOCKS'
+                # Read lines for processing
+                $originalLines = Get-Content -Path $file.FullName -ErrorAction Stop
                 
-                # Write back to file, preserving encoding
-                # Use UTF8 without BOM for consistency
+                # Process lines and replace patterns, but skip lines with "// force" comment
+                $fixedLines = @()
+                foreach ($line in $originalLines) {
+                    # Replace #define ENABLE_MOCKS (but not if it has "// force" comment - case-insensitive)
+                    if ($line -match '^\s*#\s*define\s+ENABLE_MOCKS\s*$' -and $line -notmatch '(?i)//\s*force\s*$') {
+                        $fixedLines += '#include "umock_c/umock_c_ENABLE_MOCKS.h" // ============================== ENABLE_MOCKS'
+                    }
+                    # Replace #undef ENABLE_MOCKS (but not if it has "// force" comment - case-insensitive)
+                    elseif ($line -match '^\s*#\s*undef\s+ENABLE_MOCKS\s*$' -and $line -notmatch '(?i)//\s*force\s*$') {
+                        $fixedLines += '#include "umock_c/umock_c_DISABLE_MOCKS.h" // ============================== DISABLE_MOCKS'
+                    }
+                    else {
+                        $fixedLines += $line
+                    }
+                }
+                
+                # Join lines with CRLF
+                $fixedContent = $fixedLines -join "`r`n"
+                
+                # Add trailing newline only if original had one
+                if ($hasTrailingNewline) {
+                    $fixedContent += "`r`n"
+                }
+                
+                # Write back to file, preserving encoding (UTF8 without BOM)
                 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
                 [System.IO.File]::WriteAllText($file.FullName, $fixedContent, $utf8NoBom)
                 
