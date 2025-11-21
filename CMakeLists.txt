@@ -2,8 +2,11 @@
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 if(NOT DEFINED CMAKE_MINIMUM_REQUIRED_VERSION)
-    cmake_minimum_required(VERSION 3.24) #3.24 brings in support for WHOLE_ARCHIVE which is needed for vld
+    cmake_minimum_required(VERSION 3.31) #3.31 comes default with Visual Studio 2022 17.14.0 which we are using (16 May 2025). also changes the policy CMP0177 (for the better)
+    #cmake_minimum_required(VERSION 3.24) #3.24 brings in support for WHOLE_ARCHIVE which is needed for vld
 endif()
+
+cmake_policy(SET CMP0177 NEW) #cmake --help-policy CMP0177
 
 # canon way of using build_tools from another repo is below. It assumes the using repo has placed c-build-tools in "deps"
 
@@ -30,6 +33,8 @@ option(run_drd "run DRD on tests (Linux only) (default is OFF)." OFF)
 option(run_traceability "run traceability tool (default is ON)" ON)
 option(build_traceability_tool "build traceability tool (default is ON)" ON)
 option(run_reals_check "run reals check tool (default is OFF)" OFF)
+option(run_repo_validation "add repository validation target (default is OFF)" OFF)
+option(fix_repo_validation_errors "automatically fix validation errors when running repo validation (default is OFF)" OFF)
 option(use_vld "use VLD for leak detection (default is OFF)" OFF)
 option(fsanitize_address "enable /fsanitize=address compiler switch (default is OFF)" OFF) # see https://docs.microsoft.com/en-us/cpp/build/reference/fsanitize
 option(build_csharp_projects "Build csharp projects? (default is ON)" ON)
@@ -49,9 +54,10 @@ else()
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL $ENV{BUILD_BINARIESDIRECTORY}/MinSizeRel)
 endif()
 
-add_subdirectory(build_functions)
-
 enable_testing()
+
+add_subdirectory(build_functions)
+add_subdirectory(repo_validation)
 
 include (CheckIncludeFiles)
 

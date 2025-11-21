@@ -1,0 +1,5 @@
+This is a test file that contains a vld.h include.
+
+#include "vld.h"
+
+Some other content here.

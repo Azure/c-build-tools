@@ -87,6 +87,12 @@ macro(set_default_build_options)
     # System-specific compiler flags
     if(MSVC)
 
+        
+        if(CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+            add_compile_options(-fno-ms-compatibility) #this is needed (globally) because otherwise clang-cl maintains some default compatibiliy with OLD Microsoft stuff which in turn does not allow the macro-utils to build
+        endif()
+
+
         #use _CRT_SECURE_NO_WARNINGS by default
         add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
@@ -221,11 +227,11 @@ macro(set_default_build_options)
 endmacro()
 
 # .NET6 or newer
-function(build_as_csharp_netcore_project_with_framework targetname framework)
+function(build_as_csharp_netcore_project_with_framework targetname framework runtimeidentifier)
     set_target_properties(${targetname} PROPERTIES
         DOTNET_SDK "Microsoft.NET.Sdk"
         DOTNET_TARGET_FRAMEWORK ${framework}
-        VS_GLOBAL_RuntimeIdentifier "win10-${CMAKE_VS_PLATFORM_NAME}"
+        VS_GLOBAL_RuntimeIdentifier ${runtimeidentifier}
         VS_GLOBAL_SelfContained true
         VS_GLOBAL_AppendRuntimeIdentifierToOutputPath false
         VS_GLOBAL_AppendTargetFrameworkToOutputPath false
@@ -252,14 +258,28 @@ endfunction()
 # Assumes MSSharedLibSN1024.snk is available at the project root
 # Note: csharp_sdk_fix must be used in the project
 function(build_as_csharp_net6_project targetname)
-    build_as_csharp_netcore_project_with_framework(${targetname} "net6.0")
+    build_as_csharp_netcore_project_with_framework(${targetname} "net6.0" "win10-${CMAKE_VS_PLATFORM_NAME}")
 endfunction()
 
 # The following helper will enable C# .NET6 for Windows only projects
 # Assumes MSSharedLibSN1024.snk is available at the project root
 # Note: csharp_sdk_fix must be used in the project
 function(build_as_csharp_net6_windows_project targetname)
-    build_as_csharp_netcore_project_with_framework(${targetname} "net6.0-windows")
+    build_as_csharp_netcore_project_with_framework(${targetname} "net6.0-windows" "win10-${CMAKE_VS_PLATFORM_NAME}")
+endfunction()
+
+# The following helper will enable C# .NET8 for projects
+# Assumes MSSharedLibSN1024.snk is available at the project root
+# Note: csharp_sdk_fix must be used in the project
+function(build_as_csharp_net8_project targetname)
+    build_as_csharp_netcore_project_with_framework(${targetname} "net8.0" "win-${CMAKE_VS_PLATFORM_NAME}")
+endfunction()
+
+# The following helper will enable C# .NET8 for Windows only projects
+# Assumes MSSharedLibSN1024.snk is available at the project root
+# Note: csharp_sdk_fix must be used in the project
+function(build_as_csharp_net8_windows_project targetname)
+    build_as_csharp_netcore_project_with_framework(${targetname} "net8.0-windows" "win-${CMAKE_VS_PLATFORM_NAME}")
 endfunction()
 
 # variable to store list of libs that must be checked for reals

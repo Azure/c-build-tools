@@ -34,6 +34,41 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
   - **Includes**: Use `-i ${CMAKE_CURRENT_LIST_DIR}` to specify root directory to scan
   - **Common Exclusions**: Always exclude `deps/` (dependencies) and `.github/` (documentation) folders
 - **Reals Check** (`reals_check/reals_check.ps1`): PowerShell script ensuring no unintended real function calls in test mocks
+- **Repository Validation** (`repo_validation/`): Extensible framework for repository-wide validation checks
+  - **Purpose**: Runs standardized validation scripts across the entire repository
+  - **Dependency Exclusion**: Automatically excludes specified directories from scanning and modification
+  - **CMake Options**:
+    - `run_repo_validation=ON` - Enable the validation target (default is OFF)
+    - `fix_repo_validation_errors=ON` - Automatically fix validation errors (default is OFF)
+  - **Usage**: Call `add_repo_validation(project_name [EXCLUDE_FOLDERS folder1 folder2 ...])` in CMakeLists.txt
+    - Default exclusions if not specified: `cmake deps`
+  - **Examples**: 
+    - `add_repo_validation(my_project)` - Uses default exclusions (cmake, deps)
+    - `add_repo_validation(my_project EXCLUDE_FOLDERS deps cmake external)` - Custom exclusions
+  - **Running**: `cmake --build . --target project_name_repo_validation`
+  - **Fix Mode**: When `fix_repo_validation_errors=ON`, scripts receive `-Fix` parameter to auto-correct issues (excluding specified directories)
+  - **Available Validations**: 
+    - **File Ending Newline** (`validate_file_endings.ps1`): Ensures source files (`.h`, `.hpp`, `.c`, `.cpp`, `.cs`) end with proper newline (CRLF on Windows)
+    - **Requirements Document Naming**: Ensures requirement documents in `devdoc/` folders follow `{module_name}_requirements.md` convention (detects files with SRS tags)
+    - **SRS Requirement Consistency** (`validate_srs_consistency.ps1`): Validates that SRS requirement text matches between markdown documentation and C code comments (`Codes_SRS_` and `Tests_SRS_` patterns). Preserves original prefix (Tests_ or Codes_) when fixing inconsistencies.
+    - **SRS Tag Uniqueness** (`validate_srs_uniqueness.ps1`): Detects duplicate SRS tags across all requirement documents. **Never auto-fixes** - requires manual resolution to ensure proper requirement management.
+    - **Tab Character Validation** (`validate_no_tabs.ps1`): Ensures source files do not contain tab characters (replaces with 4 spaces in fix mode)
+    - **VLD Include Validation** (`validate_no_vld_include.ps1`): Ensures source files (`.h`, `.hpp`, `.c`, `.cpp`) do not explicitly include `vld.h`. VLD should be integrated through the build system via `add_vld_if_defined()` CMake function, not hardcoded in source files.
+    - See `repo_validation/README.md` for complete list and details
+  - **Adding Validations**: Create `.ps1` scripts in `repo_validation/scripts/` accepting `-RepoRoot`, `-ExcludeFolders`, and optional `-Fix` parameters
+  - **Testing Requirements**: **Every new validation script MUST include corresponding test cases** following the established template:
+    - Create test module directory: `repo_validation/tests/validate_your_feature/`
+    - Include realistic test data with positive cases (compliant files) and negative cases (files with violations)
+    - Create `CMakeLists.txt` with three test targets following the pattern:
+      - **Detection test**: Verify script correctly identifies violations in negative test cases
+      - **Clean test**: Verify script doesn't modify files that are already compliant  
+      - **Fix test**: Verify script correctly fixes violations and files pass validation afterward
+    - Follow naming pattern: `test_validate_your_feature_detection`, `test_validate_your_feature_clean`, `test_validate_your_feature_fix`
+    - Use temporary directories for fix tests to avoid contamination between test runs
+    - Test targets must be available via `cmake --build . --target test_validate_your_feature`
+    - Tests automatically registered with CTest when `run_unittests=ON`
+    - Reference existing test modules (e.g., `validate_no_tabs/`, `validate_file_endings/`) for implementation patterns
+  - **CI/CD Integration**: Include in pipelines with `-Drun_repo_validation=ON` to enforce validation as quality gate
 
 ### vcpkg Integration
 - **Custom Triplets**: `x64-windows-static-cbt.cmake` with security flags (`/guard:cf`) and ABI workarounds
@@ -121,3 +156,4 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 - **VLD Setup**: Call `add_vld_if_defined()` after all targets defined, auto-skips C# projects
 - **vcpkg Usage**: Call `use_vcpkg(path)` with overlay triplets for consistent package management
 - **Error Handling**: All builds treat warnings as errors (`/WX`, `-Werror`)
+
