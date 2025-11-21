@@ -260,6 +260,57 @@ This validation enforces CRLF line endings on Windows to ensure consistency acro
 - VLD will be automatically linked to executables through the build system when enabled
 
 
+### ENABLE_MOCKS Pattern Validation
+
+**Script:** `scripts/validate_enable_mocks_pattern.ps1`
+
+**Purpose:** Ensures that source code files use the modern include-based pattern for enabling/disabling mocks instead of deprecated preprocessor directives.
+
+**Rationale:** The modern pattern using include files provides several advantages:
+- More explicit and searchable mock enable/disable markers in code
+- Easier to track and maintain mock regions with consistent comments
+- Reduces preprocessor macro pollution in the global namespace
+- Better integration with modern build systems and tools
+- Clear visual separation of mock sections with comment markers
+- Follows established conventions in Azure C libraries
+
+**Exclusions:**
+- Default exclusions (if not customized): `deps`, `cmake`
+- Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
+
+**File Types Checked:** `.h`, `.c`, `.cpp`
+
+**Detection:** The script scans for deprecated patterns:
+- `#define ENABLE_MOCKS` (with optional whitespace)
+- `#undef ENABLE_MOCKS` (with optional whitespace)
+
+**Correct Pattern:** Files should use:
+```c
+#include "umock_c/umock_c_ENABLE_MOCKS.h"  // ============================== ENABLE_MOCKS
+// ... mock includes here ...
+#include "umock_c/umock_c_DISABLE_MOCKS.h" // ============================== DISABLE_MOCKS
+```
+
+**Deprecated Pattern:** Files should NOT use:
+```c
+#define ENABLE_MOCKS
+// ... mock includes here ...
+#undef ENABLE_MOCKS
+```
+
+**Fix Mode:** When run with `-Fix` parameter, the script automatically replaces deprecated patterns:
+- Replaces `#define ENABLE_MOCKS` with `#include "umock_c/umock_c_ENABLE_MOCKS.h" // ============================== ENABLE_MOCKS`
+- Replaces `#undef ENABLE_MOCKS` with `#include "umock_c/umock_c_DISABLE_MOCKS.h" // ============================== DISABLE_MOCKS`
+- Preserves file encoding (uses UTF-8 without BOM)
+- Handles multiple mock sections in the same file
+- **Does not modify any files in excluded directories**
+
+**Manual Fix Options:**
+- Replace `#define ENABLE_MOCKS` with the include statement for `umock_c_ENABLE_MOCKS.h`
+- Replace `#undef ENABLE_MOCKS` with the include statement for `umock_c_DISABLE_MOCKS.h`
+- Ensure the comment markers are included for easy visual identification
+
+
 ### SRS Tag Uniqueness Validation
 
 **Script:** `scripts/validate_srs_uniqueness.ps1`
@@ -449,6 +500,7 @@ cmake --build build --target test_validate_no_tabs
 cmake --build build --target test_validate_file_endings
 cmake --build build --target test_validate_srs_consistency
 cmake --build build --target test_validate_requirements_naming
+cmake --build build --target test_validate_enable_mocks
 
 # Or use CTest to run all tests
 cd build && ctest -C Debug
@@ -489,14 +541,24 @@ tests/
 │       │   └── module_requirements.md
 │       └── src/
 │           └── module.c
-└── validate_requirements_naming/     # Requirements naming tests
+├── validate_requirements_naming/     # Requirements naming tests
+│   ├── CMakeLists.txt
+│   ├── correct_naming/               # Properly named files
+│   │   └── devdoc/
+│   │       └── module_requirements.md
+│   └── incorrect_naming/             # Improperly named files
+│       └── devdoc/
+│           └── module.md
+└── validate_enable_mocks_pattern/    # ENABLE_MOCKS pattern tests
     ├── CMakeLists.txt
-    ├── correct_naming/               # Properly named files
-    │   └── devdoc/
-    │       └── module_requirements.md
-    └── incorrect_naming/             # Improperly named files
-        └── devdoc/
-            └── module.md
+    ├── has_violations/               # Files with deprecated patterns
+    │   ├── test_file.c
+    │   ├── test_file.h
+    │   └── multiple_patterns.cpp
+    └── no_violations/                # Files with correct patterns
+        ├── clean_file.c
+        ├── clean_file.h
+        └── multiple_correct.cpp
 ```
 
 ### Test Types
