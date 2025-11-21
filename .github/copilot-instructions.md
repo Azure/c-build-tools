@@ -1,7 +1,7 @@
 # c-build-tools AI Coding Instructions
 
 ## General Coding Standards
-**IMPORTANT**: All code changes must follow the comprehensive coding standards defined in [`general_coding_instructions.md`](general_coding_instructions.md). This includes:
+**IMPORTANT**: All code changes must follow the comprehensive coding standards defined in #file:./general_coding_instructions.md This includes:
 - Function naming conventions (snake_case, module prefixes, internal function patterns)
 - Parameter validation rules and error handling patterns
 - Variable naming and result variable conventions
