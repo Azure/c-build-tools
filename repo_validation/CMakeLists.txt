@@ -5,6 +5,7 @@ cmake_minimum_required(VERSION 3.18)
 
 # Function to add repository validation target
 # This function creates a custom target that runs validation scripts on the repository
+# ONLY when called from a top-level repository (not from submodules/dependencies).
 #
 # Usage:
 #   add_repo_validation(<project_name> [EXCLUDE_FOLDERS <folder1> <folder2> ...])
@@ -21,8 +22,12 @@ cmake_minimum_required(VERSION 3.18)
 # all validation scripts located in the repo_validation/scripts directory.
 # If fix_repo_validation_errors is ON, scripts will be called with -Fix argument.
 #
-# Note: Validation scripts automatically exclude dependency directories (deps/, dependencies/)
-# to avoid modifying third-party code.
+# Note: 
+#   - The validation target is only created when this function is called from the top-level
+#     repository (CMAKE_CURRENT_SOURCE_DIR == CMAKE_SOURCE_DIR). This prevents validation
+#     targets from being created for dependencies/submodules.
+#   - Validation scripts automatically exclude dependency directories (deps/, dependencies/)
+#     to avoid modifying third-party code.
 #
 function(add_repo_validation project_name)
     # Parse optional arguments
@@ -34,6 +39,12 @@ function(add_repo_validation project_name)
     # Set default exclude folders if not specified
     if(NOT REPO_VAL_EXCLUDE_FOLDERS)
         set(REPO_VAL_EXCLUDE_FOLDERS "cmake" "deps")
+    endif()
+    
+    # Check if this is a top-level repository (not a submodule)
+    # Only add the validation target if called from the top-level repo
+    if(NOT "${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
+        return()
     endif()
     
     # Check if repo validation is enabled

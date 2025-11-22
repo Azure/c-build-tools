@@ -92,13 +92,13 @@ jobs:
   - task: CMake@1
     displayName: 'CMake .. ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
     inputs:
-      workingDirectory: 'cmake_build'
+      workingDirectory: 'cmake'
       cmakeArgs: '.. ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
 
   - task: VSBuild@1
-    displayName: 'Build solution cmake_build\*.sln'
+    displayName: 'Build solution cmake\*.sln'
     inputs:
-      solution: 'cmake_build\*.sln'
+      solution: 'cmake\*.sln'
       msbuildArgs: '/t:restore /t:build'
       configuration: ${{ parameters.build_configuration }}
       maximumCpuCount: true
@@ -128,7 +128,7 @@ jobs:
       displayName: 'Run ctest'
       inputs:
         script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure'
-        workingDirectory: 'cmake_build'
+        workingDirectory: 'cmake'
 
   - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier)) }}:
     - template : run_ctests_with_appverifier.yml
@@ -136,7 +136,7 @@ jobs:
         ${{ if ne(parameters.repo_root_override, '') }}:
           repo_root: ${{ parameters.repo_root_override }}
         binary_name_suffix: ${{ parameters.binary_name_suffix }}
-        ctest_tests_bin_directory: 'cmake_build'
+        ctest_tests_bin_directory: 'cmake'
         ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
           ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
         test_steps:
@@ -147,7 +147,7 @@ jobs:
               script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests_list }}'
             ${{ else }}:
               script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure'
-            workingDirectory: 'cmake_build'
+            workingDirectory: 'cmake'
 
   - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
     - task: CmdLine@2
