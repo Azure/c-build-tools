@@ -155,19 +155,45 @@ function Get-SrsTagsFromCCode {
     # Pattern to match SRS tags in C comments: /* Codes_SRS_MODULE_ID_NUM: [ text ]*/
     # or /* Tests_SRS_MODULE_ID_NUM: [ text ]*/ (for test files)
     # Allow optional whitespace before colon to handle cases like "SRS_TAG :" and "SRS_TAG:"
-    # NOTE: Use greedy .* to match entire comment including any duplicated text from previous bugs
+    # NOTE: The regex uses greedy .* to capture the entire comment including any garbage/duplication
     # The pattern will match from /* to the LAST ]*/ on the line, capturing any garbage in between
-    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)(.*)(\s*)\]\s*\*+/'
+    # Pattern to match SRS tags in C comments: /* Codes_SRS_MODULE_ID_NUM: [ text ]*/
+    # or /* Tests_SRS_MODULE_ID_NUM: [ text ]*/ (for test files)
+    # Allow optional whitespace before colon to handle cases like "SRS_TAG :" and "SRS_TAG:"
+    # NOTE: Use [^\r\n]* to limit matching to single line (prevents matching across multiple comments)
+    # The pattern will match from /* to ]*/ on the SAME LINE ONLY
+    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\r\n]*)(\s*)\](\s*\*+/)' 
+    
+    # Pattern for INCOMPLETE comments (missing closing bracket])
+    # This pattern matches comments that have [ but no matching ] before the */
+    # Uses [^\]\r\n]+ to ensure we don't match ] or cross line boundaries
+    $incompleteBlockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\]\r\n]+)(\s*\*+/)'
 
     # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
     $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)'
     
     # Match both block and line comments
     $blockMatches = [regex]::Matches($Content, $blockPattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    $incompleteMatches = [regex]::Matches($Content, $incompleteBlockPattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
     $lineMatches = [regex]::Matches($Content, $linePattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
     
-    # Combine all matches
+    # Combine all matches, but exclude incomplete matches that overlap with complete matches
     $allMatches = @($blockMatches) + @($lineMatches)
+    
+    # Add incomplete matches only if they don't overlap with complete matches
+    foreach ($incompleteMatch in $incompleteMatches) {
+        $overlaps = $false
+        foreach ($completeMatch in $blockMatches) {
+            if ($incompleteMatch.Index -ge $completeMatch.Index -and 
+                $incompleteMatch.Index -lt ($completeMatch.Index + $completeMatch.Length)) {
+                $overlaps = $true
+                break
+            }
+        }
+        if (-not $overlaps) {
+            $allMatches += $incompleteMatch
+        }
+    }
     
     foreach ($match in $allMatches) {
         $prefix = $match.Groups[1].Value  # Captures "Tests" or "Codes"
@@ -178,13 +204,14 @@ function Get-SrsTagsFromCCode {
         
         $srsTag = "SRS_${module}_${devId}_${reqId}"
         
-        # Clean up any garbage/duplication from old bugs
-        # If the text contains patterns like "]*/, more text ]*/" (repeated closing), extract only the first portion
-        # This handles cases where previous script bugs duplicated text
+        # Check if this is an incomplete comment (matched by incompleteBlockPattern)
+        # Incomplete pattern has only 8 groups, complete pattern has 9
+        $isIncomplete = $match.Groups.Count -eq 8
+        
+        # Check for duplication by looking at the original matched text
+        # If the original match contains multiple ]*/  patterns, it's duplicated
         $hasDuplication = $false
-        if ($text -match '^(.*?)\]\*/') {
-            # Found duplicated closing pattern, extract only the text before it
-            $text = $matches[1]
+        if ($match.Value -match '\]\*/.*?\]\*/') {
             $hasDuplication = $true
         }
         
@@ -200,6 +227,7 @@ function Get-SrsTagsFromCCode {
             OriginalMatch = $match.Value
             MatchIndex = $match.Index
             HasDuplication = $hasDuplication  # Flag to force fix even if text matches
+            IsIncomplete = $isIncomplete  # Flag for missing closing bracket
         }
     }
     
@@ -270,8 +298,8 @@ foreach ($cFile in $cFiles) {
             $requirement = $srsRequirements[$cTag.Tag]
             
             # Compare text (case-insensitive, whitespace-normalized)
-            # Also treat comments with duplication as inconsistent even if text matches after cleanup
-            if ($cTag.Text -ne $requirement.CleanText -or $cTag.HasDuplication) {
+            # Also treat comments with duplication or incomplete comments as inconsistent
+            if ($cTag.Text -ne $requirement.CleanText -or $cTag.HasDuplication -or $cTag.IsIncomplete) {
                 $inconsistency = [PSCustomObject]@{
                     Tag = $cTag.Tag
                     Prefix = $cTag.Prefix
@@ -282,6 +310,7 @@ foreach ($cFile in $cFiles) {
                     OriginalMatch = $cTag.OriginalMatch
                     MatchIndex = $cTag.MatchIndex
                     HasDuplication = $cTag.HasDuplication
+                    IsIncomplete = $cTag.IsIncomplete
                 }
                 
                 $inconsistentRequirements += $inconsistency
@@ -336,6 +365,7 @@ if ($inconsistentRequirements.Count -gt 0) {
                     # NOTE: The regex now uses greedy .* to capture the entire comment including any garbage/duplication
                     # This ensures we replace the ENTIRE malformed comment, not just the first part
                     if ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3})(\s*):(\s*)\[(\s*)(.*)(\s*)\](\s*\*+/)$') {
+                        # Complete comment with closing bracket
                         $commentStart = $matches[1]
                         $ws1 = $matches[2]  # whitespace between /* and SRS tag
                         $srsPrefix = $matches[3]
@@ -348,6 +378,20 @@ if ($inconsistentRequirements.Count -gt 0) {
                         
                         # Build the corrected comment preserving all original whitespace
                         $correctComment = "$commentStart$ws1$srsPrefix$wsBeforeColon`:$ws2[$ws3$($inconsistency.MdText)$ws4]$commentEnd"
+                    }
+                    elseif ($oldComment -match '^(/\*+)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3})(\s*):(\s*)\[(\s*)([^\]]+)(\s*\*+/)$') {
+                        # Incomplete comment without closing bracket
+                        $commentStart = $matches[1]
+                        $ws1 = $matches[2]
+                        $srsPrefix = $matches[3]
+                        $wsBeforeColon = $matches[4]
+                        $ws2 = $matches[5]
+                        $ws3 = $matches[6]
+                        $oldText = $matches[7]
+                        $commentEnd = " */"  # Always add proper closing
+                        
+                        # Build the corrected comment with closing bracket
+                        $correctComment = "$commentStart$ws1$srsPrefix$wsBeforeColon`:$ws2[$ws3$($inconsistency.MdText) ]$commentEnd"
                     }
                     elseif ($oldComment -match '^(//)(\s*)((?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3})(\s*):(\s*)\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)$') {
                         $commentStart = $matches[1]
