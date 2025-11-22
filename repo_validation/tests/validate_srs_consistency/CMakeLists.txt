@@ -110,6 +110,27 @@ add_custom_target(test_validate_srs_consistency_escaped_multiline_duplication
     COMMENT "Testing escaped multiline duplication fix"
 )
 
+# Test 12: Verify incomplete comment detection and fix (missing closing bracket and text)
+add_custom_target(test_validate_srs_consistency_incomplete_comment
+    # Create a temporary directory and copy test files
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_incomplete_comment_test"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/incomplete_comment"
+        "${CMAKE_CURRENT_BINARY_DIR}/temp_incomplete_comment_test"
+    # Run the script with fix mode to complete the comments
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_incomplete_comment_test"
+        -Fix
+    # Verify incomplete comments were completed (should now have closing brackets and complete text)
+    # Check that SRS_TEST_MODULE_01_002 now has the complete text with escaped brackets
+    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_incomplete_comment_test/src/test.c' -Raw) -notmatch 'If any character has the value outside \\[1\\.\\.\\.127\\] then test_function shall fail and return NULL\\.\\s*\\]') { Write-Error 'Incomplete comment was not fixed correctly'; exit 1 }"
+    # Run validation again to ensure it passes
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_incomplete_comment_test"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing incomplete comment detection and fix"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -127,6 +148,7 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_escaped_characters
     test_validate_srs_consistency_bold_text_only
     test_validate_srs_consistency_escaped_multiline_duplication
+    test_validate_srs_consistency_incomplete_comment
 )
 # Note: We don't add test_validate_srs_consistency_detection as a dependency because
 # it should fail with exit code 1 (which would fail the build). 
