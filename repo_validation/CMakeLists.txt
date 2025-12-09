@@ -97,6 +97,6 @@ function(add_repo_validation project_name)
 endfunction()
 
 # Include testing framework if tests directory exists and testing is enabled
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/tests" AND run_unittests)
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/tests" AND run_unittests AND run_repo_validation)
     add_subdirectory(tests)
 endif()
