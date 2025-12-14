@@ -20,6 +20,7 @@ add_subdirectory(validate_srs_uniqueness)
 add_subdirectory(validate_requirements_naming)
 add_subdirectory(validate_no_vld_include)
 add_subdirectory(validate_enable_mocks_pattern)
+add_subdirectory(validate_test_spec_tags)
 
 if(run_unittests)
     enable_testing()
@@ -51,5 +52,9 @@ if(run_unittests)
 
     add_test(NAME validate_enable_mocks_pattern_test
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target test_validate_enable_mocks
+    )
+
+    add_test(NAME validate_test_spec_tags_test
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target test_validate_test_spec_tags
     )
 endif()
