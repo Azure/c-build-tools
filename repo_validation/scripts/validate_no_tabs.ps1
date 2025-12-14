@@ -6,9 +6,9 @@
     Validates that source files do not contain tab characters.
 
 .DESCRIPTION
-    This script checks all source code files (.h, .hpp, .c, .cpp, .cs) to ensure they
-    do not contain tab characters (ASCII 9). Tabs should be replaced with spaces for
-    consistent code formatting across different editors and tools.
+    This script checks all source code files (.h, .hpp, .c, .cpp, .cs) and documentation
+    files (.md) to ensure they do not contain tab characters (ASCII 9). Tabs should be
+    replaced with spaces for consistent code formatting across different editors and tools.
     
     The script automatically excludes dependency directories to avoid modifying third-party code.
     
@@ -60,8 +60,8 @@ Write-Host "Repository Root: $RepoRoot" -ForegroundColor White
 Write-Host "Fix Mode: $($Fix.IsPresent)" -ForegroundColor White
 Write-Host ""
 
-# Define file extensions to check
-$extensions = @("*.h", "*.hpp", "*.c", "*.cpp", "*.cs")
+# Define file extensions to check (source code and documentation)
+$extensions = @("*.h", "*.hpp", "*.c", "*.cpp", "*.cs", "*.md")
 
 # Parse excluded directories (default: deps, cmake)
 $excludeDirs = $ExcludeFolders -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
