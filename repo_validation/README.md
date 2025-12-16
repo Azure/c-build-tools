@@ -358,6 +358,96 @@ Please manually resolve the duplicates by:
 1. Assigning new unique SRS IDs to duplicate requirements
 2. Or consolidating duplicate requirements if they are truly the same
 ```
+
+### Unit Test Spec Tag Validation
+
+**Script:** `scripts/validate_test_spec_tags.ps1`
+
+**Purpose:** Ensures that all unit test functions (`TEST_FUNCTION`) in `*_ut.c` files are tagged with at least one SRS specification tag (`Tests_SRS_*`) in a comment immediately preceding the test function.
+
+**Rationale:** Test functions should be linked to specific software requirements to:
+- Maintain traceability between requirements and test coverage
+- Ensure all requirements have corresponding tests
+- Document what requirement each test is verifying
+- Support automated requirement coverage analysis tools
+- Identify orphan tests that don't verify any documented requirements
+
+**Exclusions:**
+- Default exclusions (if not customized): `deps`, `cmake`
+- Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
+
+**File Types Checked:** Unit test files matching pattern `*_ut.c`
+
+**Detection:** The script scans for `TEST_FUNCTION` declarations and verifies each has at least one `Tests_SRS_*` tag in the preceding comments:
+
+**Correct Pattern:**
+```c
+/*Tests_SRS_MODULE_01_001: [ function shall return 0 on success. ]*/
+TEST_FUNCTION(test_function_returns_0_on_success)
+{
+    // Test implementation
+}
+
+// Tests_SRS_MODULE_01_002: [ function shall fail if param is NULL. ]
+TEST_FUNCTION(test_function_fails_when_param_is_null)
+{
+    // Test implementation
+}
+
+/*Tests_SRS_MODULE_01_003: [ First requirement. ]*/
+/*Tests_SRS_MODULE_01_004: [ Second requirement. ]*/
+TEST_FUNCTION(test_covering_multiple_requirements)
+{
+    // Test implementation
+}
+```
+
+**Exemption Pattern:** Tests that intentionally do not require spec tags can be exempted:
+```c
+// Helper test or infrastructure test
+TEST_FUNCTION(negative_tests) // no-srs
+{
+    // Test infrastructure that doesn't test specific requirements
+}
+
+TEST_FUNCTION(another_helper) /* no-srs */
+{
+    // Also exempted
+}
+```
+
+**Fix Mode:** **This script does NOT auto-fix missing spec tags**, even when run with `-Fix` parameter:
+- Determining which specification requirements a test covers requires human analysis
+- The script will display an informational message and continue to report violations
+- Exit code 1 is always returned when violations are found
+- **Rationale**: Adding spec tags requires understanding what requirements each test verifies
+
+**Manual Fix Required:**
+When violations are found, resolve them by:
+1. **Identify the requirement**: Determine which requirement in the devdoc the test is verifying
+2. **Add the tag**: Add a `/*Tests_SRS_MODULE_XX_YYY: [ ... ]*/` comment before the `TEST_FUNCTION`
+3. **Or exempt**: If the test is infrastructure/helper code, add `// no-srs` to the `TEST_FUNCTION` line
+
+**Example Error Output:**
+```
+========================================
+TEST FUNCTIONS MISSING SPEC TAGS
+========================================
+
+Each TEST_FUNCTION should be preceded by at least one Tests_SRS_* specification tag.
+Example:
+  /*Tests_SRS_MODULE_01_001: [ Description of requirement ]*/
+  TEST_FUNCTION(test_name)
+
+To exempt a test from this requirement, add '// no-srs' to the TEST_FUNCTION line:
+  TEST_FUNCTION(test_name) // no-srs
+
+  module_ut.c:45
+    TEST_FUNCTION(test_missing_spec_tag)
+
+[FAILED] 1 test function(s) are missing spec tags.
+```
+
 ## Adding New Validations
 
 To add a new validation script:
