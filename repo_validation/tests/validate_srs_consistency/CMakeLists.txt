@@ -131,6 +131,16 @@ add_custom_target(test_validate_srs_consistency_incomplete_comment
     COMMENT "Testing incomplete comment detection and fix"
 )
 
+# Test 13: Verify line comments with brackets in text content (e.g., format strings with "]")
+# This test reproduces the bug where the line comment regex [^\]] would stop at ] characters
+# within the SRS text, causing false validation failures for format strings like "]=%s /*%s*/"
+add_custom_target(test_validate_srs_consistency_line_comment_with_brackets
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/line_comment_with_brackets"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing line comments with bracket characters in text content"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -149,6 +159,7 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_bold_text_only
     test_validate_srs_consistency_escaped_multiline_duplication
     test_validate_srs_consistency_incomplete_comment
+    test_validate_srs_consistency_line_comment_with_brackets
 )
 # Note: We don't add test_validate_srs_consistency_detection as a dependency because
 # it should fail with exit code 1 (which would fail the build). 
