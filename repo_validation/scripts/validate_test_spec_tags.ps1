@@ -3,22 +3,36 @@
 
 <#
 .SYNOPSIS
-    Validates that unit test functions are tagged with at least one SRS spec tag.
+    Validates that unit test functions are tagged with at least one spec tag.
 
 .DESCRIPTION
     This script checks all unit test files (*_ut.c) to ensure that each TEST_FUNCTION
-    is tagged with at least one Tests_SRS_* specification tag in a comment immediately
-    preceding the test function.
+    is tagged with at least one Tests_ specification tag in a comment preceding
+    the test function.
     
     The expected pattern is:
       /*Tests_SRS_MODULE_XX_YYY: [ description ]*/
+      TEST_FUNCTION(test_name)
+    
+    Or for module-specific tags without SRS prefix:
+      /*Tests_MODULE_XX_YYY: [ description ]*/
       TEST_FUNCTION(test_name)
     
     Or using C++ style comments:
       // Tests_SRS_MODULE_XX_YYY: [ description ]
       TEST_FUNCTION(test_name)
     
-    Multiple Tests_SRS_ tags can precede a single TEST_FUNCTION.
+    Multiple Tests_ tags can precede a single TEST_FUNCTION.
+    
+    The script allows other comments (including multi-line comments) between the 
+    Tests_ tags and the TEST_FUNCTION declaration. This supports patterns like:
+    
+      /*Tests_SRS_MODULE_XX_YYY: [ description ]*/
+      /*
+      This is a descriptive table or additional documentation
+      that appears between the spec tag and the test function
+      */
+      TEST_FUNCTION(test_name)
     
     The script automatically excludes dependency directories to avoid validating third-party code.
     
@@ -67,6 +81,9 @@ param(
 
 # Set error action preference
 $ErrorActionPreference = "Stop"
+
+# Resolve RepoRoot to an absolute path to ensure correct relative path calculation
+$RepoRoot = (Resolve-Path $RepoRoot).Path
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Unit Test Spec Tag Validation" -ForegroundColor Cyan
@@ -160,25 +177,51 @@ foreach ($file in $allFiles) {
                 continue
             }
             
-            # Look backwards for Tests_SRS_ tags
-            # We need to find at least one Tests_SRS_ tag in the comments preceding this TEST_FUNCTION
+            # Look backwards for Tests_SRS_ or Tests_<MODULE>_ tags
+            # We need to find at least one Tests_ tag in the comments preceding this TEST_FUNCTION
             # The tags should be in comments immediately before the TEST_FUNCTION (possibly spanning multiple lines)
             
             $foundSpecTag = $false
             $searchIndex = $i - 1
+            $inMultiLineComment = $false
             
             # Search backwards through preceding lines looking for spec tags
             # Continue while we find comments, blank lines, or spec tags
             while ($searchIndex -ge 0) {
                 $prevLine = $content[$searchIndex]
                 
-                # Check if this line contains a Tests_SRS_ tag
-                if ($prevLine -match 'Tests_SRS_[A-Z0-9_]+_\d{2}_\d{3}') {
+                # Check if this line contains a Tests_ tag (Tests_SRS_* or Tests_MODULE_*)
+                # Pattern matches: Tests_SRS_MODULE_XX_YYY or Tests_MODULE_XX_YYY
+                if ($prevLine -match 'Tests_[A-Z0-9_]+_\d{2}_\d{3}') {
                     $foundSpecTag = $true
                 }
                 
                 # If the line is a blank line, continue searching
                 if ($prevLine -match '^\s*$') {
+                    $searchIndex--
+                    continue
+                }
+                
+                # Track multi-line comment state (searching backwards)
+                # When searching backwards, */ starts a multi-line comment and /* ends it
+                # But if both /* and */ are on the same line, it's a single-line block comment - no state change
+                $hasCommentStart = $prevLine -match '/\*'
+                $hasCommentEnd = $prevLine -match '\*/'
+                
+                if ($hasCommentStart -and $hasCommentEnd) {
+                    # Single-line block comment like /* comment */ - no state change
+                }
+                elseif ($hasCommentStart) {
+                    # Found start of multi-line comment (going backwards means we're exiting the comment)
+                    $inMultiLineComment = $false
+                }
+                elseif ($hasCommentEnd) {
+                    # Found end of multi-line comment (going backwards means we're entering the comment)
+                    $inMultiLineComment = $true
+                }
+                
+                # If we're inside a multi-line comment, continue searching
+                if ($inMultiLineComment) {
                     $searchIndex--
                     continue
                 }
@@ -232,9 +275,13 @@ if ($testsWithoutTags.Count -gt 0) {
     Write-Host "TEST FUNCTIONS MISSING SPEC TAGS" -ForegroundColor Red
     Write-Host "========================================" -ForegroundColor Red
     Write-Host ""
-    Write-Host "Each TEST_FUNCTION should be preceded by at least one Tests_SRS_* specification tag." -ForegroundColor Yellow
+    Write-Host "Each TEST_FUNCTION should be preceded by at least one Tests_ specification tag." -ForegroundColor Yellow
     Write-Host "Example:" -ForegroundColor Yellow
     Write-Host '  /*Tests_SRS_MODULE_01_001: [ Description of requirement ]*/' -ForegroundColor Gray
+    Write-Host '  TEST_FUNCTION(test_name)' -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Or for module-specific tags:" -ForegroundColor Yellow
+    Write-Host '  /*Tests_MODULE_01_001: [ Description of requirement ]*/' -ForegroundColor Gray
     Write-Host '  TEST_FUNCTION(test_name)' -ForegroundColor Gray
     Write-Host ""
     Write-Host "To exempt a test from this requirement, add '// no-srs' to the TEST_FUNCTION line:" -ForegroundColor Yellow
@@ -248,7 +295,7 @@ if ($testsWithoutTags.Count -gt 0) {
     
     Write-Host ""
     Write-Host "[FAILED] $($testsWithoutTags.Count) test function(s) are missing spec tags." -ForegroundColor Red
-    Write-Host "Please add appropriate Tests_SRS_* tags before each test function," -ForegroundColor Red
+    Write-Host "Please add appropriate Tests_ tags before each test function," -ForegroundColor Red
     Write-Host "or add '// no-srs' to exempt a test from this requirement." -ForegroundColor Red
     exit 1
 }
