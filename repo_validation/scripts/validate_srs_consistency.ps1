@@ -170,7 +170,8 @@ function Get-SrsTagsFromCCode {
     $incompleteBlockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\]\r\n]+)(\s*\*+/)'
 
     # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
-    $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\]\s\r\n]+(?:\s+[^\]\s\r\n]+)*)(\s*)(\]?)'
+    # NOTE: Pattern captures text up to the LAST ] on the line (handles text containing ] characters)
+    $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)(.+?)(\s*)\](\s*)$'
     
     # Match both block and line comments
     $blockMatches = [regex]::Matches($Content, $blockPattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
