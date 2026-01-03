@@ -85,7 +85,9 @@ if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
     add_subdirectory(reals_check)
 endif()
 
-if((CMAKE_GENERATOR MATCHES "Visual Studio") AND (${build_sarif_results_checker}))
+# sarif_results_checker uses .NET Framework 4.7.2 which doesn't support ARM64
+# Only build on x86/x64 platforms
+if((CMAKE_GENERATOR MATCHES "Visual Studio") AND (${build_sarif_results_checker}) AND NOT (CMAKE_VS_PLATFORM_NAME STREQUAL "ARM64"))
     add_subdirectory(sarif_results_checker)
 endif()
 
