@@ -8,21 +8,22 @@ Propagates dependency updates for git repositories.
 
 .DESCRIPTION
 
-Given a root repo and personal access tokens for Github and Azure Devops Services, this script \
-builds the dependency graph and propagates updates from the lowest level up to the \
-root repo by making PRs to each repo in bottom-up level-order.
+Given a root repo, this script builds the dependency graph and propagates updates from the
+lowest level up to the root repo by making PRs to each repo in bottom-up level-order.
 
-.PARAMETER root
+Authentication is handled via 'az devops login' (with PAT token) for Azure DevOps and 'gh auth login' for GitHub.
 
-Comma-separated list of URLs of the repositories upto which updates must be propagated.
+.PARAMETER root_list
 
-.PARAMETER azure_token
-
-Personal access token for Azure Devops Services
+Comma-separated list of URLs of the repositories up to which updates must be propagated.
 
 .PARAMETER azure_work_item
 
 Work item id that is linked to PRs made to Azure repos.
+
+.PARAMETER azure_token
+
+Personal Access Token for Azure DevOps authentication. Must have Code (Read & Write) and Work Items (Read) permissions.
 
 .INPUTS
 
@@ -35,13 +36,14 @@ None.
 
 .EXAMPLE
 
-PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token {token2} -root_list root1, root2, ...
+PS> gh auth login
+PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345 -root_list root1, root2, ...
 #>
 
 
 param(
-    [Parameter(Mandatory=$true)][string]$azure_token, # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
-    [Parameter(Mandatory=$true)][Int32]$azure_work_item, # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
+    [Parameter(Mandatory=$true)][string]$azure_token, # Personal Access Token for Azure DevOps
+    [Parameter(Mandatory=$true)][Int32]$azure_work_item, # Work item id to link to Azure PRs
     [Parameter(Mandatory=$true)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
 
@@ -53,12 +55,48 @@ function spin {
     )
     $steps = @('|','/','-','\')
     $interval_ms = 50
-    for($i=0; $i -lt (($seconds*1000)/$interval_ms); $i++){
+    $iterations = [int](($seconds * 1000) / $interval_ms)
+
+    # Write initial spinner character
+    Write-Host $steps[0] -NoNewline -ForegroundColor Yellow
+    Start-Sleep -Milliseconds $interval_ms
+
+    for($i = 1; $i -lt $iterations; $i++){
+        # Backspace and write next spinner character
         Write-Host "`b$($steps[$i % $steps.Length])" -NoNewline -ForegroundColor Yellow
         Start-Sleep -Milliseconds $interval_ms
     }
-    # erase spinner
-    Write-Host "`b"-NoNewLine
+    # Erase spinner: backspace, space to overwrite, backspace to position cursor
+    Write-Host "`b `b" -NoNewLine
+}
+
+
+# verify Azure CLI is installed and login with PAT token
+function check-az-cli-exists {
+    $az = Get-Command az -ErrorAction SilentlyContinue
+    if(!$az) {
+        Write-Error "Azure CLI is not installed. Install it from https://docs.microsoft.com/en-us/cli/azure/install-azure-cli"
+        exit -1
+    }
+
+    # Check if azure-devops extension is installed
+    $extensions = az extension list --query "[?name=='azure-devops'].name" -o tsv
+    if(!$extensions) {
+        Write-Host "Installing azure-devops extension..."
+        az extension add --name azure-devops
+        if($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to install azure-devops extension"
+            exit -1
+        }
+    }
+
+    # Login to Azure DevOps using PAT token
+    Write-Host "Logging in to Azure DevOps..."
+    $azure_token | az devops login
+    if($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to login to Azure DevOps. Check your PAT token."
+        exit -1
+    }
 }
 
 
@@ -98,7 +136,7 @@ function update-local-repo {
         [string] $repo_name,
         [string] $new_branch_name
     )
-    cd $repo_name
+    Push-Location $repo_name
     git checkout master
     git pull
     # Sometimes git fails to detect updates in submodules
@@ -115,13 +153,20 @@ function update-local-repo {
     git add .
     git commit -m "Update dependencies"
     git push -f origin $new_branch_name
-    cd ..
+    Pop-Location
 }
 
 function check-gh-cli-exists {
     $gh = Get-Command gh -ErrorAction SilentlyContinue
     if(!$gh) {
         Write-Error "Github CLI is not installed. Install it from https://cli.github.com/"
+        exit -1
+    }
+
+    # Check if user is logged in to GitHub
+    $auth_status = gh auth status 2>&1
+    if($LASTEXITCODE -ne 0) {
+        Write-Error "Not logged in to GitHub CLI. Run 'gh auth login' first."
         exit -1
     }
 }
@@ -132,13 +177,13 @@ function update-repo-github {
         [string] $repo_name,
         [string] $new_branch_name
     )
-    cd $repo_name
+    Push-Location $repo_name
     Write-Host "`nCreating PR"
     $working_directory = (Get-Location).Path
     gh pr create --title "[autogenerated] update dependencies" --body "Propagating dependency updates" --head $new_branch_name
     gh pr comment --body "/AzurePipelines run"
     Write-Host "Waiting for checks to start"
-    Start-Sleep -Seconds 120 
+    Start-Sleep -Seconds 120
     Write-Host "Waiting for build to complete"
     gh pr checks --watch
     Write-Host "Merging PR"
@@ -149,171 +194,217 @@ function update-repo-github {
     }
     # Wait for merge to complete
     Start-Sleep -Seconds 10
-    cd ..
+    Pop-Location
 }
 
 
-# create global variable $azure_header
-# $azure_header is used to authenticate requests to the Azure Devops Services API: https://docs.microsoft.com/en-us/rest/api/azure/devops/?view=azure-devops-rest-6.1
-function create-header-azure {
+# get Azure DevOps organization and project from git remote URL
+function get-azure-org-project {
     param(
-        [string] $token
+        [string] $repo_name
     )
-    $base64_azure_pat = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(":$token"))
-    $global:azure_header = @{
-        Authorization="Basic $base64_azure_pat"
+    Push-Location $repo_name
+    $repo_url = git config --get remote.origin.url
+    Pop-Location
+
+    # Parse URL like https://msazure@dev.azure.com/msazure/One/_git/repo-name
+    # or https://dev.azure.com/msazure/One/_git/repo-name
+    if($repo_url -match "dev\.azure\.com/([^/]+)/([^/]+)/_git") {
+        $org = $matches[1]
+        $project = $matches[2]
+        return @{
+            Organization = "https://dev.azure.com/$org"
+            Project = $project
+        }
     }
+
+    Write-Error "Failed to parse Azure DevOps organization and project from remote URL: $repo_url"
+    exit -1
 }
 
-create-header-azure $azure_token
 
-
-# create PR to update dependencies for Azure repo
+# create PR to update dependencies for Azure repo using Azure CLI
 function create-pr-azure {
     param(
         [string] $repo_name,
         [string] $new_branch_name
     )
-    $request_url = "https://dev.azure.com/msazure/One/_apis/git/repositories/$repo_name/pullrequests?api-version=6.0"
-    $body = @{
-        sourceRefName="refs/heads/$new_branch_name"
-        targetRefName='refs/heads/master'
-        title='[autogenerated] update dependencies'
-    }
-    $body = $body | ConvertTo-Json
-    $response = Invoke-WebRequest -URI $request_url -UseBasicParsing -Method Post -Headers $azure_header -Body $body -ContentType "application/json"
-    if(!$response) {
+
+    $azure_info = get-azure-org-project $repo_name
+    $org = $azure_info.Organization
+    $project = $azure_info.Project
+
+    $pr_output = az repos pr create `
+        --repository $repo_name `
+        --source-branch $new_branch_name `
+        --target-branch master `
+        --title "[autogenerated] update dependencies" `
+        --description "Propagating dependency updates" `
+        --organization $org `
+        --project $project `
+        --output json
+
+    if($LASTEXITCODE -ne 0) {
         Write-Error "Failed to create PR for repo $repo_name"
         exit -1
     }
-    $content = $response.Content | ConvertFrom-Json
-    return $content
+
+    $pr_info = $pr_output | ConvertFrom-Json
+    return $pr_info
 }
 
 
-# link work item to PR for Azure repo
+# link work item to PR for Azure repo using Azure CLI
 function link-work-item-to-pr-azure {
     param(
-        [string] $pr_artifact_id
+        [int] $pr_id,
+        [string] $org,
+        [string] $project
     )
     if(!$azure_work_item){
         Write-Error "Updating Azure repos requires providing a work item id. Provide work item id as: -azure_work_item [id]"
         exit -1
     }
-    $request_url = 'https://dev.azure.com/msazure/One/_apis/wit/workitems/'+$azure_work_item+'?api-version=6.0'
-    # body format found here: https://stackoverflow.com/questions/65111930/how-to-link-a-work-item-to-a-pull-request-using-rest-api-in-azure-devops
-    $body = @(
-        @{
-            op='add'
-            path='/relations/-'
-            value=@{
-                rel='ArtifactLink'
-                url=$pr_artifact_id
-                attributes=@{
-                    name="pull request"
-                }
-            }
-        }
-    )
-    $body = $body | ConvertTo-Json
-    # This PATCH endpoint takes a list of patch objects so $body must be encased in a list
-    $response = Invoke-WebRequest -URI $request_url -UseBasicParsing -Method Patch -Headers $azure_header -Body "[$body]" -ContentType "application/json-patch+json"
-    if(!$response) {
-        Write-Error "Failed to link work item to PR.`nWork item: $work_item_id`nPR: $pr_artifact_id"
+
+    $output = az repos pr work-item add `
+        --id $pr_id `
+        --work-items $azure_work_item `
+        --organization $org `
+        --output json
+
+    if($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to link work item to PR. Work item: $azure_work_item, PR ID: $pr_id"
         exit -1
     }
 }
 
 
-# approve PR for Azure repo
+# approve PR for Azure repo using Azure CLI
 function approve-pr-azure {
     param(
-        [string] $pr_url,
-        [string] $creator_id
+        [int] $pr_id,
+        [string] $org
     )
-    $request_url = $pr_url + '/reviewers/' + $creator_id + '?api-version=6.0'
-    $body = @{
-        vote=10
-    }
-    $body = $body | ConvertTo-Json
-    $response = Invoke-WebRequest -URI $request_url -UseBasicParsing -Method Put -Headers $azure_header -Body $body -ContentType "application/json"
-    if(!$response) {
-        Write-Error "Failed to approve PR: $pr_url"
+
+    $output = az repos pr set-vote `
+        --id $pr_id `
+        --vote approve `
+        --organization $org `
+        --output json
+
+    if($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to approve PR ID: $pr_id"
         exit -1
     }
 }
 
 
-# set PR for Azure repo to merge automatically once build completes
+# set PR for Azure repo to merge automatically once build completes using Azure CLI
 function set-autocomplete-azure {
     param(
-        $pr_url,
-        $creator_id
+        [int] $pr_id,
+        [string] $org
     )
-    $request_url = $pr_url + '?api-version=6.0'
-    $body =@{
-        autoCompleteSetBy=@{
-            id=$creator_id
-        }
-        completionOptions=@{
-            mergeStrategy="squash"
-            deleteSourceBranch=$true
-        }
-    }
-    $body = $body | ConvertTo-Json
-    $response = Invoke-WebRequest -URI $request_url -UseBasicParsing -Method Patch -Headers $azure_header -Body $body -ContentType "application/json"
-    if(!$response) {
-        Write-Error "Failed to set autocomplete for PR $pr_url"
+
+    $output = az repos pr update `
+        --id $pr_id `
+        --auto-complete true `
+        --squash true `
+        --delete-source-branch true `
+        --organization $org `
+        --output json
+
+    if($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to set autocomplete for PR ID: $pr_id"
         exit -1
     }
 }
 
 
-# wait until build completes for Azure repo
+# Source the Azure PR watching script
+. "$PSScriptRoot\watch_azure_pr.ps1" -pr_id 0 -org "dummy" 2>$null
+
+
+# wait until build completes for Azure repo using Azure CLI
 function wait-until-complete-azure {
     param(
-        [string] $pr_url
+        [int] $pr_id,
+        [string] $org
     )
-    $status = ""
-    while($true){
-        $response = Invoke-WebRequest -URI $pr_url -UseBasicParsing -Method Get -Headers $azure_header
-        if(!$response) {
-            Write-Error "Failed to get PR: $pr_url"
-            exit -1
+
+    Write-Host "`nWatching PR policies..."
+    $success = Watch-AzurePRPolicies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120
+
+    if(!$success) {
+        # Check if PR completed despite policy failures (e.g., manually merged)
+        $pr_output = az repos pr show --id $pr_id --organization $org --output json
+        if($LASTEXITCODE -eq 0) {
+            $pr_info = $pr_output | ConvertFrom-Json
+            if($pr_info.status -eq "completed") {
+                Write-Host "PR completed successfully" -ForegroundColor Green
+                return
+            }
         }
-        $content =  $response.Content | ConvertFrom-Json
-        $status = $content.status
-        $merge_status = $content.mergeStatus
-        if($status -ne "active" -or !($merge_status -eq "succeeded" -or $merge_status -eq "queued")) {
-            break
-        }
-        spin 10
-    }
-    if($status -ne "completed") {
-        Write-Host "Problem with pull request: $pr_url"
-        Write-Error $response.Content
+        Write-Error "PR $pr_id failed to complete. Check policy status above."
         exit -1
+    }
+
+    # Verify PR is completed
+    $pr_output = az repos pr show --id $pr_id --organization $org --output json
+    if($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to get PR status for ID: $pr_id"
+        exit -1
+    }
+
+    $pr_info = $pr_output | ConvertFrom-Json
+    if($pr_info.status -ne "completed") {
+        # PR policies passed but PR not yet merged - wait a bit for autocomplete
+        Write-Host "Waiting for PR to auto-complete..."
+        $max_wait = 60
+        $waited = 0
+        while($waited -lt $max_wait) {
+            Start-Sleep -Seconds 10
+            $waited += 10
+            $pr_output = az repos pr show --id $pr_id --organization $org --output json
+            $pr_info = $pr_output | ConvertFrom-Json
+            if($pr_info.status -eq "completed") {
+                Write-Host "PR completed successfully" -ForegroundColor Green
+                return
+            }
+        }
+        Write-Host "Warning: PR policies passed but PR status is: $($pr_info.status)" -ForegroundColor Yellow
+    } else {
+        Write-Host "PR completed successfully" -ForegroundColor Green
     }
 }
 
 
-# update dependencies for Azure repo
+# update dependencies for Azure repo using Azure CLI
 function update-repo-azure {
     param(
         [string] $repo_name,
         [string] $new_branch_name
     )
+
+    $azure_info = get-azure-org-project $repo_name
+    $org = $azure_info.Organization
+    $project = $azure_info.Project
+
     Write-Host "`nCreating PR"
-    $create_pr_response = create-pr-azure $repo_name $new_branch_name
-    $pr_artifact_id = $create_pr_response.artifactId
-    Write-Host "Linking work item to PR"
-    link-work-item-to-pr-azure $pr_artifact_id
+    $pr_info = create-pr-azure $repo_name $new_branch_name
+    $pr_id = $pr_info.pullRequestId
+
+    Write-Host "Linking work item to PR (PR ID: $pr_id)"
+    link-work-item-to-pr-azure $pr_id $org $project
+
     Write-Host "Approving PR"
-    approve-pr-azure $create_pr_response.url $create_pr_response.createdBy.id
+    approve-pr-azure $pr_id $org
+
     Write-Host "Enabling PR to autocomplete"
-    set-autocomplete-azure $create_pr_response.url $create_pr_response.createdBy.id
+    set-autocomplete-azure $pr_id $org
+
     Write-Host "Waiting for build to complete"
-    wait-until-complete-azure $create_pr_response.url
+    wait-until-complete-azure $pr_id $org
 }
 
 
@@ -322,9 +413,9 @@ function  get-repo-type {
     param (
         [string] $repo_name
     )
-    cd $repo_name
+    Push-Location $repo_name
     $repo_url = git config --get remote.origin.url
-    cd ..
+    Pop-Location
     Write-Host $repo_url -NoNewline
     if($repo_url.Contains("github")){
         return "github"
@@ -342,6 +433,10 @@ function update-repo {
         [string] $new_branch_name
     )
     Write-Host "`n`nUpdating repo $repo_name"
+
+    # Ensure we're in the work directory
+    Set-Location $global:work_dir
+
     [string]$git_output = (update-local-repo $repo_name $new_branch_name)
     if($git_output.Contains("nothing to commit")) {
         Write-Host "Nothing to commit, skipping repo $repo_name"
@@ -359,47 +454,50 @@ function update-repo {
     Write-Host "Done updating repo $repo_name"
 }
 
-function clear-directory {
-    $currentDirectory = Get-Location
-    $proceed = Read-Host("This script will clear the current directory ($currentDirectory). Enter [Y] to proceed.")
-    if($proceed -ne "Y")
-    {
-        exit 0
-    }
-    $Path = Get-Location | Select -expand Path
-    Set-Location ..
-    Remove-Item -LiteralPath $Path -Recurse -Force
-    $out = mkdir $Path
-    Set-Location $Path
-}
-
 # iterate over all repos and update them
 function propagate-updates {
+    # Save original directory to restore at exit
+    Push-Location
+
+    check-az-cli-exists
     check-gh-cli-exists
-    clear-directory
+
+    # Generate branch name with timestamp
+    $new_branch_name = "new_deps_" + (Get-Date -Format "yyyyMMddHHmmss")
+    Write-Host "New branch name: $new_branch_name"
+
+    # Create a new directory for this update session
+    $global:work_dir = Join-Path (Get-Location).Path $new_branch_name
+    New-Item -ItemType Directory -Path $global:work_dir -Force | Out-Null
+    Set-Location $global:work_dir
+    Write-Host "Working directory: $global:work_dir"
+
     # build dependency graph
     Write-Host "Building dependency graph..."
 
     .$PSScriptRoot\build_graph.ps1 -root_list $root_list
     if($LASTEXITCODE -ne 0)
     {
+        Pop-Location
         Write-Error("Could not build dependency graph for $root_list.")
         exit -1
     }
 
     Write-Host "Done building dependency graph"
+
     $repo_order = (Get-Content -Path order.json) | ConvertFrom-Json
     Write-Host "Updating repositories in the following order: "
     for($i = 0; $i -lt $repo_order.Length; $i++){
         Write-Host "$($i+1). $($repo_order[$i])"
     }
 
-    $new_branch_name = "new_deps_" + (Get-Date -Format "yyyyMMddHHmmss")
-    Write-Host "New branch name: $new_branch_name"
     foreach ($repo in $repo_order) {
         update-repo $repo $new_branch_name
     }
     Write-Host "Done updating all repos!"
+
+    # Restore original directory
+    Pop-Location
 }
 
 propagate-updates

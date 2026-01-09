@@ -34,6 +34,15 @@ root repo by making PRs to each repo in bottom-up level-order.
 
 5. Copy the generated token and save it.
 
+### Installing Azure CLI
+
+1. Download and install the Azure CLI from [here](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli).
+
+2. The azure-devops extension will be automatically installed when you run the script. Alternatively, you can install it manually:
+   ```
+   az extension add --name azure-devops
+   ```
+
 ### Installing GitHub CLI
 
 1. Download the latest version of GitHub CLI from [here](https://cli.github.com/) and install it.
@@ -50,8 +59,10 @@ root repo by making PRs to each repo in bottom-up level-order.
 Run the script in a clean directory:
 
 ```
-PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token}  -azure_work_item {work_item_id} -root_list {root1}, {root2}, ...
+PS> gh auth login
+PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {your_pat_token} -azure_work_item {work_item_id} -root_list {root1}, {root2}, ...
 ```
+
 ### Arguments:
 
 - `-azure_token`: Personal access token for Azure Devops Services. Token must have permissions for Code and Work Items.

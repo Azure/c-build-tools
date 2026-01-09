@@ -83,18 +83,19 @@ function get-submodules {
     if (!$submodule_data) {
         return $submodules
     }
-    # split raw data to parse
-    $submodule_tokens = $submodule_data.Split('')
     # create uri object for base URL
     $base_uri = [System.Uri]::new($url + "/")
-    # iterate over tokens
-    for($i = 0; $i -lt $submodule_tokens.Length; $i++) {
-        # odd tokens contain URLs
-        if($i % 2 -ne 0) {
-            $submodule_uri = $submodule_tokens[$i]
+    # git config returns an array of strings when there are multiple results
+    # each line is in format: "submodule.deps/name.url <url>"
+    $lines = if ($submodule_data -is [array]) { $submodule_data } else { @($submodule_data) }
+    foreach ($line in $lines) {
+        # split each line by whitespace to extract URL (second part)
+        $parts = $line -split '\s+', 2
+        if ($parts.Length -ge 2) {
+            $submodule_uri = $parts[1]
             # convert relative URLs to absolute
-            if(-not $submodule_tokens[$i].StartsWith("http")){
-                $submodule_uri = [System.Uri]::new($base_uri, $submodule_tokens[$i]).AbsoluteUri
+            if (-not $submodule_uri.StartsWith("http")) {
+                $submodule_uri = [System.Uri]::new($base_uri, $submodule_uri).AbsoluteUri
             }
             # append URL to list
             [void]$submodules.Add($submodule_uri)
@@ -112,31 +113,36 @@ $queue = New-Object -TypeName "System.Collections.Queue"
 # get list of repos to ignore  while building graph from ignores.json
 $path_to_ignores = $PSScriptRoot + "\ignores.json"
 $repos_to_ignore = (Get-Content -Path $path_to_ignores) | ConvertFrom-Json
-# for spinner animation
-$progress = @('|','/','-','\')
-$progress_counter = 0
+# counter for progress tracking
+$script:repos_processed = 0
 
 # perform breadth-first search on dependency graph
 function Build-Graph {
-    # spinner animation
-    Write-Host "`b$($progress[$progress_counter++ % $progress.Length])" -NoNewline -ForegroundColor Yellow 
     # get front of queue
     $repo_url = $queue.Dequeue()
     $repo_name = get-name-from-url -url $repo_url
+
+    # Update progress
+    $script:repos_processed++
+    Write-Progress -Activity "Building dependency graph" -Status "Processing: $repo_name" -CurrentOperation "Repos discovered: $($repo_levels.Count) | Queue: $($queue.Count)"
+
     # set repo level to 0 if not seen before
     if(-not $repo_levels.ContainsKey($repo_name)) {
         $repo_levels[$repo_name] = 0
     }
     # clone repo if not already present
     if(-not (Test-Path -Path $repo_name)) {
-        Write-Host "`b" -NoNewline # clear spinner
-        git clone $repo_url 
+        # Hide progress bar during clone to avoid output conflicts
+        Write-Progress -Activity "Building dependency graph" -Completed
+        Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
+        git clone $repo_url
+        Write-Host ""
     }
     # $repo_level is the length of the path in the graph from the root to the current repo
     $repo_level = $repo_levels[$repo_name]
-    # get list for submodules URLs 
+    # get list for submodules URLs
     $submodules = get-submodules $repo_url
-    # iterate of list of submodules 
+    # iterate of list of submodules
     foreach($submodule in $submodules) {
         $submodule_name = get-name-from-url -url $submodule
         # ignore submodule if it is i $repos_to_ignore
@@ -165,8 +171,8 @@ while ( $queue.Count -ne 0) {
     Build-Graph
 }
 
-# clear spinner animation
-Write-Host "`b"-NoNewLine
+# clear progress bar
+Write-Progress -Activity "Building dependency graph" -Completed
 # convert dictionary to list of (repo_name, level)
 $repo_levels_list = [Linq.Enumerable]::ToList($repo_levels)
 # sort list by descending order of level
