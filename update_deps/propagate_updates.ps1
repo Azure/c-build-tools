@@ -11,7 +11,9 @@ Propagates dependency updates for git repositories.
 Given a root repo, this script builds the dependency graph and propagates updates from the
 lowest level up to the root repo by making PRs to each repo in bottom-up level-order.
 
-Authentication is handled via 'az devops login' (with PAT token) for Azure DevOps and 'gh auth login' for GitHub.
+Authentication for Azure DevOps uses WAM (Web Account Manager) by default on Windows, which
+provides SSO using your Windows login. If WAM is not available or fails, you can provide a
+PAT token as a fallback. GitHub authentication is handled via 'gh auth login'.
 
 .PARAMETER root_list
 
@@ -23,7 +25,8 @@ Work item id that is linked to PRs made to Azure repos.
 
 .PARAMETER azure_token
 
-Personal Access Token for Azure DevOps authentication. Must have Code (Read & Write) and Work Items (Read) permissions.
+(Optional) Personal Access Token for Azure DevOps authentication. If not provided, WAM
+authentication will be used. PAT must have Code (Read & Write) and Work Items (Read) permissions.
 
 .INPUTS
 
@@ -37,12 +40,17 @@ None.
 .EXAMPLE
 
 PS> gh auth login
-PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345 -root_list root1, root2, ...
+PS> .\propagate_updates.ps1 -azure_work_item 12345 -root_list root1, root2, ...
+
+.EXAMPLE
+
+PS> gh auth login
+PS> .\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345 -root_list root1, root2, ...
 #>
 
 
 param(
-    [Parameter(Mandatory=$true)][string]$azure_token, # Personal Access Token for Azure DevOps
+    [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
     [Parameter(Mandatory=$true)][Int32]$azure_work_item, # Work item id to link to Azure PRs
     [Parameter(Mandatory=$true)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
@@ -71,8 +79,12 @@ function spin {
 }
 
 
-# verify Azure CLI is installed and login with PAT token
+# verify Azure CLI is installed and authenticate (WAM or PAT)
 function check-az-cli-exists {
+    param(
+        [string] $pat_token
+    )
+
     $az = Get-Command az -ErrorAction SilentlyContinue
     if(!$az) {
         Write-Error "Azure CLI is not installed. Install it from https://docs.microsoft.com/en-us/cli/azure/install-azure-cli"
@@ -90,11 +102,41 @@ function check-az-cli-exists {
         }
     }
 
-    # Login to Azure DevOps using PAT token
-    Write-Host "Logging in to Azure DevOps..."
-    $azure_token | az devops login
+    # If PAT token provided, use it
+    if($pat_token) {
+        Write-Host "Logging in to Azure DevOps using PAT token..."
+        $pat_token | az devops login
+        if($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to login to Azure DevOps. Check your PAT token."
+            exit -1
+        }
+        return
+    }
+
+    # Try WAM authentication (Windows only)
+    Write-Host "Attempting WAM (Web Account Manager) authentication..."
+
+    # Enable WAM broker on Windows
+    az config set core.enable_broker_on_windows=true 2>$null
+
+    # Check if already logged in via WAM
+    $account = az account show -o json 2>$null
+    if($LASTEXITCODE -ne 0 -or !$account) {
+        Write-Host "Not logged in. Initiating WAM login..."
+        az login
+        if($LASTEXITCODE -ne 0) {
+            Write-Error "WAM login failed. Please provide a PAT token using -azure_token parameter."
+            exit -1
+        }
+    } else {
+        $accountInfo = $account | ConvertFrom-Json
+        Write-Host "Authenticated via WAM as: $($accountInfo.user.name)" -ForegroundColor Green
+    }
+
+    # Verify we can access Azure DevOps
+    $testResult = az devops project list --org "https://dev.azure.com/msazure" --top 1 -o json 2>$null
     if($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to login to Azure DevOps. Check your PAT token."
+        Write-Error "WAM authentication succeeded but cannot access Azure DevOps. Please provide a PAT token using -azure_token parameter."
         exit -1
     }
 }
@@ -210,6 +252,17 @@ function get-azure-org-project {
     # Parse URL like https://msazure@dev.azure.com/msazure/One/_git/repo-name
     # or https://dev.azure.com/msazure/One/_git/repo-name
     if($repo_url -match "dev\.azure\.com/([^/]+)/([^/]+)/_git") {
+        $org = $matches[1]
+        $project = $matches[2]
+        return @{
+            Organization = "https://dev.azure.com/$org"
+            Project = $project
+        }
+    }
+
+    # Parse URL like https://msazure.visualstudio.com/DefaultCollection/One/_git/repo-name
+    # or https://msazure.visualstudio.com/One/_git/repo-name
+    if($repo_url -match "([^/]+)\.visualstudio\.com/(?:DefaultCollection/)?([^/]+)/_git") {
         $org = $matches[1]
         $project = $matches[2]
         return @{
@@ -419,7 +472,7 @@ function  get-repo-type {
     Write-Host $repo_url -NoNewline
     if($repo_url.Contains("github")){
         return "github"
-    }elseif ($repo_url.Contains("azure")) {
+    }elseif ($repo_url.Contains("azure") -or $repo_url.Contains("visualstudio.com")) {
         return "azure"
     }
     return "unknown"
@@ -459,7 +512,7 @@ function propagate-updates {
     # Save original directory to restore at exit
     Push-Location
 
-    check-az-cli-exists
+    check-az-cli-exists -pat_token $azure_token
     check-gh-cli-exists
 
     # Generate branch name with timestamp
