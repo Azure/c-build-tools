@@ -127,7 +127,7 @@ jobs:
     - task: CmdLine@2
       displayName: 'Run ctest'
       inputs:
-        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure'
+        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1'
         workingDirectory: 'cmake'
 
   - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier)) }}:
@@ -144,9 +144,9 @@ jobs:
           displayName: 'Run ctest'
           inputs:
             ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests_list }}'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 -E ${{ parameters.appverifier_skip_tests_list }}'
             ${{ else }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1'
             workingDirectory: 'cmake'
 
   - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
