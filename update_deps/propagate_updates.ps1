@@ -39,12 +39,10 @@ None.
 
 .EXAMPLE
 
-PS> gh auth login
 PS> .\propagate_updates.ps1 -azure_work_item 12345 -root_list root1, root2, ...
 
 .EXAMPLE
 
-PS> gh auth login
 PS> .\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345 -root_list root1, root2, ...
 #>
 
@@ -54,6 +52,12 @@ param(
     [Parameter(Mandatory=$true)][Int32]$azure_work_item, # Work item id to link to Azure PRs
     [Parameter(Mandatory=$true)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
+
+
+# Source helper scripts
+. "$PSScriptRoot\install_az_cli.ps1"
+. "$PSScriptRoot\install_gh_cli.ps1"
+. "$PSScriptRoot\watch_azure_pr.ps1" -pr_id 0 -org "dummy" 2>$null
 
 
 # sleep for $seconds seconds and play spinner animation
@@ -76,69 +80,6 @@ function spin {
     }
     # Erase spinner: backspace, space to overwrite, backspace to position cursor
     Write-Host "`b `b" -NoNewLine
-}
-
-
-# verify Azure CLI is installed and authenticate (WAM or PAT)
-function check-az-cli-exists {
-    param(
-        [string] $pat_token
-    )
-
-    $az = Get-Command az -ErrorAction SilentlyContinue
-    if(!$az) {
-        Write-Error "Azure CLI is not installed. Install it from https://docs.microsoft.com/en-us/cli/azure/install-azure-cli"
-        exit -1
-    }
-
-    # Check if azure-devops extension is installed
-    $extensions = az extension list --query "[?name=='azure-devops'].name" -o tsv
-    if(!$extensions) {
-        Write-Host "Installing azure-devops extension..."
-        az extension add --name azure-devops
-        if($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to install azure-devops extension"
-            exit -1
-        }
-    }
-
-    # If PAT token provided, use it
-    if($pat_token) {
-        Write-Host "Logging in to Azure DevOps using PAT token..."
-        $pat_token | az devops login
-        if($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to login to Azure DevOps. Check your PAT token."
-            exit -1
-        }
-        return
-    }
-
-    # Try WAM authentication (Windows only)
-    Write-Host "Attempting WAM (Web Account Manager) authentication..."
-
-    # Enable WAM broker on Windows
-    az config set core.enable_broker_on_windows=true 2>$null
-
-    # Check if already logged in via WAM
-    $account = az account show -o json 2>$null
-    if($LASTEXITCODE -ne 0 -or !$account) {
-        Write-Host "Not logged in. Initiating WAM login..."
-        az login
-        if($LASTEXITCODE -ne 0) {
-            Write-Error "WAM login failed. Please provide a PAT token using -azure_token parameter."
-            exit -1
-        }
-    } else {
-        $accountInfo = $account | ConvertFrom-Json
-        Write-Host "Authenticated via WAM as: $($accountInfo.user.name)" -ForegroundColor Green
-    }
-
-    # Verify we can access Azure DevOps
-    $testResult = az devops project list --org "https://dev.azure.com/msazure" --top 1 -o json 2>$null
-    if($LASTEXITCODE -ne 0) {
-        Write-Error "WAM authentication succeeded but cannot access Azure DevOps. Please provide a PAT token using -azure_token parameter."
-        exit -1
-    }
 }
 
 
@@ -196,21 +137,6 @@ function update-local-repo {
     git commit -m "Update dependencies"
     git push -f origin $new_branch_name
     Pop-Location
-}
-
-function check-gh-cli-exists {
-    $gh = Get-Command gh -ErrorAction SilentlyContinue
-    if(!$gh) {
-        Write-Error "Github CLI is not installed. Install it from https://cli.github.com/"
-        exit -1
-    }
-
-    # Check if user is logged in to GitHub
-    $auth_status = gh auth status 2>&1
-    if($LASTEXITCODE -ne 0) {
-        Write-Error "Not logged in to GitHub CLI. Run 'gh auth login' first."
-        exit -1
-    }
 }
 
 # update dependencies for Github repo
@@ -374,10 +300,6 @@ function set-autocomplete-azure {
 }
 
 
-# Source the Azure PR watching script
-. "$PSScriptRoot\watch_azure_pr.ps1" -pr_id 0 -org "dummy" 2>$null
-
-
 # wait until build completes for Azure repo using Azure CLI
 function wait-until-complete-azure {
     param(
@@ -386,7 +308,7 @@ function wait-until-complete-azure {
     )
 
     Write-Host "`nWatching PR policies..."
-    $success = Watch-AzurePRPolicies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120
+    $success = Watch-AzurePRPolicies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120 -ShowBuildDetails
 
     if(!$success) {
         # Check if PR completed despite policy failures (e.g., manually merged)

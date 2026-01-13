@@ -58,14 +58,16 @@ function Get-AzurePRPolicies {
     }
 
     # Get the project info from the PR for build timeline lookups and URLs
-    $pr_info = az repos pr show --id $pr_id --org $org --query "{ProjectId:repository.project.id, ProjectName:repository.project.name, OrgUrl:repository.project.url}" -o json 2>$null
+    $pr_info = az repos pr show --id $pr_id --org $org --query "{ProjectId:repository.project.id, ProjectName:repository.project.name, OrgUrl:repository.project.url, RepoName:repository.name}" -o json 2>$null
     $project_id = $null
     $project_name = $null
     $base_url = $null
+    $repo_name = $null
     if($pr_info) {
         $pr_data = $pr_info | ConvertFrom-Json
         $project_id = $pr_data.ProjectId
         $project_name = $pr_data.ProjectName
+        $repo_name = $pr_data.RepoName
         # Extract base URL from project URL (e.g., https://msazure.visualstudio.com/_apis/projects/... -> https://msazure.visualstudio.com)
         if($pr_data.OrgUrl -match '^(https://[^/]+)') {
             $base_url = $matches[1]
@@ -74,8 +76,16 @@ function Get-AzurePRPolicies {
 
     $policies = $policy_output | ConvertFrom-Json
 
+    # Build PR URL
+    $pr_url = $null
+    if($base_url -and $project_name -and $repo_name) {
+        $pr_url = "$base_url/$project_name/_git/$repo_name/pullrequest/$pr_id"
+    }
+
     # Attach project info to policies with builds
     foreach($policy in $policies) {
+        # Always attach PR URL for reference
+        $policy | Add-Member -NotePropertyName "PrUrl" -NotePropertyValue $pr_url -Force
         if($policy.BuildId -and $project_id) {
             $policy | Add-Member -NotePropertyName "ProjectId" -NotePropertyValue $project_id -Force
             $policy | Add-Member -NotePropertyName "ProjectName" -NotePropertyValue $project_name -Force
@@ -153,11 +163,18 @@ function Get-PolicyDisplayData {
         }
     }
 
+    # Get PR URL from first policy (all have the same PR URL)
+    $pr_url = $null
+    if($policies -and $policies.Count -gt 0 -and $policies[0].PrUrl) {
+        $pr_url = $policies[0].PrUrl
+    }
+
     return @{
         Policies = $policies
         BuildJobs = $build_jobs
         BuildAccessDenied = $build_access_denied
         Timestamp = Get-Date -Format 'HH:mm:ss'
+        PrUrl = $pr_url
     }
 }
 
@@ -176,13 +193,18 @@ function Show-PolicyStatus {
     $build_jobs = $displayData.BuildJobs
     $build_access_denied = $displayData.BuildAccessDenied
     $timestamp = $displayData.Timestamp
+    $pr_url = $displayData.PrUrl
 
     if($ClearScreen -and $Host.UI.RawUI.WindowSize) {
         Clear-Host
     }
 
     # Header like gh pr checks --watch
-    Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit.`n" -ForegroundColor Gray
+    Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit." -ForegroundColor Gray
+    if($pr_url) {
+        Write-Host "PR: $pr_url" -ForegroundColor Cyan
+    }
+    Write-Host ""
 
     if(!$policies -or $policies.Count -eq 0) {
         Write-Host "No policies found" -ForegroundColor Gray
