@@ -1,4 +1,4 @@
-# this template file contains the tasks needed to setup a trace session that collects events from our nice EBS provider
+﻿# this template file contains the tasks needed to setup a trace session that collects events from our nice EBS provider
 # stop any previous trace session
 # delete the trace session
 # create the new trace session
@@ -20,7 +20,7 @@ steps:
       script: 'New-Item -Name "etl_logs" -ItemType "directory" -Force'
 
   - task: PowerShell@2
-    displayName: 'Start etl trace'
+    displayName: '📜 Start etl trace'
     inputs:
       targetType: filePath
       workingDirectory: ${{ parameters.repo_root }}/pipeline_templates/scripts
