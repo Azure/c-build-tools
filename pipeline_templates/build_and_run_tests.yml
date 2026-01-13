@@ -122,7 +122,7 @@ jobs:
         runTestsInIsolation: true
         codeCoverageEnabled: true # Requires runSettingsFile below
         otherConsoleOptions: '-- RunConfiguration.ExecutionThreadApartmentState=MTA'
-        runSettingsFile: '${{ parameters.repo_root }}/pipeline_templates/scripts/tests_native.runsettings'
+        runSettingsFile: '${{ parameters.repo_root_override }}/pipeline_templates/scripts/tests_native.runsettings'
         resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
         testRunTitle: 'VsTest Native ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
 
