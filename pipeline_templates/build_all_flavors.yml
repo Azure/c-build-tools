@@ -28,7 +28,6 @@ parameters:
     default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_traceability:BOOL=ON -Drun_repo_validation:BOOL=ON"
 
   # If this parameter is specified the specified test suite will be run without invoking ctest
-  # This is very useful for debugging a single test suite because ctest still does not allow Watson dumps to be collected
   - name: run_test_suite_without_ctest
     type: string
     default: ""

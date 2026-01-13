@@ -18,7 +18,6 @@ parameters:
     type: string
     default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_traceability:BOOL=ON -Drun_repo_validation:BOOL=ON"
   # If this parameter is specified the specified test suite will be run without invoking ctest
-  # This is very useful for debugging a single test suite because ctest still does not allow Watson dumps to be collected
   - name: run_test_suite_without_ctest
     type: string
     default: ""
@@ -140,7 +139,8 @@ jobs:
     - task: CmdLine@2
       displayName: '🧪 Run ctest'
       inputs:
-        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+        # --interactive-debug-mode 1 is needed to get Watson dumps when running tests under ctest: https://gitlab.kitware.com/cmake/cmake/-/merge_requests/9855/diffs?commit_id=0a4ee422c1a5a5f6e9fd8893c5029da446ae8a91#diff-content-073a6620d87def59fe2a133050c1d68204635312
+        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
         workingDirectory: $(Build.BinariesDirectory)\c
 
   - task: PublishTestResults@2
@@ -167,10 +167,11 @@ jobs:
         - task: CmdLine@2
           displayName: '🧪 Run ctest'
           inputs:
+            # --interactive-debug-mode 1 is needed to get Watson dumps when running tests under ctest: https://gitlab.kitware.com/cmake/cmake/-/merge_requests/9855/diffs?commit_id=0a4ee422c1a5a5f6e9fd8893c5029da446ae8a91#diff-content-073a6620d87def59fe2a133050c1d68204635312
             ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests_list }} --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 -E ${{ parameters.appverifier_skip_tests_list }} --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
             ${{ else }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --no-tests=error --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
             workingDirectory: $(Build.BinariesDirectory)\c
 
         - task: PublishTestResults@2
