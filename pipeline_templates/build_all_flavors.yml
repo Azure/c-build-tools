@@ -39,9 +39,8 @@ parameters:
     type: boolean
     default: false
   # This may be overridden to pass a different value to run_ctest_with_appverifier.yml, depending on how c-build-tools is consumed
-  # The default empty value falls back to the default value in run_ctest_with_appverifier.yml
   - name: repo_root_override
-    default: ""
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
   # Used for app verifier script to find the binaries, typically this will be _exe_suffix.exe where suffix is defined by the project
   - name: binary_name_suffix
     default: "_exe.exe"
