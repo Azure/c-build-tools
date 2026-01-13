@@ -124,7 +124,7 @@ jobs:
         platform: 'x64'
         configuration: '${{ parameters.build_configuration }}'
         diagnosticsEnabled : true
-        otherConsoleOptions: '-- RunConfiguration.ExecutionThreadApartmentState=MTA /collect:"Code Coverage;Format=Xml"'
+        otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
         runSettingsFile: '${{ parameters.repo_root_override }}/pipeline_templates/scripts/tests_native.runsettings'
         resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
         testRunTitle: 'VsTest Native ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
@@ -149,7 +149,7 @@ jobs:
       testResultsFormat: 'JUnit'
       searchFolder: $(Build.BinariesDirectory)\c
       testResultsFiles: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-      testRunTitle: 'CTest ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
+      testRunTitle: 'ctest${{ parameters.BUILD_SUFFIX }}'
       buildConfiguration: ${{ parameters.build_configuration }}
       failTaskOnMissingResultsFile: true
     condition: always()
@@ -179,7 +179,7 @@ jobs:
             testResultsFormat: 'JUnit'
             searchFolder: '$(Build.SourcesDirectory)/build'
             testResultsFiles: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-            testRunTitle: 'CTest ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }} App Verifier'
+            testRunTitle: 'CTest${{ parameters.BUILD_SUFFIX }} App Verifier'
             buildConfiguration: ${{ parameters.build_configuration }}
             failTaskOnMissingResultsFile: true
           condition: always()
