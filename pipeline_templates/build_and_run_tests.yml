@@ -123,21 +123,21 @@ jobs:
         codeCoverageEnabled: true # Requires runSettingsFile below
         otherConsoleOptions: '-- RunConfiguration.ExecutionThreadApartmentState=MTA'
         runSettingsFile: '${{ parameters.repo_root }}/pipeline_templates/scripts/tests_native.runsettings'
-        resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }}'
-        testRunTitle: 'VsTest Native ${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }}'
+        resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
+        testRunTitle: 'VsTest Native ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
 
     # Publish code coverage results from vstest
     - task: PublishCodeCoverageResults@2
       displayName: '📰 Publish Code Coverage'
       inputs:
-        summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
+        summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
         pathToSources: '$(Build.SourcesDirectory)'
 
   - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
     - task: CmdLine@2
       displayName: '🧪 Run ctest'
       inputs:
-        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --no-tests=error --output-junit ctest_results_${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }}.xml'
+        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
         workingDirectory: $(Build.BinariesDirectory)\c
 
   - task: PublishTestResults@2
@@ -145,9 +145,9 @@ jobs:
     inputs:
       testResultsFormat: 'JUnit'
       searchFolder: $(Build.BinariesDirectory)\c
-      testResultsFiles: 'ctest_results_${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }}.xml'
-      testRunTitle: 'CTest ${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }}'
-      buildConfiguration: ${{ parameters.build_config }}
+      testResultsFiles: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+      testRunTitle: 'CTest ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
+      buildConfiguration: ${{ parameters.build_configuration }}
       failTaskOnMissingResultsFile: true
     condition: always()
 
@@ -165,9 +165,9 @@ jobs:
           displayName: '🧪 Run ctest'
           inputs:
             ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests_list }} --output-junit ctest_appverifier_results_${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }}.xml'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure -E ${{ parameters.appverifier_skip_tests_list }} --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
             ${{ else }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --no-tests=error --output-junit ctest_appverifier_results_${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }}.xml'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --no-tests=error --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
             workingDirectory: $(Build.BinariesDirectory)\c
 
         - task: PublishTestResults@2
@@ -175,9 +175,9 @@ jobs:
           inputs:
             testResultsFormat: 'JUnit'
             searchFolder: '$(Build.SourcesDirectory)/build'
-            testResultsFiles: 'ctest_appverifier_results_${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }}.xml'
-            testRunTitle: 'CTest ${{ parameters.build_config }}${{ parameters.BUILD_SUFFIX }} App Verifier'
-            buildConfiguration: ${{ parameters.build_config }}
+            testResultsFiles: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+            testRunTitle: 'CTest ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }} App Verifier'
+            buildConfiguration: ${{ parameters.build_configuration }}
             failTaskOnMissingResultsFile: true
           condition: always()
 
