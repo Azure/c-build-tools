@@ -182,7 +182,7 @@ jobs:
       displayName: '📊 Publish ctest results'
       inputs:
         testResultsFormat: 'JUnit'
-        searchFolder: '$(Build.SourcesDirectory)/build'
+        searchFolder: $(Build.BinariesDirectory)\c
         testResultsFiles: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
         testRunTitle: 'CTest${{ parameters.BUILD_SUFFIX }} App Verifier'
         buildConfiguration: ${{ parameters.build_configuration }}
