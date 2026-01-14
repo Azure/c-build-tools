@@ -226,7 +226,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 When you need to run PowerShell in the terminal, ALWAYS emit a single line in this shape:
 
 ```powershell
-pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& { $ErrorActionPreference='Stop'; <STATEMENT1>; <STATEMENT2>; <STATEMENT3>; }"
+pwsh -NoLogo -NoProfile -NonInteractive -InputFormat None -ExecutionPolicy Bypass -Command "& { $ErrorActionPreference='Stop'; <STATEMENT1>; <STATEMENT2>; <STATEMENT3>; }"
 ```
 
 **Rules:**
