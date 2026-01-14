@@ -184,7 +184,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
   - Ability to inspect variables and call stack
   - Faster diagnosis than iterative printf debugging
 - **Automatic CDB Usage**: When a crash is suspected, automatically run the failing test under `cdb` to collect diagnostic information. Use the following workflow:
-  1. Run the test with `cdb -g -G path\to\test_exe.exe` to capture the crash
+  1. Run the test with `cdb -g -G -noio path\to\test_exe.exe` to capture the crash
   2. Collect the call stack using `k` or `kp` commands
   3. Inspect local variables with `dv` at the crash site
   4. Use `!analyze -v` for detailed crash analysis
@@ -192,7 +192,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 - **CDB Command Reference**:
   ```powershell
   # Run test under debugger, break on crash
-  cdb -g -G path\to\test_exe.exe
+  cdb -g -G -noio path\to\test_exe.exe
   
   # When crash occurs, useful commands:
   # k     - Display stack trace
