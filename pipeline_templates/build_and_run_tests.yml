@@ -115,10 +115,9 @@ jobs:
     - task: VSTest@2
       displayName: '🧪 VsTest - testAssemblies (no int tests)'
       inputs:
+        # Some repos do not use BUILD_BINARIESDIRECTORY in cmakelists so the DLLs may be in either of the two paths below
         testAssemblyVer2: |
-          # Some repos do not use BUILD_BINARIESDIRECTORY in cmakelists and the DLLs can be found here
           $(Build.BinariesDirectory)\c\${{ parameters.build_configuration }}\**\*_ut_*.dll
-          # But repos that do use BUILD_BINARIESDIRECTORY in cmakelists will have the DLLs here
           $(Build.BinariesDirectory)\${{ parameters.build_configuration }}\**\*_ut_*.dll
         runInParallel: true
         runTestsInIsolation: true
