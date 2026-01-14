@@ -255,8 +255,9 @@ THANDLE(TYPE) my_function_create(uint32_t count, TYPE_HANDLE* items)
 ### Validation Patterns
 - Check for `NULL` pointers first
 - Validate value ranges and constraints
+- **Combine all validations in a single `if` statement** with `||` operator whenever possible (avoid multiple separate `if` statements for parameter checks)
+- **Log ALL function arguments when validation fails** - include every parameter with its type and value in the `LogError()` call, not just the invalid ones
 - Use `LogError()` to log validation failures with parameter values
-- Group related validations in single `if` statement with `||` operator
 - Include SRS requirement comments for each validation
 
 ## Goto Usage Rules {#goto-usage}
@@ -660,6 +661,25 @@ For unit test files, use the `ENABLE_MOCKS` pattern between infrastructure and d
 - Use `malloc`/`free` for dynamic allocation
 - Use `malloc_2()` helper for array allocations with overflow protection
 - Always check allocation results and handle failures gracefully
+
+### Pointer Casting Rules
+- **Do NOT cast `void*` to other pointer types** - In C, `void*` implicitly converts to any other pointer type without a cast
+- This applies specifically to:
+  - **`malloc` return values**: Assign directly without casting
+  - **Callback context parameters**: Assign `void* context` directly to typed pointers
+- Unnecessary casts can hide bugs and reduce code clarity
+
+```c
+// CORRECT - no cast needed
+MY_STRUCT* ptr = malloc(sizeof(MY_STRUCT));
+MY_CONTEXT* context_ptr = context;  // void* context parameter
+
+// INCORRECT - unnecessary casts
+MY_STRUCT* ptr = (MY_STRUCT*)malloc(sizeof(MY_STRUCT));  // Don't do this
+MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
+```
+
+**Exception**: Casts ARE required when converting `void*` to `const` qualified pointer types (e.g., `const MY_STRUCT*`).
 
 ### Error Handling
 - Use `LogError()` for error conditions with descriptive messages
