@@ -174,16 +174,16 @@ jobs:
               script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
             workingDirectory: $(Build.BinariesDirectory)\c
 
-        - task: PublishTestResults@2
-          displayName: '📊 Publish ctest results'
-          inputs:
-            testResultsFormat: 'JUnit'
-            searchFolder: '$(Build.SourcesDirectory)/build'
-            testResultsFiles: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-            testRunTitle: 'CTest${{ parameters.BUILD_SUFFIX }} App Verifier'
-            buildConfiguration: ${{ parameters.build_configuration }}
-            failTaskOnMissingResultsFile: true
-          condition: always()
+    - task: PublishTestResults@2
+      displayName: '📊 Publish ctest results'
+      inputs:
+        testResultsFormat: 'JUnit'
+        searchFolder: '$(Build.SourcesDirectory)/build'
+        testResultsFiles: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+        testRunTitle: 'CTest${{ parameters.BUILD_SUFFIX }} App Verifier'
+        buildConfiguration: ${{ parameters.build_configuration }}
+        failTaskOnMissingResultsFile: true
+      condition: always()
 
   - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
     - task: CmdLine@2
