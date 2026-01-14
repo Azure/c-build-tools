@@ -26,11 +26,17 @@ function update-repo-github {
     if(-not $result.Success) {
         fail-with-status "PR checks failed for repo ${repo_name}: $($result.Message)"
     }
+    else {
+        # checks passed
+    }
 
     Write-Host "Merging PR"
     gh pr merge --squash --delete-branch
     if($LASTEXITCODE -ne 0) {
         fail-with-status "Failed to merge PR for repo $repo_name"
+    }
+    else {
+        # merge succeeded
     }
     # Wait for merge to complete
     Start-Sleep -Seconds 10

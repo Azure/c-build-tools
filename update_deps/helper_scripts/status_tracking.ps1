@@ -41,15 +41,22 @@ function set-repo-status {
         $global:repo_status[$repo_name].Status = $status
         $global:repo_status[$repo_name].Message = $message
     }
+    else {
+        # unknown repo, ignore
+    }
 }
 
 # Fail with status - marks current repo as failed, shows final status, and exits
+# Exits on failure (always)
 function fail-with-status {
     param(
         [string] $message
     )
-    if($global:current_repo -and $global:repo_status.ContainsKey($global:current_repo)) {
+    if ($global:current_repo -and $global:repo_status.ContainsKey($global:current_repo)) {
         set-repo-status -repo_name $global:current_repo -status $script:STATUS_FAILED -message $message
+    }
+    else {
+        # no current repo to mark as failed
     }
     show-propagation-status -Final
     Write-Error $message
@@ -116,6 +123,9 @@ function show-propagation-status {
         if($message) {
             $line += " - $message"
         }
+        else {
+            # no message
+        }
         Write-Host $line -ForegroundColor $color
         $index++
     }
@@ -139,6 +149,9 @@ function show-propagation-status {
 
         # Return success (true if no failures)
         return ($failed -eq 0)
+    }
+    else {
+        # not final, just display
     }
 
     Write-Host ""

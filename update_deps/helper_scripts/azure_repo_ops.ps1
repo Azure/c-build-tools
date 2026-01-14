@@ -27,6 +27,9 @@ function get-azure-org-project {
             Project = $project
         }
     }
+    else {
+        # try visualstudio.com format
+    }
 
     # Parse URL like https://msazure.visualstudio.com/DefaultCollection/One/_git/repo-name
     # or https://msazure.visualstudio.com/One/_git/repo-name
@@ -37,6 +40,9 @@ function get-azure-org-project {
             Organization = "https://dev.azure.com/$org"
             Project = $project
         }
+    }
+    else {
+        # neither format matched
     }
 
     fail-with-status "Failed to parse Azure DevOps organization and project from remote URL: $repo_url"
@@ -67,6 +73,9 @@ function create-pr-azure {
     if($LASTEXITCODE -ne 0) {
         fail-with-status "Failed to create PR for repo $repo_name"
     }
+    else {
+        # PR created successfully
+    }
 
     $pr_info = $pr_output | ConvertFrom-Json
     return $pr_info
@@ -83,6 +92,9 @@ function link-work-item-to-pr-azure {
     if(!$azure_work_item){
         fail-with-status "Updating Azure repos requires providing a work item id. Provide work item id as: -azure_work_item [id]"
     }
+    else {
+        # work item provided
+    }
 
     $output = az repos pr work-item add `
         --id $pr_id `
@@ -92,6 +104,9 @@ function link-work-item-to-pr-azure {
 
     if($LASTEXITCODE -ne 0) {
         fail-with-status "Failed to link work item to PR. Work item: $azure_work_item, PR ID: $pr_id"
+    }
+    else {
+        # work item linked successfully
     }
 }
 
@@ -111,6 +126,9 @@ function approve-pr-azure {
 
     if($LASTEXITCODE -ne 0) {
         fail-with-status "Failed to approve PR ID: $pr_id"
+    }
+    else {
+        # PR approved successfully
     }
 }
 
@@ -132,6 +150,9 @@ function set-autocomplete-azure {
 
     if($LASTEXITCODE -ne 0) {
         fail-with-status "Failed to set autocomplete for PR ID: $pr_id"
+    }
+    else {
+        # autocomplete set successfully
     }
 }
 
@@ -156,14 +177,26 @@ function wait-until-complete-azure {
                 Write-Host "PR completed successfully" -ForegroundColor Green
                 return
             }
+            else {
+                # PR not completed, fall through to fail
+            }
+        }
+        else {
+            # couldn't get PR status, fall through to fail
         }
         fail-with-status "PR $pr_id failed to complete. Check policy status above."
+    }
+    else {
+        # success, continue to verify
     }
 
     # Verify PR is completed
     $pr_output = az repos pr show --id $pr_id --organization $org --output json
     if($LASTEXITCODE -ne 0) {
         fail-with-status "Failed to get PR status for ID: $pr_id"
+    }
+    else {
+        # got PR status
     }
 
     $pr_info = $pr_output | ConvertFrom-Json
@@ -181,9 +214,13 @@ function wait-until-complete-azure {
                 Write-Host "PR completed successfully" -ForegroundColor Green
                 return
             }
+            else {
+                # keep waiting
+            }
         }
         Write-Host "Warning: PR policies passed but PR status is: $($pr_info.status)" -ForegroundColor Yellow
-    } else {
+    }
+    else {
         Write-Host "PR completed successfully" -ForegroundColor Green
     }
 }

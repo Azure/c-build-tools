@@ -29,6 +29,9 @@ function refresh-submodules {
         if($submodules.Contains($_.Name)) {
             Remove-Item $_.FullName -Recurse -Force
         }
+        else {
+            # not a submodule, leave it
+        }
     }
 }
 
@@ -48,6 +51,9 @@ function update-local-repo {
     if (Test-Path "deps\") {
         refresh-submodules
     }
+    else {
+        # no deps folder
+    }
     git submodule update --init
     # update all submodules except the ones mentioned in ignores.json
     git submodule foreach "case `$name in $ignore_pattern ) ;; *) git checkout master && git pull;; esac"
@@ -60,6 +66,9 @@ function update-local-repo {
     # Only push if commit succeeded (there were changes)
     if($commit_result -eq 0) {
         git push -f origin $new_branch_name
+    }
+    else {
+        # nothing to push
     }
     Pop-Location
     # Return the commit output for caller to check

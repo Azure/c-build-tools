@@ -57,18 +57,21 @@ param(
 # parse repo URL to extract repo name
 # Expected URL format: */<repo_name>[.*]
 # Example: https://github.com/Azure/c-build-tools or https://github.com/Azure/c-build-tools.git
+# Exits on failure
 function get-name-from-url {
     param (
         [string] $url
-   )
-   if(!$url.Contains("http"))
-   {
-        Write-Error("Invalid URL: $url")
+    )
+
+    if (!$url.Contains("http")) {
+        Write-Error "Invalid URL: $url"
         exit -1
-   }
-   $split_by_slash = $url.Split('/')
-   $split_by_dot = $split_by_slash[-1].Split('.') # $split_by_slash[-1] contains [repo_name].git
-   return $split_by_dot[0] # $split_by_dot[0] contains [repo_name]
+    }
+    else {
+        $split_by_slash = $url.Split('/')
+        $split_by_dot = $split_by_slash[-1].Split('.') # $split_by_slash[-1] contains [repo_name].git
+        return $split_by_dot[0] # $split_by_dot[0] contains [repo_name]
+    }
 }
 
 
@@ -86,25 +89,33 @@ function get-submodules {
     if (!$submodule_data) {
         return $submodules
     }
-    # create uri object for base URL
-    $base_uri = [System.Uri]::new($url + "/")
-    # git config returns an array of strings when there are multiple results
-    # each line is in format: "submodule.deps/name.url <url>"
-    $lines = if ($submodule_data -is [array]) { $submodule_data } else { @($submodule_data) }
-    foreach ($line in $lines) {
-        # split each line by whitespace to extract URL (second part)
-        $parts = $line -split '\s+', 2
-        if ($parts.Length -ge 2) {
-            $submodule_uri = $parts[1]
-            # convert relative URLs to absolute
-            if (-not $submodule_uri.StartsWith("http")) {
-                $submodule_uri = [System.Uri]::new($base_uri, $submodule_uri).AbsoluteUri
+    else {
+        # create uri object for base URL
+        $base_uri = [System.Uri]::new($url + "/")
+        # git config returns an array of strings when there are multiple results
+        # each line is in format: "submodule.deps/name.url <url>"
+        $lines = if ($submodule_data -is [array]) { $submodule_data } else { @($submodule_data) }
+        foreach ($line in $lines) {
+            # split each line by whitespace to extract URL (second part)
+            $parts = $line -split '\s+', 2
+            if ($parts.Length -ge 2) {
+                $submodule_uri = $parts[1]
+                # convert relative URLs to absolute
+                if (-not $submodule_uri.StartsWith("http")) {
+                    $submodule_uri = [System.Uri]::new($base_uri, $submodule_uri).AbsoluteUri
+                }
+                else {
+                    # already absolute, use as-is
+                }
+                # append URL to list
+                [void]$submodules.Add($submodule_uri)
             }
-            # append URL to list
-            [void]$submodules.Add($submodule_uri)
+            else {
+                # malformed line, skip
+            }
         }
+        return $submodules
     }
-    return $submodules
 }
 
 
@@ -135,9 +146,15 @@ function Build-Graph {
     if(-not $repo_levels.ContainsKey($repo_name)) {
         $repo_levels[$repo_name] = 0
     }
+    else {
+        # already tracked
+    }
     # store repo URL
     if(-not $repo_urls.ContainsKey($repo_name)) {
         $repo_urls[$repo_name] = $repo_url
+    }
+    else {
+        # already stored
     }
     # clone repo if not already present
     if(-not (Test-Path -Path $repo_name)) {
@@ -147,6 +164,9 @@ function Build-Graph {
         git clone $repo_url
         Write-Host ""
     }
+    else {
+        # already cloned
+    }
     # $repo_level is the length of the path in the graph from the root to the current repo
     $repo_level = $repo_levels[$repo_name]
     # get list for submodules URLs
@@ -154,9 +174,12 @@ function Build-Graph {
     # iterate of list of submodules
     foreach($submodule in $submodules) {
         $submodule_name = get-name-from-url -url $submodule
-        # ignore submodule if it is i $repos_to_ignore
+        # ignore submodule if it is in $repos_to_ignore
         if ($submodule_name -in $repos_to_ignore) {
             continue
+        }
+        else {
+            # process this submodule
         }
         # $level is the length of the longest path in the graph from the root to the submodule seen so far
         $level = 0
@@ -164,6 +187,9 @@ function Build-Graph {
         # update repo level of submodule if path from root to submodule via current repo is longer
         if (($repo_level+1) -gt $level) {
             $repo_levels[$submodule_name] = $repo_level+1
+        }
+        else {
+            # existing level is sufficient
         }
         # add submodule to queue
         $queue.Enqueue($submodule)

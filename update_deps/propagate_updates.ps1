@@ -131,6 +131,9 @@ function propagate-updates {
     if ($useCachedRepoOrder) {
         $cached_data = get-cached-repo-order -root_list $root_list
     }
+    else {
+        # will build fresh
+    }
 
     if ($cached_data) {
         $repo_order = $cached_data.repo_order
@@ -145,9 +148,13 @@ function propagate-updates {
                 if ($repo_url) {
                     Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
                     git clone $repo_url
-                } else {
+                }
+                else {
                     Write-Host "Warning: No URL cached for $repo_name, skipping" -ForegroundColor Yellow
                 }
+            }
+            else {
+                # already present
             }
         }
         Write-Host "Done cloning repositories"
@@ -159,12 +166,18 @@ function propagate-updates {
             Pop-Location
             fail-with-status "Could not build dependency graph for $root_list."
         }
+        else {
+            # graph built successfully
+        }
         Write-Host "Done building dependency graph"
         # build_graph.ps1 sets the cache, so read from it
         $cached_data = get-cached-repo-order -root_list $root_list
         if (-not $cached_data) {
             Pop-Location
             fail-with-status "Failed to get cached repo order after building graph."
+        }
+        else {
+            # cache retrieved
         }
         $repo_order = $cached_data.repo_order
         $repo_urls = $cached_data.repo_urls
@@ -186,7 +199,8 @@ function propagate-updates {
     $success = show-propagation-status -Final
     if ($success) {
         play-success-animation
-    } else {
+    }
+    else {
         Write-Host "Done updating repos (with some failures)" -ForegroundColor Yellow
     }
 
