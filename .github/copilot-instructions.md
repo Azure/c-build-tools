@@ -220,5 +220,15 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 - **Azure DevOps Repos**: Use the ADO MCP (Model Context Protocol) tools when available for repository operations (creating branches, PRs, managing work items)
 - **GitHub Repos**: Use GitHub CLI (`gh`) for repository operations (creating PRs, managing issues, etc.)
 
+## PowerShell Terminal Commands
 
+When you need to run PowerShell in the terminal, ALWAYS emit a single line in this shape:
 
+```powershell
+pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& { $ErrorActionPreference='Stop'; <STATEMENT1>; <STATEMENT2>; <STATEMENT3>; }"
+```
+
+**Rules:**
+- Use `;` between statements; never use backticks for continuation.
+- Prefer single quotes inside the script block; escape only when necessary.
+- If CLI args contain special characters, use `--%` immediately after the command name.
