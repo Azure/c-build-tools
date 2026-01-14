@@ -232,3 +232,12 @@ pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& { $E
 - Use `;` between statements; never use backticks for continuation.
 - Prefer single quotes inside the script block; escape only when necessary.
 - If CLI args contain special characters, use `--%` immediately after the command name.
+
+## General Terminal Command Rules
+
+**ALL terminal commands MUST be single-line.** Multi-line commands cause the terminal to hang waiting for input.
+
+- **Never embed literal newlines** in command arguments (e.g., `--body` or `--message` flags)
+- **Use semicolons** to chain multiple commands: `cmd1; cmd2; cmd3`
+- **For long strings**, keep them on one line or use variables/files instead of inline content
+- **Test mentally**: If the command would show a `>>` continuation prompt, rewrite it as single-line
