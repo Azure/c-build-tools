@@ -46,6 +46,7 @@ function get-azure-pr-policies {
         [int] $pr_id,
         [string] $org
     )
+    $result = $null
 
     $policy_output = az repos pr policy list `
         --id $pr_id `
@@ -54,46 +55,61 @@ function get-azure-pr-policies {
         --output json 2>$null
 
     if($LASTEXITCODE -ne 0 -or !$policy_output) {
-        return $null
+        $result = $null
     }
-
-    # Get the project info from the PR for build timeline lookups and URLs
-    $pr_info = az repos pr show --id $pr_id --org $org --query "{ProjectId:repository.project.id, ProjectName:repository.project.name, OrgUrl:repository.project.url, RepoName:repository.name}" -o json 2>$null
-    $project_id = $null
-    $project_name = $null
-    $base_url = $null
-    $repo_name = $null
-    if($pr_info) {
-        $pr_data = $pr_info | ConvertFrom-Json
-        $project_id = $pr_data.ProjectId
-        $project_name = $pr_data.ProjectName
-        $repo_name = $pr_data.RepoName
-        # Extract base URL from project URL (e.g., https://msazure.visualstudio.com/_apis/projects/... -> https://msazure.visualstudio.com)
-        if($pr_data.OrgUrl -match '^(https://[^/]+)') {
-            $base_url = $matches[1]
+    else {
+        # Get the project info from the PR for build timeline lookups and URLs
+        $pr_info = az repos pr show --id $pr_id --org $org --query "{ProjectId:repository.project.id, ProjectName:repository.project.name, OrgUrl:repository.project.url, RepoName:repository.name}" -o json 2>$null
+        $project_id = $null
+        $project_name = $null
+        $base_url = $null
+        $repo_name = $null
+        if($pr_info) {
+            $pr_data = $pr_info | ConvertFrom-Json
+            $project_id = $pr_data.ProjectId
+            $project_name = $pr_data.ProjectName
+            $repo_name = $pr_data.RepoName
+            # Extract base URL from project URL (e.g., https://msazure.visualstudio.com/_apis/projects/... -> https://msazure.visualstudio.com)
+            if($pr_data.OrgUrl -match '^(https://[^/]+)') {
+                $base_url = $matches[1]
+            }
+            else {
+                # no match
+            }
         }
-    }
-
-    $policies = $policy_output | ConvertFrom-Json
-
-    # Build PR URL
-    $pr_url = $null
-    if($base_url -and $project_name -and $repo_name) {
-        $pr_url = "$base_url/$project_name/_git/$repo_name/pullrequest/$pr_id"
-    }
-
-    # Attach project info to policies with builds
-    foreach($policy in $policies) {
-        # Always attach PR URL for reference
-        $policy | Add-Member -NotePropertyName "PrUrl" -NotePropertyValue $pr_url -Force
-        if($policy.BuildId -and $project_id) {
-            $policy | Add-Member -NotePropertyName "ProjectId" -NotePropertyValue $project_id -Force
-            $policy | Add-Member -NotePropertyName "ProjectName" -NotePropertyValue $project_name -Force
-            $policy | Add-Member -NotePropertyName "BaseUrl" -NotePropertyValue $base_url -Force
+        else {
+            # no pr_info
         }
+
+        $policies = $policy_output | ConvertFrom-Json
+
+        # Build PR URL
+        $pr_url = $null
+        if($base_url -and $project_name -and $repo_name) {
+            $pr_url = "$base_url/$project_name/_git/$repo_name/pullrequest/$pr_id"
+        }
+        else {
+            # can't build PR URL
+        }
+
+        # Attach project info to policies with builds
+        foreach($policy in $policies) {
+            # Always attach PR URL for reference
+            $policy | Add-Member -NotePropertyName "PrUrl" -NotePropertyValue $pr_url -Force
+            if($policy.BuildId -and $project_id) {
+                $policy | Add-Member -NotePropertyName "ProjectId" -NotePropertyValue $project_id -Force
+                $policy | Add-Member -NotePropertyName "ProjectName" -NotePropertyValue $project_name -Force
+                $policy | Add-Member -NotePropertyName "BaseUrl" -NotePropertyValue $base_url -Force
+            }
+            else {
+                # no build info to attach
+            }
+        }
+
+        $result = $policies
     }
 
-    return $policies
+    return $result
 }
 
 
@@ -104,6 +120,7 @@ function get-build-job-details {
         [string] $project_id,
         [string] $org
     )
+    $result = $null
 
     $timeline = az devops invoke `
         --area build `
@@ -114,21 +131,24 @@ function get-build-job-details {
         -o json 2>$null
 
     if($LASTEXITCODE -ne 0 -or !$timeline) {
-        return $null
+        $result = $null
     }
+    else {
+        $records = ($timeline | ConvertFrom-Json).records
+        $jobs = $records | Where-Object { $_.type -eq "Job" }
 
-    $records = ($timeline | ConvertFrom-Json).records
-    $jobs = $records | Where-Object { $_.type -eq "Job" }
-
-    return $jobs | ForEach-Object {
-        [PSCustomObject]@{
-            Name = $_.name
-            State = $_.state
-            Result = $_.result
-            StartTime = $_.startTime
-            FinishTime = $_.finishTime
+        $result = $jobs | ForEach-Object {
+            [PSCustomObject]@{
+                Name = $_.name
+                State = $_.state
+                Result = $_.result
+                StartTime = $_.startTime
+                FinishTime = $_.finishTime
+            }
         }
     }
+
+    return $result
 }
 
 
@@ -139,43 +159,60 @@ function get-policy-display-data {
         [string] $org,
         [switch] $ShowBuildDetails
     )
+    $result = $null
 
     # Fetch policies
     $policies = get-azure-pr-policies -pr_id $pr_id -org $org
     if(!$policies) {
-        return $null
+        $result = $null
     }
-
-    # Pre-fetch build job details for all builds (running, queued, or completed)
-    $build_jobs = @{}
-    $build_access_denied = @{}
-    if($ShowBuildDetails) {
-        foreach($policy in $policies) {
-            if($policy.BuildId -and $policy.ProjectId) {
-                $jobs = get-build-job-details -build_id $policy.BuildId -project_id $policy.ProjectId -org $org
-                if($jobs) {
-                    $build_jobs[$policy.BuildId] = $jobs
-                } elseif($policy.BuildId) {
-                    # Mark that we couldn't access this build's details
-                    $build_access_denied[$policy.BuildId] = $true
+    else {
+        # Pre-fetch build job details for all builds (running, queued, or completed)
+        $build_jobs = @{}
+        $build_access_denied = @{}
+        if($ShowBuildDetails) {
+            foreach($policy in $policies) {
+                if($policy.BuildId -and $policy.ProjectId) {
+                    $jobs = get-build-job-details -build_id $policy.BuildId -project_id $policy.ProjectId -org $org
+                    if($jobs) {
+                        $build_jobs[$policy.BuildId] = $jobs
+                    }
+                    elseif($policy.BuildId) {
+                        # Mark that we couldn't access this build's details
+                        $build_access_denied[$policy.BuildId] = $true
+                    }
+                    else {
+                        # no build id
+                    }
+                }
+                else {
+                    # no build or project id
                 }
             }
         }
+        else {
+            # not showing build details
+        }
+
+        # Get PR URL from first policy (all have the same PR URL)
+        $pr_url = $null
+        if($policies -and $policies.Count -gt 0 -and $policies[0].PrUrl) {
+            $pr_url = $policies[0].PrUrl
+        }
+        else {
+            # no PR URL available
+        }
+
+        $result = @{
+            Policies = $policies
+            BuildJobs = $build_jobs
+            BuildAccessDenied = $build_access_denied
+            Timestamp = Get-Date -Format 'HH:mm:ss'
+            PrUrl = $pr_url
+        }
     }
 
-    # Get PR URL from first policy (all have the same PR URL)
-    $pr_url = $null
-    if($policies -and $policies.Count -gt 0 -and $policies[0].PrUrl) {
-        $pr_url = $policies[0].PrUrl
-    }
-
-    return @{
-        Policies = $policies
-        BuildJobs = $build_jobs
-        BuildAccessDenied = $build_access_denied
-        Timestamp = Get-Date -Format 'HH:mm:ss'
-        PrUrl = $pr_url
-    }
+    return $result
 }
 
 
@@ -208,180 +245,213 @@ function show-policy-status {
 
     if(!$policies -or $policies.Count -eq 0) {
         Write-Host "No policies found" -ForegroundColor Gray
-        return
     }
+    else {
+        # Build flat list of all checks (policies + jobs)
+        $all_checks = @()
 
-    # Build flat list of all checks (policies + jobs)
-    $all_checks = @()
+        foreach($policy in $policies) {
+            $policy_name = $policy.Policy
+            $policy_status = $policy.Status
+            $build_id = $policy.BuildId
 
-    foreach($policy in $policies) {
-        $policy_name = $policy.Policy
-        $policy_status = $policy.Status
-        $build_id = $policy.BuildId
+            # Check if we have job details for this build
+            $has_jobs = $ShowBuildDetails -and $build_id -and $build_jobs.ContainsKey($build_id)
+            $access_denied = $ShowBuildDetails -and $build_id -and $build_access_denied -and $build_access_denied.ContainsKey($build_id)
 
-        # Check if we have job details for this build
-        $has_jobs = $ShowBuildDetails -and $build_id -and $build_jobs.ContainsKey($build_id)
-        $access_denied = $ShowBuildDetails -and $build_id -and $build_access_denied -and $build_access_denied.ContainsKey($build_id)
-
-        if($has_jobs) {
-            # Add job details instead of the policy
-            foreach($job in $build_jobs[$build_id]) {
-                $job_status = if($job.Result) { $job.Result } else { $job.State }
-                # Normalize status names
-                $normalized_status = switch($job_status) {
-                    "succeeded" { "approved" }
-                    "failed" { "rejected" }
-                    "inProgress" { "running" }
-                    "pending" { "queued" }
-                    "canceled" { "cancelled" }
-                    default { $job_status }
+            if($has_jobs) {
+                # Add job details instead of the policy
+                foreach($job in $build_jobs[$build_id]) {
+                    $job_status = if($job.Result) { $job.Result } else { $job.State }
+                    # Normalize status names
+                    $normalized_status = switch($job_status) {
+                        "succeeded" { "approved" }
+                        "failed" { "rejected" }
+                        "inProgress" { "running" }
+                        "pending" { "queued" }
+                        "canceled" { "cancelled" }
+                        default { $job_status }
+                    }
+                    $all_checks += [PSCustomObject]@{
+                        Name = "$policy_name ($($job.Name))"
+                        Status = $normalized_status
+                        StartTime = $job.StartTime
+                        FinishTime = $job.FinishTime
+                        IsJob = $true
+                        BuildId = $build_id
+                    }
                 }
+            }
+            elseif($access_denied) {
+                # Show policy with indication that we couldn't get job details
                 $all_checks += [PSCustomObject]@{
-                    Name = "$policy_name ($($job.Name))"
-                    Status = $normalized_status
-                    StartTime = $job.StartTime
-                    FinishTime = $job.FinishTime
-                    IsJob = $true
+                    Name = "$policy_name (job details require pipeline read permission)"
+                    Status = $policy_status
+                    StartTime = $null
+                    FinishTime = $null
+                    IsJob = $false
                     BuildId = $build_id
                 }
             }
-        } elseif($access_denied) {
-            # Show policy with indication that we couldn't get job details
-            $all_checks += [PSCustomObject]@{
-                Name = "$policy_name (job details require pipeline read permission)"
-                Status = $policy_status
-                StartTime = $null
-                FinishTime = $null
-                IsJob = $false
-                BuildId = $build_id
-            }
-        } else {
-            # Just show the policy itself
-            $all_checks += [PSCustomObject]@{
-                Name = $policy_name
-                Status = $policy_status
-                StartTime = $null
-                FinishTime = $null
-                IsJob = $false
-                BuildId = $build_id
-            }
-        }
-    }
-
-    # Count statuses
-    $approved_count = ($all_checks | Where-Object { $_.Status -eq "approved" }).Count
-    $rejected_count = ($all_checks | Where-Object { $_.Status -eq "rejected" }).Count
-    $running_count = ($all_checks | Where-Object { $_.Status -eq "running" }).Count
-    $queued_count = ($all_checks | Where-Object { $_.Status -eq "queued" }).Count
-    $cancelled_count = ($all_checks | Where-Object { $_.Status -eq "cancelled" }).Count
-    $pending_count = $running_count + $queued_count
-
-    # Summary status
-    if($rejected_count -gt 0) {
-        Write-Host "Some checks were not successful" -ForegroundColor Red
-    } elseif($pending_count -gt 0) {
-        Write-Host "Some checks are still pending" -ForegroundColor Yellow
-    } else {
-        Write-Host "All checks were successful" -ForegroundColor Green
-    }
-
-    # Stats line
-    Write-Host "$cancelled_count cancelled, $rejected_count failing, $approved_count successful, 0 skipped, and $pending_count pending checks`n" -ForegroundColor Gray
-
-    # Column widths (matching gh pr checks output)
-    $name_width = 70
-    $elapsed_width = 10
-    $url_width = 80
-
-    # Table header (like gh)
-    $header = "   {0,-$name_width} {1,-$elapsed_width} {2}" -f "NAME", "ELAPSED", "URL"
-    Write-Host $header -ForegroundColor White
-
-    # Display each check
-    foreach($check in $all_checks) {
-        $check_name = $check.Name
-        $check_status = $check.Status
-
-        # Truncate long names
-        if($check_name.Length -gt $name_width) {
-            $check_name = $check_name.Substring(0, $name_width - 3) + "..."
-        }
-
-        # Calculate elapsed/duration time
-        $elapsed = ""
-        if($check.StartTime) {
-            try {
-                # Azure CLI outputs times that are actually UTC but without timezone indicator
-                # Parse as local then treat as UTC by using SpecifyKind
-                $startParsed = [DateTime]::Parse($check.StartTime)
-                $start = [DateTime]::SpecifyKind($startParsed, [DateTimeKind]::Utc)
-                # For completed jobs, show duration (finish - start)
-                # For running jobs, show elapsed (now - start)
-                if($check.FinishTime) {
-                    $finishParsed = [DateTime]::Parse($check.FinishTime)
-                    $finish = [DateTime]::SpecifyKind($finishParsed, [DateTimeKind]::Utc)
-                    $duration = $finish - $start
-                } else {
-                    $duration = (Get-Date).ToUniversalTime() - $start
+            else {
+                # Just show the policy itself
+                $all_checks += [PSCustomObject]@{
+                    Name = $policy_name
+                    Status = $policy_status
+                    StartTime = $null
+                    FinishTime = $null
+                    IsJob = $false
+                    BuildId = $build_id
                 }
-                if($duration.TotalSeconds -ge 0) {
-                    if($duration.TotalHours -ge 1) {
-                        $elapsed = "{0}h{1}m" -f [int]$duration.TotalHours, $duration.Minutes
-                    } elseif($duration.TotalMinutes -ge 1) {
-                        $elapsed = "{0}m{1}s" -f [int]$duration.TotalMinutes, $duration.Seconds
-                    } else {
-                        $elapsed = "{0}s" -f [int]$duration.TotalSeconds
+            }
+        }
+
+        # Count statuses
+        $approved_count = ($all_checks | Where-Object { $_.Status -eq "approved" }).Count
+        $rejected_count = ($all_checks | Where-Object { $_.Status -eq "rejected" }).Count
+        $running_count = ($all_checks | Where-Object { $_.Status -eq "running" }).Count
+        $queued_count = ($all_checks | Where-Object { $_.Status -eq "queued" }).Count
+        $cancelled_count = ($all_checks | Where-Object { $_.Status -eq "cancelled" }).Count
+        $pending_count = $running_count + $queued_count
+
+        # Summary status
+        if($rejected_count -gt 0) {
+            Write-Host "Some checks were not successful" -ForegroundColor Red
+        }
+        elseif($pending_count -gt 0) {
+            Write-Host "Some checks are still pending" -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "All checks were successful" -ForegroundColor Green
+        }
+
+        # Stats line
+        Write-Host "$cancelled_count cancelled, $rejected_count failing, $approved_count successful, 0 skipped, and $pending_count pending checks`n" -ForegroundColor Gray
+
+        # Column widths (matching gh pr checks output)
+        $name_width = 70
+        $elapsed_width = 10
+        $url_width = 80
+
+        # Table header (like gh)
+        $header = "   {0,-$name_width} {1,-$elapsed_width} {2}" -f "NAME", "ELAPSED", "URL"
+        Write-Host $header -ForegroundColor White
+
+        # Display each check
+        foreach($check in $all_checks) {
+            $check_name = $check.Name
+            $check_status = $check.Status
+
+            # Truncate long names
+            if($check_name.Length -gt $name_width) {
+                $check_name = $check_name.Substring(0, $name_width - 3) + "..."
+            }
+            else {
+                # name fits
+            }
+
+            # Calculate elapsed/duration time
+            $elapsed = ""
+            if($check.StartTime) {
+                # Azure CLI outputs times that are actually UTC but without timezone indicator
+                $startParsed = Get-Date -Date $check.StartTime -ErrorAction SilentlyContinue
+                if($startParsed) {
+                    $start = $startParsed.ToUniversalTime()
+                    # For completed jobs, show duration (finish - start)
+                    # For running jobs, show elapsed (now - start)
+                    $duration = $null
+                    if($check.FinishTime) {
+                        $finishParsed = Get-Date -Date $check.FinishTime -ErrorAction SilentlyContinue
+                        if($finishParsed) {
+                            $finish = $finishParsed.ToUniversalTime()
+                            $duration = $finish - $start
+                        }
+                        else {
+                            # finish time parse error
+                        }
+                    }
+                    else {
+                        $duration = (Get-Date).ToUniversalTime() - $start
+                    }
+                    if($duration -and $duration.TotalSeconds -ge 0) {
+                        if($duration.TotalHours -ge 1) {
+                            $elapsed = "{0}h{1}m" -f [int]$duration.TotalHours, $duration.Minutes
+                        }
+                        elseif($duration.TotalMinutes -ge 1) {
+                            $elapsed = "{0}m{1}s" -f [int]$duration.TotalMinutes, $duration.Seconds
+                        }
+                        else {
+                            $elapsed = "{0}s" -f [int]$duration.TotalSeconds
+                        }
+                    }
+                    else {
+                        # negative or null duration
                     }
                 }
-            } catch {}
-        }
-
-        # Build URL for the check
-        $url = ""
-        if($check.BuildId) {
-            # Find the policy that has this BuildId to get its project info
-            $policy_with_project = $policies | Where-Object { $_.BuildId -eq $check.BuildId -and $_.ProjectName } | Select-Object -First 1
-            if($policy_with_project) {
-                $base_url = $policy_with_project.BaseUrl
-                $project_name = $policy_with_project.ProjectName
-                $url = "$base_url/$project_name/_build/results?buildId=$($check.BuildId)"
-                # Truncate URL if too long
-                if($url.Length -gt $url_width) {
-                    $url = $url.Substring(0, $url_width - 3) + "..."
+                else {
+                    # start time parse error
                 }
             }
-        }
+            else {
+                # no start time
+            }
 
-        # Choose symbol and color based on status
-        switch($check_status) {
-            "approved" {
-                $symbol = [char]0x2713  # checkmark
-                $color = "Green"
+            # Build URL for the check
+            $url = ""
+            if($check.BuildId) {
+                # Find the policy that has this BuildId to get its project info
+                $policy_with_project = $policies | Where-Object { $_.BuildId -eq $check.BuildId -and $_.ProjectName } | Select-Object -First 1
+                if($policy_with_project) {
+                    $base_url = $policy_with_project.BaseUrl
+                    $project_name = $policy_with_project.ProjectName
+                    $url = "$base_url/$project_name/_build/results?buildId=$($check.BuildId)"
+                    # Truncate URL if too long
+                    if($url.Length -gt $url_width) {
+                        $url = $url.Substring(0, $url_width - 3) + "..."
+                    }
+                    else {
+                        # URL fits
+                    }
+                }
+                else {
+                    # no project info
+                }
             }
-            "rejected" {
-                $symbol = [char]0x2717  # X mark
-                $color = "Red"
+            else {
+                # no build id
             }
-            "running" {
-                $symbol = "*"
-                $color = "Yellow"
-            }
-            "queued" {
-                $symbol = "-"
-                $color = "Gray"
-            }
-            "cancelled" {
-                $symbol = "x"
-                $color = "Gray"
-            }
-            default {
-                $symbol = "?"
-                $color = "Gray"
-            }
-        }
 
-        $line = "{0}  {1,-$name_width} {2,-$elapsed_width} {3}" -f $symbol, $check_name, $elapsed, $url
-        Write-Host $line -ForegroundColor $color
+            # Choose symbol and color based on status
+            switch($check_status) {
+                "approved" {
+                    $symbol = [char]0x2713  # checkmark
+                    $color = "Green"
+                }
+                "rejected" {
+                    $symbol = [char]0x2717  # X mark
+                    $color = "Red"
+                }
+                "running" {
+                    $symbol = "*"
+                    $color = "Yellow"
+                }
+                "queued" {
+                    $symbol = "-"
+                    $color = "Gray"
+                }
+                "cancelled" {
+                    $symbol = "x"
+                    $color = "Gray"
+                }
+                default {
+                    $symbol = "?"
+                    $color = "Gray"
+                }
+            }
+
+            $line = "{0}  {1,-$name_width} {2,-$elapsed_width} {3}" -f $symbol, $check_name, $elapsed, $url
+            Write-Host $line -ForegroundColor $color
+        }
     }
 }
 
@@ -391,31 +461,37 @@ function Test-PoliciesComplete {
     param(
         [array] $policies
     )
+    $result = $null
 
     if(!$policies -or $policies.Count -eq 0) {
-        return @{ Complete = $false; Success = $false; Message = "No policies found" }
+        $result = @{ Complete = $false; Success = $false; Message = "No policies found" }
+    }
+    else {
+        $blocking_policies = $policies | Where-Object { $_.IsBlocking -eq $true }
+
+        # Check if any blocking policy is still running or queued
+        $in_progress = $blocking_policies | Where-Object { $_.Status -eq "running" -or $_.Status -eq "queued" }
+
+        if($in_progress.Count -gt 0) {
+            # Still waiting for some policies to complete
+            $in_progress_names = ($in_progress | ForEach-Object { "$($_.Policy) ($($_.Status))" }) -join ", "
+            $result = @{ Complete = $false; Success = $false; Message = "Waiting for: $in_progress_names" }
+        }
+        else {
+            # All policies have reached terminal state - check if any are rejected
+            $rejected = $blocking_policies | Where-Object { $_.Status -eq "rejected" }
+            if($rejected) {
+                $rejected_names = ($rejected | ForEach-Object { $_.Policy }) -join ", "
+                $result = @{ Complete = $true; Success = $false; Message = "Rejected policies: $rejected_names" }
+            }
+            else {
+                # All blocking policies are approved
+                $result = @{ Complete = $true; Success = $true; Message = "All blocking policies approved" }
+            }
+        }
     }
 
-    $blocking_policies = $policies | Where-Object { $_.IsBlocking -eq $true }
-
-    # Check if any blocking policy is still running or queued
-    $in_progress = $blocking_policies | Where-Object { $_.Status -eq "running" -or $_.Status -eq "queued" }
-
-    if($in_progress.Count -gt 0) {
-        # Still waiting for some policies to complete
-        $in_progress_names = ($in_progress | ForEach-Object { "$($_.Policy) ($($_.Status))" }) -join ", "
-        return @{ Complete = $false; Success = $false; Message = "Waiting for: $in_progress_names" }
-    }
-
-    # All policies have reached terminal state - check if any are rejected
-    $rejected = $blocking_policies | Where-Object { $_.Status -eq "rejected" }
-    if($rejected) {
-        $rejected_names = ($rejected | ForEach-Object { $_.Policy }) -join ", "
-        return @{ Complete = $true; Success = $false; Message = "Rejected policies: $rejected_names" }
-    }
-
-    # All blocking policies are approved
-    return @{ Complete = $true; Success = $true; Message = "All blocking policies approved" }
+    return $result
 }
 
 
@@ -429,6 +505,7 @@ function watch-azure-pr-policies {
         [switch] $ShowBuildDetails,
         [scriptblock] $OnIteration = $null  # Optional callback to run each iteration
     )
+    $fn_result = $null
 
     $start_time = Get-Date
     $timeout_time = $start_time.AddMinutes($timeout)
@@ -437,47 +514,56 @@ function watch-azure-pr-policies {
     Write-Host "Watching PR $pr_id policies..." -ForegroundColor Cyan
     Write-Host "Poll interval: ${poll_interval}s, Timeout: ${timeout}m`n"
 
-    while($true) {
+    while($fn_result -eq $null) {
         $iteration++
 
         # Check timeout
         if((Get-Date) -gt $timeout_time) {
             Write-Host "`nTimeout reached after $timeout minutes" -ForegroundColor Red
-            return $false
+            $fn_result = $false
         }
+        else {
+            # Pre-fetch all data before clearing screen (avoids blank screen during API calls)
+            $displayData = get-policy-display-data -pr_id $pr_id -org $org -ShowBuildDetails:$ShowBuildDetails
 
-        # Pre-fetch all data before clearing screen (avoids blank screen during API calls)
-        $displayData = get-policy-display-data -pr_id $pr_id -org $org -ShowBuildDetails:$ShowBuildDetails
+            if(!$displayData) {
+                Write-Host "Failed to get policy status, retrying..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $poll_interval
+                # continue loop with fn_result still null
+            }
+            else {
+                # Display status (clear screen and immediately show pre-fetched data)
+                show-policy-status -displayData $displayData -ClearScreen -pr_id $pr_id -poll_interval $poll_interval -ShowBuildDetails:$ShowBuildDetails
 
-        if(!$displayData) {
-            Write-Host "Failed to get policy status, retrying..." -ForegroundColor Yellow
-            Start-Sleep -Seconds $poll_interval
-            continue
-        }
+                # Run callback if provided (e.g., show propagation status)
+                if($OnIteration) {
+                    & $OnIteration
+                }
+                else {
+                    # no callback
+                }
 
-        # Display status (clear screen and immediately show pre-fetched data)
-        show-policy-status -displayData $displayData -ClearScreen -pr_id $pr_id -poll_interval $poll_interval -ShowBuildDetails:$ShowBuildDetails
+                # Check if complete
+                $result = Test-PoliciesComplete -policies $displayData.Policies
 
-        # Run callback if provided (e.g., show propagation status)
-        if($OnIteration) {
-            & $OnIteration
-        }
-
-        # Check if complete
-        $result = Test-PoliciesComplete -policies $displayData.Policies
-
-        Write-Host ""
-        if($result.Complete) {
-            if($result.Success) {
-                return $true
-            } else {
-                return $false
+                Write-Host ""
+                if($result.Complete) {
+                    if($result.Success) {
+                        $fn_result = $true
+                    }
+                    else {
+                        $fn_result = $false
+                    }
+                }
+                else {
+                    # Wait before next poll
+                    Start-Sleep -Seconds $poll_interval
+                }
             }
         }
-
-        # Wait before next poll
-        Start-Sleep -Seconds $poll_interval
     }
+
+    return $fn_result
 }
 
 

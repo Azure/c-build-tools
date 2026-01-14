@@ -85,7 +85,7 @@ function check-az-cli-exists {
             exit -1
         }
         else {
-            # extension installed successfully
+            Write-Host "Azure DevOps extension installed successfully" -ForegroundColor Green
         }
     }
     else {
@@ -101,7 +101,7 @@ function check-az-cli-exists {
         exit -1
     }
     else {
-        # extension working
+        Write-Host "Azure DevOps extension verified" -ForegroundColor Green
     }
 
     # If PAT token provided, use it
@@ -113,7 +113,7 @@ function check-az-cli-exists {
             exit -1
         }
         else {
-            # PAT login successful
+            Write-Host "PAT login successful" -ForegroundColor Green
         }
     }
     else {
@@ -133,7 +133,7 @@ function check-az-cli-exists {
                 exit -1
             }
             else {
-                # WAM login successful
+                Write-Host "WAM login successful" -ForegroundColor Green
             }
         }
         else {

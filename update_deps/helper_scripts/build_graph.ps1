@@ -62,6 +62,7 @@ function get-name-from-url {
     param (
         [string] $url
     )
+    $result = $null
 
     if (!$url.Contains("http")) {
         Write-Error "Invalid URL: $url"
@@ -70,8 +71,10 @@ function get-name-from-url {
     else {
         $split_by_slash = $url.Split('/')
         $split_by_dot = $split_by_slash[-1].Split('.') # $split_by_slash[-1] contains [repo_name].git
-        return $split_by_dot[0] # $split_by_dot[0] contains [repo_name]
+        $result = $split_by_dot[0] # $split_by_dot[0] contains [repo_name]
     }
+
+    return $result
 }
 
 
@@ -84,10 +87,10 @@ function get-submodules {
     # get raw submodule data, needs to be parsed
     $submodule_data = git config -f $name\.gitmodules --get-regexp url
     # create list for submodule URLs
-    $submodules = New-Object -TypeName "System.Collections.ArrayList"
+    $result = New-Object -TypeName "System.Collections.ArrayList"
     # return empty list if no submodules
     if (!$submodule_data) {
-        return $submodules
+        # result is already empty list
     }
     else {
         # create uri object for base URL
@@ -108,14 +111,15 @@ function get-submodules {
                     # already absolute, use as-is
                 }
                 # append URL to list
-                [void]$submodules.Add($submodule_uri)
+                [void]$result.Add($submodule_uri)
             }
             else {
                 # malformed line, skip
             }
         }
-        return $submodules
     }
+
+    return $result
 }
 
 

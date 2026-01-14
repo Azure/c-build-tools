@@ -41,6 +41,7 @@ function watch-github-pr-checks {
         [int] $timeout = 120,
         [scriptblock] $OnIteration = $null
     )
+    $fn_result = $null
 
     $start_time = Get-Date
     $timeout_time = $start_time.AddMinutes($timeout)
@@ -48,50 +49,62 @@ function watch-github-pr-checks {
     Write-Host "Watching PR checks..." -ForegroundColor Cyan
     Write-Host "Poll interval: ${poll_interval}s, Timeout: ${timeout}m`n"
 
-    while($true) {
+    while($fn_result -eq $null) {
         # Check timeout
         if((Get-Date) -gt $timeout_time) {
             Write-Host "`nTimeout reached after $timeout minutes" -ForegroundColor Red
-            return @{ Success = $false; Message = "Timeout" }
+            $fn_result = @{ Success = $false; Message = "Timeout" }
         }
+        else {
+            # Pre-fetch all data before clearing screen (avoids blank screen during API calls)
+            $displayData = get-github-pr-display-data
+            if(-not $displayData) {
+                Write-Host "Failed to get checks status, retrying..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $poll_interval
+                # continue loop with fn_result still null
+            }
+            else {
+                # Clear screen and immediately show pre-fetched data
+                Clear-Host
+                show-github-pr-status -displayData $displayData -poll_interval $poll_interval
 
-        # Pre-fetch all data before clearing screen (avoids blank screen during API calls)
-        $displayData = get-github-pr-display-data
-        if(-not $displayData) {
-            Write-Host "Failed to get checks status, retrying..." -ForegroundColor Yellow
-            Start-Sleep -Seconds $poll_interval
-            continue
-        }
+                # Run callback if provided
+                if($OnIteration) {
+                    Write-Host ""
+                    & $OnIteration
+                }
+                else {
+                    # no callback
+                }
 
-        # Clear screen and immediately show pre-fetched data
-        Clear-Host
-        show-github-pr-status -displayData $displayData -poll_interval $poll_interval
-
-        # Run callback if provided
-        if($OnIteration) {
-            Write-Host ""
-            & $OnIteration
-        }
-
-        # Check if complete
-        if($displayData.PendingCount -eq 0) {
-            Write-Host ""
-            if($displayData.FailCount -gt 0) {
-                return @{ Success = $false; Message = "One or more checks failed" }
-            } elseif($displayData.CancelCount -gt 0 -and $displayData.PassCount -eq 0) {
-                return @{ Success = $false; Message = "Checks were cancelled" }
-            } else {
-                return @{ Success = $true; Message = "All checks passed" }
+                # Check if complete
+                if($displayData.PendingCount -eq 0) {
+                    Write-Host ""
+                    if($displayData.FailCount -gt 0) {
+                        $fn_result = @{ Success = $false; Message = "One or more checks failed" }
+                    }
+                    elseif($displayData.CancelCount -gt 0 -and $displayData.PassCount -eq 0) {
+                        $fn_result = @{ Success = $false; Message = "Checks were cancelled" }
+                    }
+                    else {
+                        $fn_result = @{ Success = $true; Message = "All checks passed" }
+                    }
+                }
+                else {
+                    Start-Sleep -Seconds $poll_interval
+                }
             }
         }
-
-        Start-Sleep -Seconds $poll_interval
     }
+
+    return $fn_result
 }
 
 
 # Pre-fetch all data needed for display
 function get-github-pr-display-data {
+    $result = $null
+
     # Get PR URL
     $pr_url = $null
     $pr_info = gh pr view --json url 2>&1
@@ -99,34 +112,41 @@ function get-github-pr-display-data {
         $pr_data = $pr_info | ConvertFrom-Json
         $pr_url = $pr_data.url
     }
+    else {
+        # couldn't get PR URL
+    }
 
     # Get PR checks status (include timing and link info)
     $checks_output = gh pr checks --json name,state,bucket,startedAt,completedAt,link 2>&1
     if($LASTEXITCODE -ne 0) {
-        return $null
+        $result = $null
+    }
+    else {
+        $checks = $checks_output | ConvertFrom-Json
+        if(-not $checks) {
+            $result = $null
+        }
+        else {
+            # Count statuses using bucket field
+            $pass_count = ($checks | Where-Object { $_.bucket -eq "pass" }).Count
+            $fail_count = ($checks | Where-Object { $_.bucket -eq "fail" }).Count
+            $pending_count = ($checks | Where-Object { $_.bucket -eq "pending" }).Count
+            $skipping_count = ($checks | Where-Object { $_.bucket -eq "skipping" }).Count
+            $cancel_count = ($checks | Where-Object { $_.bucket -eq "cancel" }).Count
+
+            $result = @{
+                PrUrl = $pr_url
+                Checks = $checks
+                PassCount = $pass_count
+                FailCount = $fail_count
+                PendingCount = $pending_count
+                SkippingCount = $skipping_count
+                CancelCount = $cancel_count
+            }
+        }
     }
 
-    $checks = $checks_output | ConvertFrom-Json
-    if(-not $checks) {
-        return $null
-    }
-
-    # Count statuses using bucket field
-    $pass_count = ($checks | Where-Object { $_.bucket -eq "pass" }).Count
-    $fail_count = ($checks | Where-Object { $_.bucket -eq "fail" }).Count
-    $pending_count = ($checks | Where-Object { $_.bucket -eq "pending" }).Count
-    $skipping_count = ($checks | Where-Object { $_.bucket -eq "skipping" }).Count
-    $cancel_count = ($checks | Where-Object { $_.bucket -eq "cancel" }).Count
-
-    return @{
-        PrUrl = $pr_url
-        Checks = $checks
-        PassCount = $pass_count
-        FailCount = $fail_count
-        PendingCount = $pending_count
-        SkippingCount = $skipping_count
-        CancelCount = $cancel_count
-    }
+    return $result
 }
 
 
@@ -146,93 +166,118 @@ function show-github-pr-status {
     $checks = $displayData.Checks
     if(-not $checks -or $checks.Count -eq 0) {
         Write-Host "No checks found yet, waiting..." -ForegroundColor Yellow
-        return
     }
-
-    # Summary status
-    if($displayData.FailCount -gt 0) {
-        Write-Host "Some checks were not successful" -ForegroundColor Red
-    } elseif($displayData.PendingCount -gt 0) {
-        Write-Host "Some checks are still pending" -ForegroundColor Yellow
-    } else {
-        Write-Host "All checks were successful" -ForegroundColor Green
-    }
-
-    # Stats line
-    Write-Host "$($displayData.CancelCount) cancelled, $($displayData.FailCount) failing, $($displayData.PassCount) successful, $($displayData.SkippingCount) skipped, and $($displayData.PendingCount) pending checks`n" -ForegroundColor Gray
-
-    # Column widths
-    $name_width = 70
-    $elapsed_width = 12
-
-    # Table header
-    $header = "   {0,-$name_width} {1,-$elapsed_width} {2}" -f "NAME", "ELAPSED", "URL"
-    Write-Host $header -ForegroundColor White
-
-    # Display each check
-    foreach($check in $checks) {
-        $check_name = $check.name
-
-        # Truncate long names
-        if($check_name.Length -gt $name_width) {
-            $check_name = $check_name.Substring(0, $name_width - 3) + "..."
+    else {
+        # Summary status
+        if($displayData.FailCount -gt 0) {
+            Write-Host "Some checks were not successful" -ForegroundColor Red
+        }
+        elseif($displayData.PendingCount -gt 0) {
+            Write-Host "Some checks are still pending" -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "All checks were successful" -ForegroundColor Green
         }
 
-        # Calculate elapsed/duration time
-        $elapsed = ""
-        if($check.startedAt) {
-            try {
-                $start = [DateTime]::Parse($check.startedAt).ToUniversalTime()
-                if($check.completedAt) {
-                    $finish = [DateTime]::Parse($check.completedAt).ToUniversalTime()
-                    $duration = $finish - $start
-                } else {
-                    $duration = (Get-Date).ToUniversalTime() - $start
-                }
-                if($duration.TotalSeconds -ge 0) {
-                    if($duration.TotalHours -ge 1) {
-                        $elapsed = "{0}h{1}m" -f [int]$duration.TotalHours, $duration.Minutes
-                    } elseif($duration.TotalMinutes -ge 1) {
-                        $elapsed = "{0}m{1}s" -f [int]$duration.TotalMinutes, $duration.Seconds
-                    } else {
-                        $elapsed = "{0}s" -f [int]$duration.TotalSeconds
+        # Stats line
+        Write-Host "$($displayData.CancelCount) cancelled, $($displayData.FailCount) failing, $($displayData.PassCount) successful, $($displayData.SkippingCount) skipped, and $($displayData.PendingCount) pending checks`n" -ForegroundColor Gray
+
+        # Column widths
+        $name_width = 70
+        $elapsed_width = 12
+
+        # Table header
+        $header = "   {0,-$name_width} {1,-$elapsed_width} {2}" -f "NAME", "ELAPSED", "URL"
+        Write-Host $header -ForegroundColor White
+
+        # Display each check
+        foreach($check in $checks) {
+            $check_name = $check.name
+
+            # Truncate long names
+            if($check_name.Length -gt $name_width) {
+                $check_name = $check_name.Substring(0, $name_width - 3) + "..."
+            }
+            else {
+                # name fits
+            }
+
+            # Calculate elapsed/duration time
+            $elapsed = ""
+            if($check.startedAt) {
+                $startParsed = Get-Date -Date $check.startedAt -ErrorAction SilentlyContinue
+                if($startParsed) {
+                    $start = $startParsed.ToUniversalTime()
+                    $duration = $null
+                    if($check.completedAt) {
+                        $finishParsed = Get-Date -Date $check.completedAt -ErrorAction SilentlyContinue
+                        if($finishParsed) {
+                            $finish = $finishParsed.ToUniversalTime()
+                            $duration = $finish - $start
+                        }
+                        else {
+                            # finish time parse error
+                        }
+                    }
+                    else {
+                        $duration = (Get-Date).ToUniversalTime() - $start
+                    }
+                    if($duration -and $duration.TotalSeconds -ge 0) {
+                        if($duration.TotalHours -ge 1) {
+                            $elapsed = "{0}h{1}m" -f [int]$duration.TotalHours, $duration.Minutes
+                        }
+                        elseif($duration.TotalMinutes -ge 1) {
+                            $elapsed = "{0}m{1}s" -f [int]$duration.TotalMinutes, $duration.Seconds
+                        }
+                        else {
+                            $elapsed = "{0}s" -f [int]$duration.TotalSeconds
+                        }
+                    }
+                    else {
+                        # negative or null duration
                     }
                 }
-            } catch {}
+                else {
+                    # start time parse error
+                }
+            }
+            else {
+                # no start time
+            }
+
+            # Get URL
+            $url = if($check.link) { $check.link } else { "" }
+
+            # Choose symbol and color based on bucket
+            switch($check.bucket) {
+                "pass" {
+                    $symbol = [char]0x2713  # checkmark
+                    $color = "Green"
+                }
+                "fail" {
+                    $symbol = [char]0x2717  # X mark
+                    $color = "Red"
+                }
+                "pending" {
+                    $symbol = "*"
+                    $color = "Yellow"
+                }
+                "skipping" {
+                    $symbol = "-"
+                    $color = "Gray"
+                }
+                "cancel" {
+                    $symbol = "x"
+                    $color = "Gray"
+                }
+                default {
+                    $symbol = "?"
+                    $color = "Gray"
+                }
+            }
+
+            $line = "{0}  {1,-$name_width} {2,-$elapsed_width} {3}" -f $symbol, $check_name, $elapsed, $url
+            Write-Host $line -ForegroundColor $color
         }
-
-        # Get URL
-        $url = if($check.link) { $check.link } else { "" }
-
-        # Choose symbol and color based on bucket
-        switch($check.bucket) {
-            "pass" {
-                $symbol = [char]0x2713  # checkmark
-                $color = "Green"
-            }
-            "fail" {
-                $symbol = [char]0x2717  # X mark
-                $color = "Red"
-            }
-            "pending" {
-                $symbol = "*"
-                $color = "Yellow"
-            }
-            "skipping" {
-                $symbol = "-"
-                $color = "Gray"
-            }
-            "cancel" {
-                $symbol = "x"
-                $color = "Gray"
-            }
-            default {
-                $symbol = "?"
-                $color = "Gray"
-            }
-        }
-
-        $line = "{0}  {1,-$name_width} {2,-$elapsed_width} {3}" -f $symbol, $check_name, $elapsed, $url
-        Write-Host $line -ForegroundColor $color
     }
 }

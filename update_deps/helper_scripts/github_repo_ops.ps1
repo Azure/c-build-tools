@@ -27,7 +27,7 @@ function update-repo-github {
         fail-with-status "PR checks failed for repo ${repo_name}: $($result.Message)"
     }
     else {
-        # checks passed
+        Write-Host "PR checks passed" -ForegroundColor Green
     }
 
     Write-Host "Merging PR"
@@ -36,7 +36,7 @@ function update-repo-github {
         fail-with-status "Failed to merge PR for repo $repo_name"
     }
     else {
-        # merge succeeded
+        Write-Host "PR merged successfully" -ForegroundColor Green
     }
     # Wait for merge to complete
     Start-Sleep -Seconds 10

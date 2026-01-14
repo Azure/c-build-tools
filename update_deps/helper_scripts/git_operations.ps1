@@ -36,13 +36,14 @@ function refresh-submodules {
 }
 
 # update the submodules of the given repo and push changes
-# returns $true if the local repo was update
-# returns $false if no changes were made
+# returns commit output for caller to check
 function update-local-repo {
     param (
         [string] $repo_name,
         [string] $new_branch_name
     )
+    $result = $null
+
     Push-Location $repo_name
     git checkout master
     git pull
@@ -61,7 +62,7 @@ function update-local-repo {
     git checkout -B $new_branch_name
     # add updates and push to remote
     git add .
-    $commit_output = git commit -m "Update dependencies" 2>&1
+    $result = git commit -m "Update dependencies" 2>&1
     $commit_result = $LASTEXITCODE
     # Only push if commit succeeded (there were changes)
     if($commit_result -eq 0) {
@@ -71,23 +72,32 @@ function update-local-repo {
         # nothing to push
     }
     Pop-Location
-    # Return the commit output for caller to check
-    return $commit_output
+
+    return $result
 }
 
 # determine whether given repo is an azure repo or a github repo
+# Exits on failure
 function get-repo-type {
     param (
         [string] $repo_name
     )
+    $result = $null
+
     Push-Location $repo_name
     $repo_url = git config --get remote.origin.url
     Pop-Location
     Write-Host $repo_url -NoNewline
-    if($repo_url.Contains("github")){
-        return "github"
-    }elseif ($repo_url.Contains("azure") -or $repo_url.Contains("visualstudio.com")) {
-        return "azure"
+    if($repo_url.Contains("github")) {
+        $result = "github"
     }
-    return "unknown"
+    elseif ($repo_url.Contains("azure") -or $repo_url.Contains("visualstudio.com")) {
+        $result = "azure"
+    }
+    else {
+        Write-Error "Unknown repo type for URL: $repo_url"
+        exit -1
+    }
+
+    return $result
 }

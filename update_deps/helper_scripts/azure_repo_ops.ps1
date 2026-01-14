@@ -13,6 +13,8 @@ function get-azure-org-project {
     param(
         [string] $repo_name
     )
+    $result = $null
+
     Push-Location $repo_name
     $repo_url = git config --get remote.origin.url
     Pop-Location
@@ -22,30 +24,26 @@ function get-azure-org-project {
     if($repo_url -match "dev\.azure\.com/([^/]+)/([^/]+)/_git") {
         $org = $matches[1]
         $project = $matches[2]
-        return @{
+        $result = @{
             Organization = "https://dev.azure.com/$org"
             Project = $project
         }
     }
-    else {
-        # try visualstudio.com format
-    }
-
     # Parse URL like https://msazure.visualstudio.com/DefaultCollection/One/_git/repo-name
     # or https://msazure.visualstudio.com/One/_git/repo-name
-    if($repo_url -match "([^/]+)\.visualstudio\.com/(?:DefaultCollection/)?([^/]+)/_git") {
+    elseif($repo_url -match "([^/]+)\.visualstudio\.com/(?:DefaultCollection/)?([^/]+)/_git") {
         $org = $matches[1]
         $project = $matches[2]
-        return @{
+        $result = @{
             Organization = "https://dev.azure.com/$org"
             Project = $project
         }
     }
     else {
-        # neither format matched
+        fail-with-status "Failed to parse Azure DevOps organization and project from remote URL: $repo_url"
     }
 
-    fail-with-status "Failed to parse Azure DevOps organization and project from remote URL: $repo_url"
+    return $result
 }
 
 
@@ -55,6 +53,9 @@ function create-pr-azure {
         [string] $repo_name,
         [string] $new_branch_name
     )
+    $result = $null
+
+    Write-Host "`nCreating PR"
 
     $azure_info = get-azure-org-project $repo_name
     $org = $azure_info.Organization
@@ -74,11 +75,11 @@ function create-pr-azure {
         fail-with-status "Failed to create PR for repo $repo_name"
     }
     else {
-        # PR created successfully
+        Write-Host "PR created successfully" -ForegroundColor Green
+        $result = $pr_output | ConvertFrom-Json
     }
 
-    $pr_info = $pr_output | ConvertFrom-Json
-    return $pr_info
+    return $result
 }
 
 
@@ -89,24 +90,25 @@ function link-work-item-to-pr-azure {
         [string] $org,
         [string] $project
     )
+
+    Write-Host "Linking work item to PR (PR ID: $pr_id)"
+
     if(!$azure_work_item){
         fail-with-status "Updating Azure repos requires providing a work item id. Provide work item id as: -azure_work_item [id]"
     }
     else {
-        # work item provided
-    }
+        $output = az repos pr work-item add `
+            --id $pr_id `
+            --work-items $azure_work_item `
+            --organization $org `
+            --output json
 
-    $output = az repos pr work-item add `
-        --id $pr_id `
-        --work-items $azure_work_item `
-        --organization $org `
-        --output json
-
-    if($LASTEXITCODE -ne 0) {
-        fail-with-status "Failed to link work item to PR. Work item: $azure_work_item, PR ID: $pr_id"
-    }
-    else {
-        # work item linked successfully
+        if($LASTEXITCODE -ne 0) {
+            fail-with-status "Failed to link work item to PR. Work item: $azure_work_item, PR ID: $pr_id"
+        }
+        else {
+            Write-Host "Work item linked successfully" -ForegroundColor Green
+        }
     }
 }
 
@@ -118,6 +120,8 @@ function approve-pr-azure {
         [string] $org
     )
 
+    Write-Host "Approving PR"
+
     $output = az repos pr set-vote `
         --id $pr_id `
         --vote approve `
@@ -128,7 +132,7 @@ function approve-pr-azure {
         fail-with-status "Failed to approve PR ID: $pr_id"
     }
     else {
-        # PR approved successfully
+        Write-Host "PR approved successfully" -ForegroundColor Green
     }
 }
 
@@ -139,6 +143,8 @@ function set-autocomplete-azure {
         [int] $pr_id,
         [string] $org
     )
+
+    Write-Host "Enabling PR to autocomplete"
 
     $output = az repos pr update `
         --id $pr_id `
@@ -152,7 +158,7 @@ function set-autocomplete-azure {
         fail-with-status "Failed to set autocomplete for PR ID: $pr_id"
     }
     else {
-        # autocomplete set successfully
+        Write-Host "Autocomplete enabled successfully" -ForegroundColor Green
     }
 }
 
@@ -164,7 +170,9 @@ function wait-until-complete-azure {
         [string] $org,
         [string] $repo_name
     )
+    $done = $false
 
+    Write-Host "Waiting for build to complete"
     Write-Host "`nWatching PR policies..."
     $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120 -ShowBuildDetails -OnIteration { show-propagation-status }
 
@@ -175,7 +183,7 @@ function wait-until-complete-azure {
             $pr_info = $pr_output | ConvertFrom-Json
             if($pr_info.status -eq "completed") {
                 Write-Host "PR completed successfully" -ForegroundColor Green
-                return
+                $done = $true
             }
             else {
                 # PR not completed, fall through to fail
@@ -184,44 +192,50 @@ function wait-until-complete-azure {
         else {
             # couldn't get PR status, fall through to fail
         }
-        fail-with-status "PR $pr_id failed to complete. Check policy status above."
+        if(!$done) {
+            fail-with-status "PR $pr_id failed to complete. Check policy status above."
+        }
+        else {
+            # already done
+        }
     }
     else {
-        # success, continue to verify
-    }
-
-    # Verify PR is completed
-    $pr_output = az repos pr show --id $pr_id --organization $org --output json
-    if($LASTEXITCODE -ne 0) {
-        fail-with-status "Failed to get PR status for ID: $pr_id"
-    }
-    else {
-        # got PR status
-    }
-
-    $pr_info = $pr_output | ConvertFrom-Json
-    if($pr_info.status -ne "completed") {
-        # PR policies passed but PR not yet merged - wait a bit for autocomplete
-        Write-Host "Waiting for PR to auto-complete..."
-        $max_wait = 60
-        $waited = 0
-        while($waited -lt $max_wait) {
-            Start-Sleep -Seconds 10
-            $waited += 10
-            $pr_output = az repos pr show --id $pr_id --organization $org --output json
+        # Verify PR is completed
+        $pr_output = az repos pr show --id $pr_id --organization $org --output json
+        if($LASTEXITCODE -ne 0) {
+            fail-with-status "Failed to get PR status for ID: $pr_id"
+        }
+        else {
             $pr_info = $pr_output | ConvertFrom-Json
-            if($pr_info.status -eq "completed") {
-                Write-Host "PR completed successfully" -ForegroundColor Green
-                return
+            if($pr_info.status -ne "completed") {
+                # PR policies passed but PR not yet merged - wait a bit for autocomplete
+                Write-Host "Waiting for PR to auto-complete..."
+                $max_wait = 60
+                $waited = 0
+                while($waited -lt $max_wait -and !$done) {
+                    Start-Sleep -Seconds 10
+                    $waited += 10
+                    $pr_output = az repos pr show --id $pr_id --organization $org --output json
+                    $pr_info = $pr_output | ConvertFrom-Json
+                    if($pr_info.status -eq "completed") {
+                        Write-Host "PR completed successfully" -ForegroundColor Green
+                        $done = $true
+                    }
+                    else {
+                        # keep waiting
+                    }
+                }
+                if(!$done) {
+                    Write-Host "Warning: PR policies passed but PR status is: $($pr_info.status)" -ForegroundColor Yellow
+                }
+                else {
+                    # already logged success
+                }
             }
             else {
-                # keep waiting
+                Write-Host "PR completed successfully" -ForegroundColor Green
             }
         }
-        Write-Host "Warning: PR policies passed but PR status is: $($pr_info.status)" -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "PR completed successfully" -ForegroundColor Green
     }
 }
 
@@ -237,19 +251,14 @@ function update-repo-azure {
     $org = $azure_info.Organization
     $project = $azure_info.Project
 
-    Write-Host "`nCreating PR"
     $pr_info = create-pr-azure $repo_name $new_branch_name
     $pr_id = $pr_info.pullRequestId
 
-    Write-Host "Linking work item to PR (PR ID: $pr_id)"
     link-work-item-to-pr-azure $pr_id $org $project
 
-    Write-Host "Approving PR"
     approve-pr-azure $pr_id $org
 
-    Write-Host "Enabling PR to autocomplete"
     set-autocomplete-azure $pr_id $org
 
-    Write-Host "Waiting for build to complete"
     wait-until-complete-azure $pr_id $org $repo_name
 }

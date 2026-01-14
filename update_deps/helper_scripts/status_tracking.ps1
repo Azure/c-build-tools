@@ -68,13 +68,15 @@ function show-propagation-status {
     param(
         [switch] $Final
     )
+    $result = $null
 
     if($Final) {
         Write-Host ""
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "     PROPAGATION STATUS SUMMARY" -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
-    } else {
+    }
+    else {
         Write-Host ""
         Write-Host "--- Propagation Status ---" -ForegroundColor Cyan
     }
@@ -148,11 +150,19 @@ function show-propagation-status {
         Write-Host ""
 
         # Return success (true if no failures)
-        return ($failed -eq 0)
+        if($failed -eq 0) {
+            $result = $true
+        }
+        else {
+            $result = $false
+        }
     }
     else {
-        # not final, just display
+        # not final
+        $result = 0
     }
 
     Write-Host ""
+
+    return $result
 }
