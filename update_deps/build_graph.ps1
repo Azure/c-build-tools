@@ -50,6 +50,9 @@ param(
     [Parameter(Mandatory=$true)][string[]] $root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
 
+# Source cache helper
+. "$PSScriptRoot\repo_order_cache.ps1"
+
 
 # parse repo URL to extract repo name
 # Expected URL format: */<repo_name>[.*]
@@ -108,6 +111,8 @@ function get-submodules {
 # dictionary to store mapping from repo name to level in dependency graph
 # root repo is level 0 and leaf repo is maximum level
 $repo_levels = New-Object -TypeName "System.Collections.Generic.Dictionary[string, int]"
+# dictionary to store mapping from repo name to URL
+$repo_urls = New-Object -TypeName "System.Collections.Generic.Dictionary[string, string]"
 # queue to perform breadth-first search
 $queue = New-Object -TypeName "System.Collections.Queue"
 # get list of repos to ignore  while building graph from ignores.json
@@ -129,6 +134,10 @@ function Build-Graph {
     # set repo level to 0 if not seen before
     if(-not $repo_levels.ContainsKey($repo_name)) {
         $repo_levels[$repo_name] = 0
+    }
+    # store repo URL
+    if(-not $repo_urls.ContainsKey($repo_name)) {
+        $repo_urls[$repo_name] = $repo_url
     }
     # clone repo if not already present
     if(-not (Test-Path -Path $repo_name)) {
@@ -181,5 +190,6 @@ $repo_levels_list.Sort({$args[1].Value.CompareTo($args[0].Value)})
 $repo_order = New-Object -TypeName "System.Collections.ArrayList"
 # collect repo names in repo_order
 $repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
-Set-Content -Path .\order.json -Value ($repo_order | ConvertTo-Json)
+# Cache the results
+Set-CachedRepoOrder -root_list $root_list -repo_order $repo_order -repo_urls $repo_urls
 Exit 0

@@ -426,7 +426,8 @@ function Watch-AzurePRPolicies {
         [string] $org,
         [int] $poll_interval = 30,
         [int] $timeout = 120,
-        [switch] $ShowBuildDetails
+        [switch] $ShowBuildDetails,
+        [scriptblock] $OnIteration = $null  # Optional callback to run each iteration
     )
 
     $start_time = Get-Date
@@ -456,6 +457,11 @@ function Watch-AzurePRPolicies {
 
         # Display status (clear screen and immediately show pre-fetched data)
         Show-PolicyStatus -displayData $displayData -ClearScreen -pr_id $pr_id -poll_interval $poll_interval -ShowBuildDetails:$ShowBuildDetails
+
+        # Run callback if provided (e.g., show propagation status)
+        if($OnIteration) {
+            & $OnIteration
+        }
 
         # Check if complete
         $result = Test-PoliciesComplete -policies $displayData.Policies

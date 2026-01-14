@@ -44,12 +44,18 @@ PS> .\propagate_updates.ps1 -azure_work_item 12345 -root_list root1, root2, ...
 .EXAMPLE
 
 PS> .\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345 -root_list root1, root2, ...
+
+.EXAMPLE
+
+PS> .\propagate_updates.ps1 -azure_work_item 12345 -useCachedRepoOrder -root_list root1, root2, ...
+# Uses cached repo order if root_list matches the cached root_list
 #>
 
 
 param(
     [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
     [Parameter(Mandatory=$true)][Int32]$azure_work_item, # Work item id to link to Azure PRs
+    [switch]$useCachedRepoOrder, # use cached repo order if root_list matches
     [Parameter(Mandatory=$true)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
 
@@ -57,31 +63,147 @@ param(
 # Source helper scripts
 . "$PSScriptRoot\install_az_cli.ps1"
 . "$PSScriptRoot\install_gh_cli.ps1"
+. "$PSScriptRoot\repo_order_cache.ps1"
 . "$PSScriptRoot\watch_azure_pr.ps1" -pr_id 0 -org "dummy" 2>$null
+. "$PSScriptRoot\watch_github_pr.ps1" 2>$null
 
 
-# sleep for $seconds seconds and play spinner animation
-function spin {
+# Global status tracking
+$global:repo_status = @{}
+$global:repo_order_list = @()
+$global:current_repo = ""  # Track current repo for error handling in nested functions
+
+# Status constants
+$script:STATUS_PENDING = "pending"
+$script:STATUS_IN_PROGRESS = "in-progress"
+$script:STATUS_UPDATED = "updated"
+$script:STATUS_SKIPPED = "skipped"
+$script:STATUS_FAILED = "failed"
+
+# Initialize status for all repos
+function Initialize-RepoStatus {
     param(
-        [int] $seconds
+        [string[]] $repos
     )
-    $steps = @('|','/','-','\')
-    $interval_ms = 50
-    $iterations = [int](($seconds * 1000) / $interval_ms)
-
-    # Write initial spinner character
-    Write-Host $steps[0] -NoNewline -ForegroundColor Yellow
-    Start-Sleep -Milliseconds $interval_ms
-
-    for($i = 1; $i -lt $iterations; $i++){
-        # Backspace and write next spinner character
-        Write-Host "`b$($steps[$i % $steps.Length])" -NoNewline -ForegroundColor Yellow
-        Start-Sleep -Milliseconds $interval_ms
+    $global:repo_order_list = $repos
+    $global:repo_status = @{}
+    foreach($repo in $repos) {
+        $global:repo_status[$repo] = @{
+            Status = $script:STATUS_PENDING
+            Message = ""
+        }
     }
-    # Erase spinner: backspace, space to overwrite, backspace to position cursor
-    Write-Host "`b `b" -NoNewLine
 }
 
+# Update status for a repo
+function Set-RepoStatus {
+    param(
+        [string] $repo_name,
+        [string] $status,
+        [string] $message = ""
+    )
+    if($global:repo_status.ContainsKey($repo_name)) {
+        $global:repo_status[$repo_name].Status = $status
+        $global:repo_status[$repo_name].Message = $message
+    }
+}
+
+# Fail with status - marks current repo as failed, shows final status, and exits
+function Fail-WithStatus {
+    param(
+        [string] $message
+    )
+    if($global:current_repo -and $global:repo_status.ContainsKey($global:current_repo)) {
+        Set-RepoStatus -repo_name $global:current_repo -status $script:STATUS_FAILED -message $message
+    }
+    Show-PropagationStatus -Final
+    Write-Error $message
+    exit -1
+}
+
+# Display propagation status
+function Show-PropagationStatus {
+    param(
+        [switch] $Final
+    )
+
+    if($Final) {
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "     PROPAGATION STATUS SUMMARY" -ForegroundColor Cyan
+        Write-Host "========================================" -ForegroundColor Cyan
+    } else {
+        Write-Host ""
+        Write-Host "--- Propagation Status ---" -ForegroundColor Cyan
+    }
+
+    $index = 1
+    foreach($repo in $global:repo_order_list) {
+        $info = $global:repo_status[$repo]
+        $status = $info.Status
+        $message = $info.Message
+
+        # Choose symbol and color based on status
+        switch($status) {
+            $script:STATUS_UPDATED {
+                $symbol = [char]0x2713  # checkmark
+                $color = "Green"
+                $status_text = "UPDATED"
+            }
+            $script:STATUS_SKIPPED {
+                $symbol = "-"
+                $color = "Gray"
+                $status_text = "SKIPPED"
+            }
+            $script:STATUS_IN_PROGRESS {
+                $symbol = "*"
+                $color = "Yellow"
+                $status_text = "IN PROGRESS"
+            }
+            $script:STATUS_PENDING {
+                $symbol = "."
+                $color = "DarkGray"
+                $status_text = "PENDING"
+            }
+            $script:STATUS_FAILED {
+                $symbol = [char]0x2717  # X mark
+                $color = "Red"
+                $status_text = "FAILED"
+            }
+            default {
+                $symbol = "?"
+                $color = "Gray"
+                $status_text = $status
+            }
+        }
+
+        $line = "{0}  {1}. {2} [{3}]" -f $symbol, $index, $repo, $status_text
+        if($message) {
+            $line += " - $message"
+        }
+        Write-Host $line -ForegroundColor $color
+        $index++
+    }
+
+    if($Final) {
+        Write-Host "========================================" -ForegroundColor Cyan
+
+        # Summary counts
+        $updated = ($global:repo_status.Values | Where-Object { $_.Status -eq $script:STATUS_UPDATED }).Count
+        $skipped = ($global:repo_status.Values | Where-Object { $_.Status -eq $script:STATUS_SKIPPED }).Count
+        $failed = ($global:repo_status.Values | Where-Object { $_.Status -eq $script:STATUS_FAILED }).Count
+        $pending = ($global:repo_status.Values | Where-Object { $_.Status -eq $script:STATUS_PENDING }).Count
+
+        Write-Host ""
+        Write-Host "Summary: " -NoNewline
+        Write-Host "$updated updated" -ForegroundColor Green -NoNewline
+        Write-Host ", $skipped skipped" -ForegroundColor Gray -NoNewline
+        Write-Host ", $failed failed" -ForegroundColor Red -NoNewline
+        Write-Host ", $pending pending" -ForegroundColor DarkGray
+    }
+
+    Write-Host ""
+}
 
 # create a global variable $ignore_pattern
 # $ignore pattern is used in the shell command for 'git submodule foreach' to ignore repos
@@ -134,9 +256,15 @@ function update-local-repo {
     git checkout -B $new_branch_name
     # add updates and push to remote
     git add .
-    git commit -m "Update dependencies"
-    git push -f origin $new_branch_name
+    $commit_output = git commit -m "Update dependencies" 2>&1
+    $commit_result = $LASTEXITCODE
+    # Only push if commit succeeded (there were changes)
+    if($commit_result -eq 0) {
+        git push -f origin $new_branch_name
+    }
     Pop-Location
+    # Return the commit output for caller to check
+    return $commit_output
 }
 
 # update dependencies for Github repo
@@ -152,13 +280,17 @@ function update-repo-github {
     gh pr comment --body "/AzurePipelines run"
     Write-Host "Waiting for checks to start"
     Start-Sleep -Seconds 120
+
     Write-Host "Waiting for build to complete"
-    gh pr checks --watch
+    $result = Watch-GitHubPRChecks -poll_interval 30 -timeout 120 -OnIteration { Show-PropagationStatus }
+    if(-not $result.Success) {
+        Fail-WithStatus "PR checks failed for repo ${repo_name}: $($result.Message)"
+    }
+
     Write-Host "Merging PR"
     gh pr merge --squash --delete-branch
     if($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to merge PR for repo $repo_name"
-        exit -1
+        Fail-WithStatus "Failed to merge PR for repo $repo_name"
     }
     # Wait for merge to complete
     Start-Sleep -Seconds 10
@@ -197,8 +329,7 @@ function get-azure-org-project {
         }
     }
 
-    Write-Error "Failed to parse Azure DevOps organization and project from remote URL: $repo_url"
-    exit -1
+    Fail-WithStatus "Failed to parse Azure DevOps organization and project from remote URL: $repo_url"
 }
 
 
@@ -224,8 +355,7 @@ function create-pr-azure {
         --output json
 
     if($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to create PR for repo $repo_name"
-        exit -1
+        Fail-WithStatus "Failed to create PR for repo $repo_name"
     }
 
     $pr_info = $pr_output | ConvertFrom-Json
@@ -241,8 +371,7 @@ function link-work-item-to-pr-azure {
         [string] $project
     )
     if(!$azure_work_item){
-        Write-Error "Updating Azure repos requires providing a work item id. Provide work item id as: -azure_work_item [id]"
-        exit -1
+        Fail-WithStatus "Updating Azure repos requires providing a work item id. Provide work item id as: -azure_work_item [id]"
     }
 
     $output = az repos pr work-item add `
@@ -252,8 +381,7 @@ function link-work-item-to-pr-azure {
         --output json
 
     if($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to link work item to PR. Work item: $azure_work_item, PR ID: $pr_id"
-        exit -1
+        Fail-WithStatus "Failed to link work item to PR. Work item: $azure_work_item, PR ID: $pr_id"
     }
 }
 
@@ -272,8 +400,7 @@ function approve-pr-azure {
         --output json
 
     if($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to approve PR ID: $pr_id"
-        exit -1
+        Fail-WithStatus "Failed to approve PR ID: $pr_id"
     }
 }
 
@@ -294,8 +421,7 @@ function set-autocomplete-azure {
         --output json
 
     if($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to set autocomplete for PR ID: $pr_id"
-        exit -1
+        Fail-WithStatus "Failed to set autocomplete for PR ID: $pr_id"
     }
 }
 
@@ -304,11 +430,12 @@ function set-autocomplete-azure {
 function wait-until-complete-azure {
     param(
         [int] $pr_id,
-        [string] $org
+        [string] $org,
+        [string] $repo_name
     )
 
     Write-Host "`nWatching PR policies..."
-    $success = Watch-AzurePRPolicies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120 -ShowBuildDetails
+    $success = Watch-AzurePRPolicies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120 -ShowBuildDetails -OnIteration { Show-PropagationStatus }
 
     if(!$success) {
         # Check if PR completed despite policy failures (e.g., manually merged)
@@ -320,15 +447,13 @@ function wait-until-complete-azure {
                 return
             }
         }
-        Write-Error "PR $pr_id failed to complete. Check policy status above."
-        exit -1
+        Fail-WithStatus "PR $pr_id failed to complete. Check policy status above."
     }
 
     # Verify PR is completed
     $pr_output = az repos pr show --id $pr_id --organization $org --output json
     if($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to get PR status for ID: $pr_id"
-        exit -1
+        Fail-WithStatus "Failed to get PR status for ID: $pr_id"
     }
 
     $pr_info = $pr_output | ConvertFrom-Json
@@ -379,7 +504,7 @@ function update-repo-azure {
     set-autocomplete-azure $pr_id $org
 
     Write-Host "Waiting for build to complete"
-    wait-until-complete-azure $pr_id $org
+    wait-until-complete-azure $pr_id $org $repo_name
 }
 
 
@@ -408,6 +533,8 @@ function update-repo {
         [string] $new_branch_name
     )
     Write-Host "`n`nUpdating repo $repo_name"
+    Set-RepoStatus -repo_name $repo_name -status $script:STATUS_IN_PROGRESS
+    $global:current_repo = $repo_name
 
     # Ensure we're in the work directory
     Set-Location $global:work_dir
@@ -415,15 +542,17 @@ function update-repo {
     [string]$git_output = (update-local-repo $repo_name $new_branch_name)
     if($git_output.Contains("nothing to commit")) {
         Write-Host "Nothing to commit, skipping repo $repo_name"
+        Set-RepoStatus -repo_name $repo_name -status $script:STATUS_SKIPPED -message "No changes"
     } else {
         $repo_type = get-repo-type $repo_name
         if($repo_type -eq "github") {
             update-repo-github $repo_name $new_branch_name
+            Set-RepoStatus -repo_name $repo_name -status $script:STATUS_UPDATED
         } elseif ($repo_type -eq "azure") {
-            update-repo-azure $repo_name  $new_branch_name
+            update-repo-azure $repo_name $new_branch_name
+            Set-RepoStatus -repo_name $repo_name -status $script:STATUS_UPDATED
         } else {
-            Write-Error "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
-            exit -1
+            Fail-WithStatus "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
         }
     }
     Write-Host "Done updating repo $repo_name"
@@ -447,20 +576,58 @@ function propagate-updates {
     Set-Location $global:work_dir
     Write-Host "Working directory: $global:work_dir"
 
-    # build dependency graph
-    Write-Host "Building dependency graph..."
+    # build dependency graph (or use cache)
+    $cached_data = $null
+    $repo_order = $null
+    $repo_urls = $null
 
-    .$PSScriptRoot\build_graph.ps1 -root_list $root_list
-    if($LASTEXITCODE -ne 0)
-    {
-        Pop-Location
-        Write-Error("Could not build dependency graph for $root_list.")
-        exit -1
+    if ($useCachedRepoOrder) {
+        $cached_data = Get-CachedRepoOrder -root_list $root_list
     }
 
-    Write-Host "Done building dependency graph"
+    if ($cached_data) {
+        $repo_order = $cached_data.repo_order
+        $repo_urls = $cached_data.repo_urls
+        Write-Host "Using cached repo order"
+        Set-Content -Path .\order.json -Value ($repo_order | ConvertTo-Json)
+        # Clone repos that aren't already present using cached URLs
+        Write-Host "Cloning repositories..."
+        foreach ($repo_name in $repo_order) {
+            if (-not (Test-Path -Path $repo_name)) {
+                $repo_url = $repo_urls.$repo_name
+                if ($repo_url) {
+                    Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
+                    git clone $repo_url
+                } else {
+                    Write-Host "Warning: No URL cached for $repo_name, skipping" -ForegroundColor Yellow
+                }
+            }
+        }
+        Write-Host "Done cloning repositories"
+    } else {
+        Write-Host "Building dependency graph..."
+        .$PSScriptRoot\build_graph.ps1 -root_list $root_list
+        if($LASTEXITCODE -ne 0)
+        {
+            Pop-Location
+            Write-Error("Could not build dependency graph for $root_list.")
+            exit -1
+        }
+        Write-Host "Done building dependency graph"
+        # build_graph.ps1 sets the cache, so read from it
+        $cached_data = Get-CachedRepoOrder -root_list $root_list
+        if (-not $cached_data) {
+            Pop-Location
+            Write-Error("Failed to get cached repo order after building graph.")
+            exit -1
+        }
+        $repo_order = $cached_data.repo_order
+        $repo_urls = $cached_data.repo_urls
+    }
 
-    $repo_order = (Get-Content -Path order.json) | ConvertFrom-Json
+    # Initialize status tracking
+    Initialize-RepoStatus -repos $repo_order
+
     Write-Host "Updating repositories in the following order: "
     for($i = 0; $i -lt $repo_order.Length; $i++){
         Write-Host "$($i+1). $($repo_order[$i])"
@@ -469,6 +636,9 @@ function propagate-updates {
     foreach ($repo in $repo_order) {
         update-repo $repo $new_branch_name
     }
+
+    # Show final status
+    Show-PropagationStatus -Final
     Write-Host "Done updating all repos!"
 
     # Restore original directory
