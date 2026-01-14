@@ -1,4 +1,4 @@
-# This is the job template for building the binaries for one configuration. It does:
+﻿# This is the job template for building the binaries for one configuration. It does:
 # - setup the machine
 # - build binaries for desired configuration
 # - upload binaries artifacts for the desired configuration
@@ -26,7 +26,7 @@ parameters:
     type: boolean
     default: false
   - name: repo_root_override
-    default: ""
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
   - name: binary_name_suffix
     default: ".exe"
   - name: appverifier_skip_tests_list
@@ -89,15 +89,15 @@ jobs:
         repo_root: ${{ parameters.repo_root_override }}
 
   - task: CMake@1
-    displayName: 'CMake .. ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
+    displayName: '🏗️ CMake $(Build.SourcesDirectory) ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
     inputs:
-      workingDirectory: 'cmake'
-      cmakeArgs: '.. ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
+      workingDirectory: '$(Build.BinariesDirectory)\c'
+      cmakeArgs: '$(Build.SourcesDirectory) ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
 
   - task: VSBuild@1
-    displayName: 'Build solution cmake\*.sln'
+    displayName: '🏗️ Build solution $(Build.BinariesDirectory)\c\*.sln'
     inputs:
-      solution: 'cmake\*.sln'
+      solution: '$(Build.BinariesDirectory)\c\*.sln'
       msbuildArgs: '/t:restore /t:build'
       configuration: ${{ parameters.build_configuration }}
       maximumCpuCount: true
@@ -113,22 +113,46 @@ jobs:
   # [continues, with none of our code on any stack]
   - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
     - task: VSTest@2
-      displayName: '[blockstorage] VsTest - testAssemblies (no int tests)'
+      displayName: '🧪 VsTest - testAssemblies (no int tests)'
       inputs:
         testAssemblyVer2: |
-          $(Build.BinariesDirectory)\${{ parameters.build_configuration }}\**\*_ut_*.dll
+          $(Build.BinariesDirectory)\c\${{ parameters.build_configuration }}\**\*_ut_*.dll
         runInParallel: true
         runTestsInIsolation: true
-        codeCoverageEnabled: false
-        otherConsoleOptions: '-- RunConfiguration.ExecutionThreadApartmentState=MTA'
+        codeCoverageEnabled: true # Requires runSettingsFile below
+        platform: 'x64'
+        configuration: '${{ parameters.build_configuration }}'
+        diagnosticsEnabled : true
+        otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
+        runSettingsFile: '${{ parameters.repo_root_override }}/pipeline_templates/scripts/tests_native.runsettings'
+        resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
+        testRunTitle: 'VsTest Native ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
+
+    # Publish code coverage results from vstest
+    - task: PublishCodeCoverageResults@2
+      displayName: '📰 Publish Code Coverage'
+      inputs:
+        summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
+        pathToSources: '$(Build.SourcesDirectory)'
 
   - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
     - task: CmdLine@2
-      displayName: 'Run ctest'
+      displayName: '🧪 Run ctest'
       inputs:
         # --interactive-debug-mode 1 is needed to get Watson dumps when running tests under ctest: https://gitlab.kitware.com/cmake/cmake/-/merge_requests/9855/diffs?commit_id=0a4ee422c1a5a5f6e9fd8893c5029da446ae8a91#diff-content-073a6620d87def59fe2a133050c1d68204635312
-        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1'
-        workingDirectory: 'cmake'
+        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+        workingDirectory: $(Build.BinariesDirectory)\c
+
+  - task: PublishTestResults@2
+    displayName: '📊 Publish ctest results'
+    inputs:
+      testResultsFormat: 'JUnit'
+      searchFolder: $(Build.BinariesDirectory)\c
+      testResultsFiles: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+      testRunTitle: 'ctest${{ parameters.BUILD_SUFFIX }}'
+      buildConfiguration: ${{ parameters.build_configuration }}
+      failTaskOnMissingResultsFile: true
+    condition: always()
 
   - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier)) }}:
     - template : run_ctests_with_appverifier.yml
@@ -136,23 +160,34 @@ jobs:
         ${{ if ne(parameters.repo_root_override, '') }}:
           repo_root: ${{ parameters.repo_root_override }}
         binary_name_suffix: ${{ parameters.binary_name_suffix }}
-        ctest_tests_bin_directory: 'cmake'
+        ctest_tests_bin_directory: $(Build.BinariesDirectory)\c
         ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
           ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
         test_steps:
         - task: CmdLine@2
-          displayName: 'Run ctest'
+          displayName: '🧪 Run ctest'
           inputs:
             # --interactive-debug-mode 1 is needed to get Watson dumps when running tests under ctest: https://gitlab.kitware.com/cmake/cmake/-/merge_requests/9855/diffs?commit_id=0a4ee422c1a5a5f6e9fd8893c5029da446ae8a91#diff-content-073a6620d87def59fe2a133050c1d68204635312
             ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 -E ${{ parameters.appverifier_skip_tests_list }}'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 -E ${{ parameters.appverifier_skip_tests_list }} --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
             ${{ else }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1'
-            workingDirectory: 'cmake'
+              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+            workingDirectory: $(Build.BinariesDirectory)\c
+
+        - task: PublishTestResults@2
+          displayName: '📊 Publish ctest results'
+          inputs:
+            testResultsFormat: 'JUnit'
+            searchFolder: '$(Build.SourcesDirectory)/build'
+            testResultsFiles: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+            testRunTitle: 'CTest${{ parameters.BUILD_SUFFIX }} App Verifier'
+            buildConfiguration: ${{ parameters.build_configuration }}
+            failTaskOnMissingResultsFile: true
+          condition: always()
 
   - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
     - task: CmdLine@2
-      displayName: 'Run ${{ parameters.run_test_suite_without_ctest }}'
+      displayName: '🧪 Run ${{ parameters.run_test_suite_without_ctest }}'
       inputs:
         script: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}\${{ parameters.run_test_suite_without_ctest }}.exe'
         workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}'
