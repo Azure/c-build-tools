@@ -32,6 +32,9 @@ parameters:
   - name: appverifier_skip_tests_list
     type: string
     default: ""
+  - name: use_cppunittest
+    type: boolean
+    default: true
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -111,7 +114,7 @@ jobs:
   #A total of 257 test files matched the specified pattern.
   ##[error]The active test run was aborted. Reason: Test host process crashed : AddressSanitizer: CHECK failed: asan_thread.cpp:273 "((tid())) == ((0))" (0x1, 0x0) (tid=11016)
   # [continues, with none of our code on any stack]
-  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
+  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, ''), parameters.use_cppunittest) }}:
     - task: VSTest@2
       displayName: '🧪 VsTest - testAssemblies (no int tests)'
       inputs:

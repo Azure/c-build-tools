@@ -48,6 +48,10 @@ parameters:
   - name: appverifier_skip_tests_list
     type: string
     default: ""
+  # Set to false to skip VsTest/cppunittest for repos that don't have *_ut_*.dll test assemblies
+  - name: use_cppunittest
+    type: boolean
+    default: true
 
 jobs:
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
@@ -72,3 +76,4 @@ jobs:
               repo_root_override: ${{ parameters.repo_root_override }}
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
+              use_cppunittest: ${{ parameters.use_cppunittest }}
