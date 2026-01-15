@@ -32,6 +32,9 @@ parameters:
   - name: appverifier_skip_tests_list
     type: string
     default: ""
+  - name: failOnMinTestsNotRun
+    type: boolean
+    default: true
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -121,7 +124,7 @@ jobs:
           $(Build.BinariesDirectory)\${{ parameters.build_configuration }}\**\*_ut_*.dll
         runInParallel: true
         runTestsInIsolation: true
-        failOnMinTestsNotRun: true
+        failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
         codeCoverageEnabled: true # Requires runSettingsFile and collect option below
         platform: 'x64'
         configuration: '${{ parameters.build_configuration }}'
