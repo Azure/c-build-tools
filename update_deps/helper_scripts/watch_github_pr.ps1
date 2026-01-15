@@ -33,72 +33,8 @@ param(
     [int]$timeout = 120
 )
 
-
-# Watch GitHub PR checks until complete or timeout
-function watch-github-pr-checks {
-    param(
-        [int] $poll_interval = 30,
-        [int] $timeout = 120,
-        [scriptblock] $OnIteration = $null
-    )
-    $fn_result = $null
-
-    $start_time = Get-Date
-    $timeout_time = $start_time.AddMinutes($timeout)
-
-    Write-Host "Watching PR checks..." -ForegroundColor Cyan
-    Write-Host "Poll interval: ${poll_interval}s, Timeout: ${timeout}m`n"
-
-    while($fn_result -eq $null) {
-        # Check timeout
-        if((Get-Date) -gt $timeout_time) {
-            Write-Host "`nTimeout reached after $timeout minutes" -ForegroundColor Red
-            $fn_result = @{ Success = $false; Message = "Timeout" }
-        }
-        else {
-            # Pre-fetch all data before clearing screen (avoids blank screen during API calls)
-            $displayData = get-github-pr-display-data
-            if(-not $displayData) {
-                Write-Host "Failed to get checks status, retrying..." -ForegroundColor Yellow
-                Start-Sleep -Seconds $poll_interval
-                # continue loop with fn_result still null
-            }
-            else {
-                # Clear screen and immediately show pre-fetched data
-                Clear-Host
-                show-github-pr-status -displayData $displayData -poll_interval $poll_interval
-
-                # Run callback if provided
-                if($OnIteration) {
-                    Write-Host ""
-                    & $OnIteration
-                }
-                else {
-                    # no callback
-                }
-
-                # Check if complete
-                if($displayData.PendingCount -eq 0) {
-                    Write-Host ""
-                    if($displayData.FailCount -gt 0) {
-                        $fn_result = @{ Success = $false; Message = "One or more checks failed" }
-                    }
-                    elseif($displayData.CancelCount -gt 0 -and $displayData.PassCount -eq 0) {
-                        $fn_result = @{ Success = $false; Message = "Checks were cancelled" }
-                    }
-                    else {
-                        $fn_result = @{ Success = $true; Message = "All checks passed" }
-                    }
-                }
-                else {
-                    Start-Sleep -Seconds $poll_interval
-                }
-            }
-        }
-    }
-
-    return $fn_result
-}
+# Import common utilities
+. "$PSScriptRoot\pr_watch_utils.ps1"
 
 
 # Pre-fetch all data needed for display
@@ -127,21 +63,27 @@ function get-github-pr-display-data {
             $result = $null
         }
         else {
-            # Count statuses using bucket field
-            $pass_count = ($checks | Where-Object { $_.bucket -eq "pass" }).Count
-            $fail_count = ($checks | Where-Object { $_.bucket -eq "fail" }).Count
-            $pending_count = ($checks | Where-Object { $_.bucket -eq "pending" }).Count
-            $skipping_count = ($checks | Where-Object { $_.bucket -eq "skipping" }).Count
-            $cancel_count = ($checks | Where-Object { $_.bucket -eq "cancel" }).Count
+            # Build normalized check items
+            $normalized_checks = @()
+            foreach($check in $checks) {
+                $normalized_status = convert-github-bucket-to-normalized -bucket $check.bucket
+
+                $normalized_checks += [PSCustomObject]@{
+                    Name = $check.name
+                    Status = $normalized_status
+                    StartTime = $check.startedAt
+                    FinishTime = $check.completedAt
+                    Url = $check.link
+                }
+            }
+
+            # Get counts using common utility
+            $counts = get-check-status-counts -checks $normalized_checks
 
             $result = @{
                 PrUrl = $pr_url
-                Checks = $checks
-                PassCount = $pass_count
-                FailCount = $fail_count
-                PendingCount = $pending_count
-                SkippingCount = $skipping_count
-                CancelCount = $cancel_count
+                Checks = $normalized_checks
+                Counts = $counts
             }
         }
     }
@@ -157,127 +99,62 @@ function show-github-pr-status {
         [int] $poll_interval
     )
 
-    Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit." -ForegroundColor Gray
-    if($displayData.PrUrl) {
-        Write-Host "PR: $($displayData.PrUrl)" -ForegroundColor Cyan
-    }
-    Write-Host ""
-
     $checks = $displayData.Checks
+    $counts = $displayData.Counts
+
     if(-not $checks -or $checks.Count -eq 0) {
+        Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit." -ForegroundColor Gray
+        if($displayData.PrUrl) {
+            Write-Host "PR: $($displayData.PrUrl)" -ForegroundColor Cyan
+        }
+        else {
+            # no PR URL
+        }
+        Write-Host ""
         Write-Host "No checks found yet, waiting..." -ForegroundColor Yellow
     }
     else {
-        # Summary status
-        if($displayData.FailCount -gt 0) {
-            Write-Host "Some checks were not successful" -ForegroundColor Red
-        }
-        elseif($displayData.PendingCount -gt 0) {
-            Write-Host "Some checks are still pending" -ForegroundColor Yellow
-        }
-        else {
-            Write-Host "All checks were successful" -ForegroundColor Green
-        }
-
-        # Stats line
-        Write-Host "$($displayData.CancelCount) cancelled, $($displayData.FailCount) failing, $($displayData.PassCount) successful, $($displayData.SkippingCount) skipped, and $($displayData.PendingCount) pending checks`n" -ForegroundColor Gray
-
-        # Column widths
-        $name_width = 70
-        $elapsed_width = 12
-
-        # Table header
-        $header = "   {0,-$name_width} {1,-$elapsed_width} {2}" -f "NAME", "ELAPSED", "URL"
-        Write-Host $header -ForegroundColor White
-
-        # Display each check
-        foreach($check in $checks) {
-            $check_name = $check.name
-
-            # Truncate long names
-            if($check_name.Length -gt $name_width) {
-                $check_name = $check_name.Substring(0, $name_width - 3) + "..."
-            }
-            else {
-                # name fits
-            }
-
-            # Calculate elapsed/duration time
-            $elapsed = ""
-            if($check.startedAt) {
-                $startParsed = Get-Date -Date $check.startedAt -ErrorAction SilentlyContinue
-                if($startParsed) {
-                    $start = $startParsed.ToUniversalTime()
-                    $duration = $null
-                    if($check.completedAt) {
-                        $finishParsed = Get-Date -Date $check.completedAt -ErrorAction SilentlyContinue
-                        if($finishParsed) {
-                            $finish = $finishParsed.ToUniversalTime()
-                            $duration = $finish - $start
-                        }
-                        else {
-                            # finish time parse error
-                        }
-                    }
-                    else {
-                        $duration = (Get-Date).ToUniversalTime() - $start
-                    }
-                    if($duration -and $duration.TotalSeconds -ge 0) {
-                        if($duration.TotalHours -ge 1) {
-                            $elapsed = "{0}h{1}m" -f [int]$duration.TotalHours, $duration.Minutes
-                        }
-                        elseif($duration.TotalMinutes -ge 1) {
-                            $elapsed = "{0}m{1}s" -f [int]$duration.TotalMinutes, $duration.Seconds
-                        }
-                        else {
-                            $elapsed = "{0}s" -f [int]$duration.TotalSeconds
-                        }
-                    }
-                    else {
-                        # negative or null duration
-                    }
-                }
-                else {
-                    # start time parse error
-                }
-            }
-            else {
-                # no start time
-            }
-
-            # Get URL
-            $url = if($check.link) { $check.link } else { "" }
-
-            # Choose symbol and color based on bucket
-            switch($check.bucket) {
-                "pass" {
-                    $symbol = [char]0x2713  # checkmark
-                    $color = "Green"
-                }
-                "fail" {
-                    $symbol = [char]0x2717  # X mark
-                    $color = "Red"
-                }
-                "pending" {
-                    $symbol = "*"
-                    $color = "Yellow"
-                }
-                "skipping" {
-                    $symbol = "-"
-                    $color = "Gray"
-                }
-                "cancel" {
-                    $symbol = "x"
-                    $color = "Gray"
-                }
-                default {
-                    $symbol = "?"
-                    $color = "Gray"
-                }
-            }
-
-            $line = "{0}  {1,-$name_width} {2,-$elapsed_width} {3}" -f $symbol, $check_name, $elapsed, $url
-            Write-Host $line -ForegroundColor $color
-        }
+        # Use common display functions
+        show-status-summary -counts $counts -pr_url $displayData.PrUrl -poll_interval $poll_interval
+        show-pr-check-table -checks $checks
     }
+}
+
+
+# Watch GitHub PR checks until complete or timeout
+function watch-github-pr-checks {
+    param(
+        [int] $poll_interval = 30,
+        [int] $timeout = 120,
+        [scriptblock] $OnIteration = $null
+    )
+    $fn_result = $null
+
+    # Define the fetch data callback
+    $fetch_data = {
+        get-github-pr-display-data
+    }
+
+    # Define the show status callback
+    $show_status = {
+        param($displayData)
+        show-github-pr-status -displayData $displayData -poll_interval $poll_interval
+    }.GetNewClosure()
+
+    # Define the test complete callback
+    $test_complete = {
+        param($displayData)
+        Test-ChecksComplete -checks $displayData.Checks
+    }
+
+    # Use the generic watch loop
+    $fn_result = watch-pr-status `
+        -FetchData $fetch_data `
+        -ShowStatus $show_status `
+        -TestComplete $test_complete `
+        -poll_interval $poll_interval `
+        -timeout $timeout `
+        -OnIteration $OnIteration
+
+    return $fn_result
 }

@@ -22,7 +22,7 @@ function update-repo-github {
     Start-Sleep -Seconds 120
 
     Write-Host "Waiting for build to complete"
-    $result = watch-github-pr-checks -poll_interval 30 -timeout 120 -OnIteration { show-propagation-status }
+    $result = watch-github-pr-checks -poll_interval 30 -timeout 120 -OnIteration { [void](show-propagation-status) }
     if(-not $result.Success) {
         fail-with-status "PR checks failed for repo ${repo_name}: $($result.Message)"
     }

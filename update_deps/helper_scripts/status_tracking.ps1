@@ -68,7 +68,6 @@ function show-propagation-status {
     param(
         [switch] $Final
     )
-    $result = $null
 
     if($Final) {
         Write-Host ""
@@ -148,21 +147,10 @@ function show-propagation-status {
         Write-Host ", $failed failed" -ForegroundColor Red -NoNewline
         Write-Host ", $pending pending" -ForegroundColor DarkGray
         Write-Host ""
-
-        # Return success (true if no failures)
-        if($failed -eq 0) {
-            $result = $true
-        }
-        else {
-            $result = $false
-        }
     }
     else {
-        # not final
-        $result = 0
+        # not final - no summary
     }
 
     Write-Host ""
-
-    return $result
 }
