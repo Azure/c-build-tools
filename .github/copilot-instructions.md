@@ -10,6 +10,11 @@
 - Async callback patterns and goto usage rules
 - Indentation, formatting, and code structure guidelines
 
+## Agent Skills
+Agent Skills are available in this repository at `.github/skills/`. When relevant tasks are requested, load and follow the instructions from the appropriate `SKILL.md` file. Each subdirectory contains a skill with its own `SKILL.md` describing when and how to use it.
+
+Skills location: #file:./.github/skills
+
 ## Project Overview
 This is a comprehensive C/C++ build infrastructure and quality assurance toolkit for Azure projects. It provides reusable CMake functions, Azure DevOps pipeline templates, C# analysis tools, and VS Code extensions for requirement tracking.
 
