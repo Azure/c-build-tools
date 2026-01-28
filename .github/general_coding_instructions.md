@@ -457,14 +457,18 @@ else
 ## Additional Conventions {#additional-conventions}
 
 ### Mockable Function Declarations {#mockable-functions}
-For functions that need to be mocked in unit tests, use `MOCKABLE_FUNCTION` in header files:
+For functions that need to be mocked in unit tests, use `MOCKABLE_FUNCTION` or `MOCKABLE_FUNCTION_WITH_RETURNS` in header files:
 
 ```c
 // In header file (e.g., my_module.h)
-#include "umock_c/umock_c.h"
+#include "umock_c/umock_c_prod.h"
 
-// Mockable function declaration
+// Basic mockable function declaration
 MOCKABLE_FUNCTION(, int, my_module_function, int, param1, const char*, param2);
+
+// Preferred: MOCKABLE_FUNCTION_WITH_RETURNS when success/failure values are known
+// Syntax: MOCKABLE_FUNCTION_WITH_RETURNS(, return_type, function_name, params...)(success_value, failure_value);
+MOCKABLE_FUNCTION_WITH_RETURNS(, MY_RESULT, my_module_operation, int, param1, const char*, param2)(MY_RESULT_OK, MY_RESULT_ERROR);
 
 // In implementation file (e.g., my_module.c)
 int my_module_function(int param1, const char* param2)
@@ -475,9 +479,10 @@ int my_module_function(int param1, const char* param2)
 ```
 
 **MOCKABLE_FUNCTION Rules:**
+- **Prefer `MOCKABLE_FUNCTION_WITH_RETURNS`**: When the function has known success and failure return values, use `MOCKABLE_FUNCTION_WITH_RETURNS` to enable automatic mock return value registration
 - **Use for external dependencies**: Mock functions that your module calls from other modules
 - **Use for testable isolation**: Mock functions to isolate the unit under test
-- **Include umock_c header**: Always include `umock_c/umock_c.h` when using MOCKABLE_FUNCTION
+- **Include umock_c header**: Always include `umock_c/umock_c_prod.h` when using MOCKABLE_FUNCTION
 - **Don't mock internal functions**: Only mock functions that cross module boundaries
 - **Maintain function signature**: The MOCKABLE_FUNCTION signature must exactly match the implementation
 

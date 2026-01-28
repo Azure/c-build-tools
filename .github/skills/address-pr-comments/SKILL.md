@@ -1,0 +1,50 @@
+---
+name: address-pr-comments
+description: Guide for addressing PR review comments iteratively. Use this when asked to address, fix, or resolve comments on a pull request (Azure DevOps or GitHub).
+---
+
+To address PR review comments, follow this process:
+
+## Phase 1: Fetch PR Comments
+
+Use the appropriate tool based on the PR platform:
+
+- **Azure DevOps PRs**: Use ADO MCP tools
+  - `ado-repo_list_pull_request_threads` to get comment threads
+  - `ado-repo_list_pull_request_thread_comments` for thread details
+- **GitHub PRs**: Use GitHub MCP tools
+  - `github-mcp-server-pull_request_read` with method `get_review_comments`
+
+## Phase 2: Process Each Comment
+
+For each active comment in the PR:
+
+1. **Read the comment** - Understand what change is being requested
+2. **Address the comment** - Make the necessary code/documentation changes
+3. **Build and run unit tests** - Verify the change doesn't break anything
+   - Build the affected module's unit tests
+   - Run the tests and ensure they pass
+4. **Commit locally** - Create a focused commit for this specific change
+   - Use a descriptive commit message that references the comment
+
+## Phase 3: Finalize
+
+After all comments have been addressed:
+
+1. **Ask for approval** - Confirm with the user that all comments have been addressed satisfactorily
+2. **Push changes** - Push all local commits to the remote branch using `git push`
+3. **Reply to comments and resolve**:
+   - **Azure DevOps PRs**: Use ADO MCP tools
+     - `ado-repo_reply_to_comment` to reply to each thread
+     - `ado-repo_update_pull_request_thread` with status "Fixed" or "Closed" to resolve
+   - **GitHub PRs**: Use GitHub CLI
+     - `gh pr review` or `gh api` to reply to review comments
+
+## Key Principles
+
+- Address comments one at a time to keep changes focused and reviewable
+- Always build and test after each change to catch issues early
+- Commit after each comment to maintain clear history
+- Wait for user approval before pushing to allow for review of changes
+- Reply to comments with specific details about how they were addressed
+- Use the correct platform tools (ADO MCP for Azure DevOps, GitHub MCP/CLI for GitHub)
