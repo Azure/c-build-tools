@@ -6,9 +6,12 @@
     Validates that test functions contain AAA (Arrange, Act, Assert) comments.
 
 .DESCRIPTION
-    This script checks all unit test files (*_ut.c) and integration test files (*_int.c)
-    to ensure that test functions (TEST_FUNCTION, TEST_METHOD, CTEST_FUNCTION) contain
-    AAA comments in the correct order: Arrange, Act, Assert.
+    This script checks all unit test files (*_ut.c) to ensure that test functions 
+    (TEST_FUNCTION, TEST_METHOD, CTEST_FUNCTION) contain AAA comments in the correct 
+    order: Arrange, Act, Assert.
+    
+    Note: Integration test files (*_int.c) are not checked by this validation because
+    integration tests often have more complex structures that don't fit the AAA pattern.
     
     The script accepts various comment styles:
       - // arrange, // act, // assert
@@ -76,8 +79,8 @@ if ($Fix) {
     Write-Host ""
 }
 
-# Define file patterns to check (unit tests and integration tests)
-$filePatterns = @("*_ut.c", "*_int.c")
+# Define file patterns to check (unit tests only, not integration tests)
+$filePatterns = @("*_ut.c")
 
 # Parse excluded directories (default: deps, cmake)
 $excludeDirs = $ExcludeFolders -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
