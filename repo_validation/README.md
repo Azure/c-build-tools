@@ -448,6 +448,144 @@ To exempt a test from this requirement, add '// no-srs' to the TEST_FUNCTION lin
 [FAILED] 1 test function(s) are missing spec tags.
 ```
 
+### AAA Comment Validation
+
+**Script:** `scripts/validate_aaa_comments.ps1`
+
+**Purpose:** Ensures that all test functions (`TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`) in unit test (`*_ut.c`) and integration test (`*_int.c`) files contain AAA (Arrange, Act, Assert) comments in the correct order.
+
+**Rationale:** The AAA pattern provides a clear structure for test functions:
+- **Arrange**: Set up the test preconditions and inputs
+- **Act**: Execute the code being tested
+- **Assert**: Verify the expected outcomes
+
+Using AAA comments consistently:
+- Makes tests easier to read and understand
+- Ensures tests follow a consistent structure
+- Helps identify missing test setup or verification
+- Provides clear documentation of test intent
+
+**Exclusions:**
+- Default exclusions (if not customized): `deps`, `cmake`
+- Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
+
+**File Types Checked:** Unit test files (`*_ut.c`) and integration test files (`*_int.c`)
+
+**Test Function Macros Detected:** `TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`
+
+**Comment Styles Accepted:** All common C comment styles (case-insensitive):
+- `// arrange`, `// act`, `// assert`
+- `/// arrange`, `/// act`, `/// assert`
+- `/* arrange */`, `/* act */`, `/* assert */`
+
+**Order Requirement:** Comments must appear in the order: Arrange → Act → Assert
+
+**Correct Pattern:**
+```c
+TEST_FUNCTION(test_function_succeeds)
+{
+    // arrange
+    int input = 5;
+
+    // act
+    int result = double_value(input);
+
+    // assert
+    ASSERT_ARE_EQUAL(int, 10, result);
+}
+
+// With optional cleanup
+TEST_FUNCTION(test_with_cleanup)
+{
+    // arrange
+    int* ptr = malloc(sizeof(int));
+
+    // act
+    *ptr = 42;
+
+    // assert
+    ASSERT_ARE_EQUAL(int, 42, *ptr);
+
+    // cleanup (optional, not validated)
+    free(ptr);
+}
+```
+
+**Helper Function Delegation:** AAA comments can be located in helper functions called by the test. The script checks functions defined in the same file:
+```c
+static void setup_test_data(int* value)
+{
+    // arrange
+    *value = 42;
+}
+
+static void verify_result(int expected, int actual)
+{
+    // assert
+    ASSERT_ARE_EQUAL(int, expected, actual);
+}
+
+TEST_FUNCTION(test_using_helpers)
+{
+    int value;
+    setup_test_data(&value);
+
+    // act
+    int result = value * 2;
+
+    verify_result(84, result);
+}
+```
+
+**Exemption Pattern:** Tests that intentionally do not require AAA comments can be exempted:
+```c
+TEST_FUNCTION(infrastructure_test) // no-aaa
+{
+    // Test infrastructure that doesn't follow AAA pattern
+}
+
+TEST_FUNCTION(another_exempt_test) /* no-aaa */
+{
+    // Also exempted
+}
+```
+
+**Fix Mode:** **This script does NOT auto-fix missing AAA comments**, even when run with `-Fix` parameter:
+- Adding AAA comments requires understanding of the test logic
+- The script will display an informational message that fix mode is not supported
+- Exit code 1 is always returned when violations are found
+- **Rationale**: AAA comments must be added by developers who understand the test structure
+
+**Manual Fix Required:**
+When violations are found, resolve them by:
+1. **Add AAA comments**: Add `// arrange`, `// act`, and `// assert` comments to the test function in the correct order
+2. **Or delegate to helpers**: Move test logic to helper functions that contain the AAA comments
+3. **Or exempt**: If the test intentionally doesn't follow AAA pattern, add `// no-aaa` to the test function line
+
+**Example Error Output:**
+```
+========================================
+AAA Comment Validation
+========================================
+Repository Root: C:\repo
+
+  [FAIL] tests/my_module_ut.c
+         Line 45: TEST_FUNCTION(test_missing_aaa)
+         Missing AAA comment(s): arrange, act, assert
+
+  [FAIL] tests/my_module_ut.c
+         Line 78: TEST_FUNCTION(test_wrong_order)
+         AAA comments are not in correct order (should be: arrange, act, assert)
+
+========================================
+Validation Summary
+========================================
+Total test files checked: 5
+Test functions with violations: 2
+
+[VALIDATION FAILED]
+```
+
 ## Adding New Validations
 
 To add a new validation script:
@@ -591,6 +729,7 @@ cmake --build build --target test_validate_file_endings
 cmake --build build --target test_validate_srs_consistency
 cmake --build build --target test_validate_requirements_naming
 cmake --build build --target test_validate_enable_mocks
+cmake --build build --target test_validate_aaa_comments
 
 # Or use CTest to run all tests
 cd build && ctest -C Debug
@@ -649,6 +788,19 @@ tests/
         ├── clean_file.c
         ├── clean_file.h
         └── multiple_correct.cpp
+├── validate_aaa_comments/            # AAA comment validation tests
+    ├── CMakeLists.txt
+    ├── has_aaa/                      # Files with proper AAA comments
+    │   ├── test_direct_aaa_ut.c
+    │   ├── test_helper_aaa_ut.c
+    │   ├── test_exempted_ut.c
+    │   └── test_mixed_styles_ut.c
+    └── missing_aaa/                  # Files missing AAA comments
+        ├── test_missing_arrange_ut.c
+        ├── test_missing_act_ut.c
+        ├── test_missing_assert_ut.c
+        ├── test_wrong_order_ut.c
+        └── test_no_aaa_ut.c
 ```
 
 ### Test Types
