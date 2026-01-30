@@ -105,34 +105,6 @@ jobs:
       ${{ if ne(parameters.repo_root_override, '') }}:
         repo_root: ${{ parameters.repo_root_override }}
 
-  # Debug: Check VLD installation location (ARM64 may use Program Files instead of Program Files (x86))
-  - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
-    - task: PowerShell@2
-      displayName: '🔍 Debug: Check VLD installation'
-      inputs:
-        targetType: 'inline'
-        script: |
-          Write-Host "=== Checking VLD installation locations ==="
-          Write-Host "Program Files (x86): $env:ProgramFiles(x86)"
-          Write-Host "Program Files: $env:ProgramFiles"
-          
-          $vldPathX86 = "$env:ProgramFiles(x86)\Visual Leak Detector"
-          $vldPath = "$env:ProgramFiles\Visual Leak Detector"
-          
-          Write-Host "`n=== Checking $vldPathX86 ==="
-          if (Test-Path $vldPathX86) {
-            Get-ChildItem $vldPathX86 -Recurse | Select-Object FullName
-          } else {
-            Write-Host "Does not exist"
-          }
-          
-          Write-Host "`n=== Checking $vldPath ==="
-          if (Test-Path $vldPath) {
-            Get-ChildItem $vldPath -Recurse | Select-Object FullName
-          } else {
-            Write-Host "Does not exist"
-          }
-
   - task: CMake@1
     displayName: '🏗️ CMake $(Build.SourcesDirectory) ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
     inputs:
@@ -165,6 +137,9 @@ jobs:
         maximumCpuCount: true
 
   - template : start_logman.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
 
   # in the gate address sanitizer has problems running which are not reproducible locally, so skipping Address Sanitizer for vstest (note: ctest is perfectly fine with Address Sanitizer)
   # here's example:
@@ -258,6 +233,9 @@ jobs:
         workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}'
 
   - template : stop_logman.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
 
   - task: PublishPipelineArtifact@1
     displayName: 'Publish ${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration}} Artifacts'
