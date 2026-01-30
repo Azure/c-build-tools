@@ -42,6 +42,11 @@ After all comments have been addressed:
      - `ado-repo_update_pull_request_thread` with status "Fixed" or "Resolved" (NEVER use "Closed" - the human reviewer who made the comment is expected to mark comments "Closed" after reviewing the changes)
    - **GitHub PRs**: Use GitHub CLI
      - `gh pr review` or `gh api` to reply to review comments
+   - **On failure**: If updating a thread fails (e.g., `Error updating pull request thread`), retry the operation. If it continues to fail, track it for the summary.
+4. **Summarize results** - Provide a summary to the user including:
+   - List of all comments that were addressed
+   - Any comments that failed to update (with thread IDs) so the user can manually resolve them
+   - Any comments that were skipped or need clarification
 
 ## Key Principles
 
