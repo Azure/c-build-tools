@@ -113,10 +113,19 @@ jobs:
 
   # ARM64 builds use msbuild directly (VSBuild@1 doesn't support ARM64)
   - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
-    - task: CmdLine@2
+    - task: PowerShell@2
       displayName: '🏗️ Build solution (ARM64)'
       inputs:
-        script: 'msbuild "$(Build.BinariesDirectory)\c\*.sln" /t:restore /t:build /p:Configuration=${{ parameters.build_configuration }} /p:Platform=ARM64 /m'
+        targetType: 'inline'
+        script: |
+          $sln = Get-ChildItem -Path "$(Build.BinariesDirectory)\c" -Filter "*.sln" | Select-Object -First 1
+          if ($null -eq $sln) {
+            Write-Error "No .sln file found in $(Build.BinariesDirectory)\c"
+            exit 1
+          }
+          Write-Host "Building $($sln.FullName)"
+          msbuild $sln.FullName /t:restore /t:build /p:Configuration=${{ parameters.build_configuration }} /p:Platform=ARM64 /m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   - ${{ else }}:
     - task: VSBuild@1
