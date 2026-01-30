@@ -188,8 +188,14 @@ macro(set_default_build_options)
 
         #add always used flags for the linker:
         # /CETCOMPAT (CET Shadow Stack compatible) https://learn.microsoft.com/en-us/cpp/build/reference/cetcompat. Also mitigates: warning BA2025: 'latency_test_server.exe' does not enable the Control-flow Enforcement Technology (CET) Shadow Stack mitigation. To resolve this issue, pass /CETCOMPAT on the linker command lines.
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
-        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
+        # Note: CETCOMPAT is only supported on x64, not ARM64
+        if (${ARCHITECTURE} STREQUAL "ARM64")
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX")
+            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX")
+        else()
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
+            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
+        endif()
 
         #Disable incremental linking globally for Debug and RelWithDebInfo
         #This is required for Address Sanitizer to work (https://learn.microsoft.com/en-us/cpp/sanitizers/asan-known-issues?view=msvc-170#incompatible-options)

@@ -79,13 +79,15 @@ endif()
 
 # Skip for Ninja which can't build the C# project
 if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
-    if((${build_traceability_tool}) AND (${build_csharp_projects}))
+    # Skip C# tools on ARM64 - traceabilitytool requires .NET 4.7.2 which doesn't support ARM64
+    if((${build_traceability_tool}) AND (${build_csharp_projects}) AND (NOT ${ARCHITECTURE} STREQUAL "ARM64"))
         add_subdirectory(traceabilitytool)
     endif()
     add_subdirectory(reals_check)
 endif()
 
-if((CMAKE_GENERATOR MATCHES "Visual Studio") AND (${build_sarif_results_checker}))
+# Skip sarif_results_checker on ARM64 - RuntimeIdentifier needs platform-specific handling
+if((CMAKE_GENERATOR MATCHES "Visual Studio") AND (${build_sarif_results_checker}) AND (NOT ${ARCHITECTURE} STREQUAL "ARM64"))
     add_subdirectory(sarif_results_checker)
 endif()
 
