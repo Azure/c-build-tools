@@ -105,6 +105,34 @@ jobs:
       ${{ if ne(parameters.repo_root_override, '') }}:
         repo_root: ${{ parameters.repo_root_override }}
 
+  # Debug: Check VLD installation location (ARM64 may use Program Files instead of Program Files (x86))
+  - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
+    - task: PowerShell@2
+      displayName: '🔍 Debug: Check VLD installation'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "=== Checking VLD installation locations ==="
+          Write-Host "Program Files (x86): $env:ProgramFiles(x86)"
+          Write-Host "Program Files: $env:ProgramFiles"
+          
+          $vldPathX86 = "$env:ProgramFiles(x86)\Visual Leak Detector"
+          $vldPath = "$env:ProgramFiles\Visual Leak Detector"
+          
+          Write-Host "`n=== Checking $vldPathX86 ==="
+          if (Test-Path $vldPathX86) {
+            Get-ChildItem $vldPathX86 -Recurse | Select-Object FullName
+          } else {
+            Write-Host "Does not exist"
+          }
+          
+          Write-Host "`n=== Checking $vldPath ==="
+          if (Test-Path $vldPath) {
+            Get-ChildItem $vldPath -Recurse | Select-Object FullName
+          } else {
+            Write-Host "Does not exist"
+          }
+
   - task: CMake@1
     displayName: '🏗️ CMake $(Build.SourcesDirectory) ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
     inputs:
