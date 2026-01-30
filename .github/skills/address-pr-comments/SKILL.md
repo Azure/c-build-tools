@@ -21,6 +21,7 @@ For each active comment in the PR:
 
 1. **Read the comment** - Understand what change is being requested
 2. **Address the comment** - Make the necessary code/documentation changes
+   - If anything is unclear, ambiguous, or you get stuck, reply to that specific comment asking for clarification from the reviewer before proceeding
 3. **Build and run unit tests** - Verify the change doesn't break anything
    - Build the affected module's unit tests
    - Run the tests and ensure they pass
@@ -33,10 +34,10 @@ After all comments have been addressed:
 
 1. **Ask for approval** - Confirm with the user that all comments have been addressed satisfactorily
 2. **Push changes** - Push all local commits to the remote branch using `git push`
-3. **Reply to comments and resolve**:
+3. **Reply to comments and mark as resolved/fixed**:
    - **Azure DevOps PRs**: Use ADO MCP tools
      - `ado-repo_reply_to_comment` to reply to each thread
-     - `ado-repo_update_pull_request_thread` with status "Fixed" or "Closed" to resolve
+     - `ado-repo_update_pull_request_thread` with status "Fixed" or "Resolved" (NEVER use "Closed" - the human reviewer who made the comment is expected to mark comments "Closed" after reviewing the changes)
    - **GitHub PRs**: Use GitHub CLI
      - `gh pr review` or `gh api` to reply to review comments
 
