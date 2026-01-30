@@ -83,38 +83,58 @@ jobs:
         targetType: 'inline'
         script: |
           Write-Host "=== ARM64 EMULATION DETECTION ==="
-          Write-Host "Processor Architecture: $env:PROCESSOR_ARCHITECTURE"
-          Write-Host "Processor Identifier: $env:PROCESSOR_IDENTIFIER"
+          Write-Host ""
           
-          # Check if running under emulation
-          $isEmulated = $false
+          # Current process info
+          $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess()
+          Write-Host "Current Process:"
+          Write-Host "  Name: $($currentProcess.ProcessName)"
+          Write-Host "  Path: $($currentProcess.MainModule.FileName)"
+          Write-Host "  PID: $($currentProcess.Id)"
+          Write-Host "  PowerShell Version: $($PSVersionTable.PSVersion)"
+          Write-Host "  PowerShell Edition: $($PSVersionTable.PSEdition)"
+          Write-Host "  CLR Version: $($PSVersionTable.CLRVersion)"
+          Write-Host ""
+          
+          # Environment variables
+          Write-Host "Environment:"
+          Write-Host "  PROCESSOR_ARCHITECTURE: $env:PROCESSOR_ARCHITECTURE"
+          Write-Host "  PROCESSOR_ARCHITEW6432: $env:PROCESSOR_ARCHITEW6432"
+          Write-Host "  PROCESSOR_IDENTIFIER: $env:PROCESSOR_IDENTIFIER"
+          Write-Host "  NUMBER_OF_PROCESSORS: $env:NUMBER_OF_PROCESSORS"
+          Write-Host ""
+          
+          # Registry info
+          Write-Host "Windows Info:"
           try {
             $key = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction SilentlyContinue
             if ($key) {
-              Write-Host "Windows Build: $($key.CurrentBuild)"
-              Write-Host "Windows Edition: $($key.EditionID)"
+              Write-Host "  Build: $($key.CurrentBuild).$($key.UBR)"
+              Write-Host "  Edition: $($key.EditionID)"
+              Write-Host "  Product: $($key.ProductName)"
             }
-          } catch { Write-Host "Could not read registry" }
+          } catch { Write-Host "  Could not read registry: $_" }
+          Write-Host ""
           
-          # Check for WoW64 (x64 emulation on ARM64)
-          if (Test-Path "C:\Windows\SysArm32") {
-            Write-Host "SysArm32 exists - native ARM64 Windows"
-          }
-          if (Test-Path "C:\Windows\SysWow64") {
-            Write-Host "SysWow64 exists - WoW64 layer present"
-          }
+          # System folders
+          Write-Host "System Folders:"
+          Write-Host "  System32: $(Test-Path 'C:\Windows\System32') - exists"
+          Write-Host "  SysWow64: $(Test-Path 'C:\Windows\SysWow64') - $(if (Test-Path 'C:\Windows\SysWow64') { 'exists (WoW64 layer)' } else { 'not found' })"
+          Write-Host "  SysArm32: $(Test-Path 'C:\Windows\SysArm32') - $(if (Test-Path 'C:\Windows\SysArm32') { 'exists (ARM64 Windows)' } else { 'not found' })"
+          Write-Host ""
           
-          # Check IsWow64Process2 via .NET
+          # Check IsWow64Process2 via .NET - use UInt16 instead of ushort for compatibility
+          Write-Host "Emulation Detection (IsWow64Process2):"
           Add-Type -TypeDefinition @"
           using System;
           using System.Runtime.InteropServices;
           public class EmulationCheck {
             [DllImport("kernel32.dll", SetLastError = true)]
-            public static extern bool IsWow64Process2(IntPtr hProcess, out ushort pProcessMachine, out ushort pNativeMachine);
+            public static extern bool IsWow64Process2(IntPtr hProcess, out UInt16 pProcessMachine, out UInt16 pNativeMachine);
             
-            public static string GetMachineType(ushort machine) {
+            public static string GetMachineType(UInt16 machine) {
               switch (machine) {
-                case 0: return "UNKNOWN";
+                case 0: return "UNKNOWN (native process)";
                 case 0x014c: return "I386 (x86)";
                 case 0x8664: return "AMD64 (x64)";
                 case 0xAA64: return "ARM64";
@@ -122,24 +142,32 @@ jobs:
                 default: return "OTHER (0x" + machine.ToString("X4") + ")";
               }
             }
+            
+            public static void Check() {
+              UInt16 processMachine = 0;
+              UInt16 nativeMachine = 0;
+              bool result = IsWow64Process2(System.Diagnostics.Process.GetCurrentProcess().Handle, out processMachine, out nativeMachine);
+              if (result) {
+                Console.WriteLine("  Process Machine: " + GetMachineType(processMachine) + " (0x" + processMachine.ToString("X4") + ")");
+                Console.WriteLine("  Native Machine:  " + GetMachineType(nativeMachine) + " (0x" + nativeMachine.ToString("X4") + ")");
+                if (processMachine != 0 && processMachine != nativeMachine) {
+                  Console.WriteLine("  *** RUNNING UNDER EMULATION ***");
+                } else if (processMachine == 0) {
+                  Console.WriteLine("  Running NATIVE (processMachine=0 means no emulation)");
+                } else {
+                  Console.WriteLine("  Running NATIVE (process matches native)");
+                }
+              } else {
+                Console.WriteLine("  IsWow64Process2 returned false, error: " + Marshal.GetLastWin32Error());
+              }
+            }
           }
           "@
           
           try {
-            [ushort]$processMachine = 0
-            [ushort]$nativeMachine = 0
-            $result = [EmulationCheck]::IsWow64Process2([System.Diagnostics.Process]::GetCurrentProcess().Handle, [ref]$processMachine, [ref]$nativeMachine)
-            if ($result) {
-              Write-Host "Process Machine Type: $([EmulationCheck]::GetMachineType($processMachine))"
-              Write-Host "Native Machine Type: $([EmulationCheck]::GetMachineType($nativeMachine))"
-              if ($processMachine -ne 0 -and $processMachine -ne $nativeMachine) {
-                Write-Host "*** RUNNING UNDER EMULATION ***"
-              } else {
-                Write-Host "Running NATIVE (no emulation)"
-              }
-            }
+            [EmulationCheck]::Check()
           } catch {
-            Write-Host "IsWow64Process2 check failed: $_"
+            Write-Host "  IsWow64Process2 check failed: $_"
           }
           
           Write-Host ""
@@ -149,7 +177,11 @@ jobs:
             $agentRoot = $env:AGENT_HOMEDIRECTORY
             if (-not $agentRoot) { $agentRoot = "C:\agent" }
           }
-          Write-Host "Scanning agent folder: $agentRoot"
+          Write-Host "Agent root: $agentRoot"
+          Write-Host "AGENT_HOMEDIRECTORY: $env:AGENT_HOMEDIRECTORY"
+          Write-Host "AGENT_TOOLSDIRECTORY: $env:AGENT_TOOLSDIRECTORY"
+          Write-Host "AGENT_VERSION: $env:AGENT_VERSION"
+          Write-Host ""
           
           function Get-PEArchitecture {
             param([string]$FilePath)
@@ -182,35 +214,62 @@ jobs:
                 default { return "UNKNOWN(0x$($machine.ToString('X4')))" }
               }
             } catch {
-              return "ERROR"
+              return "ERROR: $_"
             }
           }
+          
+          # Check architecture of current PowerShell
+          Write-Host "=== POWERSHELL EXECUTABLE ARCHITECTURE ==="
+          $psPath = (Get-Process -Id $PID).MainModule.FileName
+          $psArch = Get-PEArchitecture $psPath
+          Write-Host "$psArch : $psPath"
+          Write-Host ""
           
           # Find and analyze node.exe files
-          Write-Host ""
           Write-Host "=== NODE.EXE FILES ==="
-          Get-ChildItem -Path $agentRoot -Filter "node.exe" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+          $nodeFiles = Get-ChildItem -Path $agentRoot -Filter "node.exe" -Recurse -ErrorAction SilentlyContinue
+          Write-Host "Found $($nodeFiles.Count) node.exe files:"
+          $nodeFiles | ForEach-Object {
             $arch = Get-PEArchitecture $_.FullName
-            Write-Host "$arch : $($_.FullName)"
+            Write-Host "  $arch : $($_.FullName)"
           }
-          
-          # Find externals folder and list structure
           Write-Host ""
+          
+          # Find externals folder and list structure with more detail
           Write-Host "=== EXTERNALS FOLDER STRUCTURE ==="
-          $externalsPath = Join-Path $agentRoot "*\externals"
-          Get-ChildItem -Path $externalsPath -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Host "External: $($_.Name)"
-            Get-ChildItem -Path $_.FullName -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-              Write-Host "  - $($_.Name)"
+          $agentVersions = Get-ChildItem -Path $agentRoot -Directory -ErrorAction SilentlyContinue
+          foreach ($ver in $agentVersions) {
+            Write-Host "Agent Version: $($ver.Name)"
+            $externalsPath = Join-Path $ver.FullName "externals"
+            if (Test-Path $externalsPath) {
+              Get-ChildItem -Path $externalsPath -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                $nodeExe = Join-Path $_.FullName "bin\node.exe"
+                if (Test-Path $nodeExe) {
+                  $arch = Get-PEArchitecture $nodeExe
+                  Write-Host "  $($_.Name): $arch"
+                } else {
+                  Write-Host "  $($_.Name): (no node.exe)"
+                }
+              }
+            } else {
+              Write-Host "  (no externals folder)"
             }
           }
+          Write-Host ""
+          
+          # Agent.Listener.exe architectures
+          Write-Host "=== AGENT.LISTENER.EXE FILES ==="
+          Get-ChildItem -Path $agentRoot -Filter "Agent.Listener.exe" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            $arch = Get-PEArchitecture $_.FullName
+            Write-Host "  $arch : $($_.FullName)"
+          }
+          Write-Host ""
           
           # Sample of other executables for comparison
-          Write-Host ""
-          Write-Host "=== SAMPLE OF AGENT EXECUTABLES ==="
-          Get-ChildItem -Path $agentRoot -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object {
+          Write-Host "=== SAMPLE OF AGENT EXECUTABLES (first 15) ==="
+          Get-ChildItem -Path $agentRoot -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 15 | ForEach-Object {
             $arch = Get-PEArchitecture $_.FullName
-            Write-Host "$arch : $($_.FullName)"
+            Write-Host "  $arch : $($_.FullName)"
           }
       continueOnError: true
 
