@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft. All rights reserved.
+# Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 <#
 .SYNOPSIS
     Clones a list of repositories to a temporary work area.
@@ -46,11 +49,11 @@ $clonedRepos = @()
 Write-Host "Cloning $($Repos.Count) repositories to $WorkArea" -ForegroundColor Cyan
 
 foreach ($repo in $Repos) {
-    $targetPath = Join-Path $WorkArea $repo.Path
+    $targetPath = Join-Path $WorkArea $repo.Name
 
     Write-Host "Cloning $($repo.Name)..." -ForegroundColor Yellow
 
-    # Create parent directory if needed
+    # Create parent directory if needed (shouldn't be needed with flat structure)
     $parentDir = Split-Path $targetPath -Parent
     if ($parentDir -and -not (Test-Path $parentDir)) {
         New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
@@ -60,17 +63,6 @@ foreach ($repo in $Repos) {
     if ($repo.Url) {
         # Clone from remote URL
         git clone $repo.Url $targetPath 2>&1 | Write-Host
-
-        # Checkout specific commit if available
-        if ($repo.Commit) {
-            Push-Location $targetPath
-            try {
-                git checkout $repo.Commit 2>&1 | Write-Host
-            }
-            finally {
-                Pop-Location
-            }
-        }
     }
     elseif ($repo.AbsolutePath -and (Test-Path $repo.AbsolutePath)) {
         # Clone from local path
@@ -95,10 +87,8 @@ foreach ($repo in $Repos) {
 
     $clonedRepos += [PSCustomObject]@{
         Name         = $repo.Name
-        Path         = $repo.Path
         WorkAreaPath = $targetPath
         OriginalUrl  = $repo.Url
-        Commit       = $repo.Commit
     }
 
     Write-Host "  Cloned to: $targetPath" -ForegroundColor Green
