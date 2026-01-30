@@ -124,14 +124,10 @@ jobs:
       workingDirectory: 'build_arm64'
       cmakeArgs: '.. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -Duse_vld:BOOL=ON -G "Visual Studio 17 2022" -A ARM64'
 
-  - task: VSBuild@1
-    displayName: 'Build solution build_arm64\*.sln'
+  - task: CmdLine@2
+    displayName: 'Build solution build_arm64 (ARM64 native msbuild)'
     inputs:
-      solution: 'build_arm64\*.sln'
-      platform: ARM64
-      configuration: Debug
-      msbuildArgs: '/t:restore /t:build'
-      maximumCpuCount: true
+      script: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\arm64\MSBuild.exe" build_arm64\*.sln /t:restore /t:build /p:Configuration=Debug /p:Platform=ARM64 /m'
 
   - task: CmdLine@2
     displayName: 'Run ctest Debug'
