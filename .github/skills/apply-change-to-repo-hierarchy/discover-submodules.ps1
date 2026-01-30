@@ -9,7 +9,7 @@
     This script traverses a git repository and discovers all submodules,
     returning their names, paths, and URLs in dependency order (deepest first).
     
-    It uses git submodule commands (not .gitmodules parsing) and integrates with
+    It uses git submodule commands (not .gitmodules parsing) and calls
     build_graph.ps1 for proper dependency ordering. Results are deduplicated
     so each unique repository appears only once.
 
@@ -17,7 +17,7 @@
     The path to the starting repository. Defaults to current directory.
 
 .PARAMETER IncludeRoot
-    If specified, includes the root repository in the output.
+    Whether to include the root repository in the output. Defaults to $true.
 
 .PARAMETER ExcludeRepos
     Array of repository names to exclude from discovery. These are typically
@@ -32,7 +32,7 @@
     $repos = ./discover-submodules.ps1 -RepoPath "D:\w\store4"
 
 .EXAMPLE
-    $repos = ./discover-submodules.ps1 -IncludeRoot -ExcludeRepos @("libuv", "vcpkg", "custom-lib")
+    $repos = ./discover-submodules.ps1 -IncludeRoot $false -ExcludeRepos @("libuv", "vcpkg", "custom-lib")
 #>
 
 param(
@@ -40,7 +40,7 @@ param(
     [string]$RepoPath = ".",
 
     [Parameter(Mandatory = $false)]
-    [switch]$IncludeRoot,
+    [bool]$IncludeRoot = $true,
 
     [Parameter(Mandatory = $false)]
     [string[]]$ExcludeRepos = @("libuv", "mimalloc", "jemalloc", "vcpkg")
@@ -199,48 +199,116 @@ if ($IncludeRoot) {
 Write-Host "Discovering submodules in $resolvedPath..." -ForegroundColor Cyan
 $submodules = Get-SubmodulesRecursive -Path $resolvedPath
 
-# Use build_graph.ps1 logic to compute dependency order (deepest first)
-# Build a simple level-based ordering: repos that are dependencies of others come first
-$repoLevels = @{}
-foreach ($repo in $discoveredRepos.Values) {
-    $repoLevels[$repo.Name] = 0
+# Use build_graph.ps1 to compute dependency order (deepest first)
+# build_graph.ps1 is located in update_deps folder relative to this script's location in c-build-tools
+$buildGraphScript = Join-Path $PSScriptRoot "..\..\..\update_deps\build_graph.ps1"
+
+# Check if we can find build_graph.ps1
+if (-not (Test-Path $buildGraphScript)) {
+    # Try to find it via the repo's c-build-tools dependency
+    $cbuildToolsPath = Join-Path $resolvedPath "deps\c-build-tools\update_deps\build_graph.ps1"
+    if (Test-Path $cbuildToolsPath) {
+        $buildGraphScript = $cbuildToolsPath
+    }
 }
 
-# Compute levels by checking which repos contain which as submodules
-foreach ($repo in $discoveredRepos.Values) {
-    if ($repo.AbsolutePath -and (Test-Path $repo.AbsolutePath)) {
-        Push-Location $repo.AbsolutePath
+$sortedRepos = @()
+
+if ((Test-Path $buildGraphScript) -and ($discoveredRepos.Count -gt 0)) {
+    Write-Host "Using build_graph.ps1 for dependency ordering..." -ForegroundColor Cyan
+    
+    # Get root repo URL for build_graph
+    $rootUrl = $discoveredRepos.Values | Where-Object { $_.Name -eq $rootName } | Select-Object -First 1 -ExpandProperty Url
+    
+    if ($rootUrl) {
+        # Create temp directory for build_graph output
+        $tempDir = Join-Path $env:TEMP "discover-submodules-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+        
         try {
-            $submoduleNames = git submodule foreach --quiet 'echo $name' 2>$null
-            if ($submoduleNames) {
-                foreach ($subName in $submoduleNames) {
-                    $subName = $subName.Trim()
-                    if ($repoLevels.ContainsKey($subName)) {
-                        # Submodule should have higher level (processed first)
-                        $currentLevel = $repoLevels[$subName]
-                        $parentLevel = $repoLevels[$repo.Name]
-                        if ($currentLevel -le $parentLevel) {
-                            $repoLevels[$subName] = $parentLevel + 1
+            Push-Location $tempDir
+            try {
+                # Call build_graph.ps1 with the root URL
+                & $buildGraphScript -root_list @($rootUrl) 2>&1 | Out-Null
+                
+                # Read the order from order.json
+                $orderFile = Join-Path $tempDir "order.json"
+                if (Test-Path $orderFile) {
+                    $repoOrder = Get-Content $orderFile | ConvertFrom-Json
+                    
+                    # Map the ordered names back to our repo objects
+                    foreach ($repoName in $repoOrder) {
+                        if ($discoveredRepos.ContainsKey($repoName) -and ($repoName -notin $ExcludeRepos)) {
+                            $sortedRepos += $discoveredRepos[$repoName]
+                        }
+                    }
+                    
+                    # Add any repos that weren't in the order (shouldn't happen, but safety)
+                    foreach ($repo in $discoveredRepos.Values) {
+                        if ($repo.Name -notin $sortedRepos.Name) {
+                            $sortedRepos += $repo
                         }
                     }
                 }
             }
+            finally {
+                Pop-Location
+            }
         }
         finally {
-            Pop-Location
+            # Cleanup temp directory
+            Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
         }
     }
 }
 
-# Sort repos by level descending (deepest dependencies first)
-$sortedRepos = $discoveredRepos.Values | Sort-Object { $repoLevels[$_.Name] } -Descending
+# Fallback: if build_graph didn't work, use simple level-based ordering
+if ($sortedRepos.Count -eq 0) {
+    Write-Host "Using fallback level-based ordering..." -ForegroundColor Yellow
+    
+    # Build a simple level-based ordering: repos that are dependencies of others come first
+    $repoLevels = @{}
+    foreach ($repo in $discoveredRepos.Values) {
+        $repoLevels[$repo.Name] = 0
+    }
+
+    # Compute levels by checking which repos contain which as submodules
+    foreach ($repo in $discoveredRepos.Values) {
+        if ($repo.AbsolutePath -and (Test-Path $repo.AbsolutePath)) {
+            Push-Location $repo.AbsolutePath
+            try {
+                $submoduleNames = git submodule foreach --quiet 'echo $name' 2>$null
+                if ($submoduleNames) {
+                    foreach ($subName in $submoduleNames) {
+                        $subName = $subName.Trim()
+                        if ($repoLevels.ContainsKey($subName)) {
+                            # Submodule should have higher level (processed first)
+                            $currentLevel = $repoLevels[$subName]
+                            $parentLevel = $repoLevels[$repo.Name]
+                            if ($currentLevel -le $parentLevel) {
+                                $repoLevels[$subName] = $parentLevel + 1
+                            }
+                        }
+                    }
+                }
+            }
+            finally {
+                Pop-Location
+            }
+        }
+    }
+
+    # Sort repos by level descending (deepest dependencies first)
+    $sortedRepos = $discoveredRepos.Values | Sort-Object { $repoLevels[$_.Name] } -Descending
+}
 
 # Output the results
 Write-Host ""
 Write-Host "Discovered $($sortedRepos.Count) repositories (deepest dependencies first):" -ForegroundColor Cyan
+$index = 1
 foreach ($repo in $sortedRepos) {
-    $level = $repoLevels[$repo.Name]
-    Write-Host "  [$level] $($repo.Name)" -ForegroundColor Gray
+    Write-Host "  $index. $($repo.Name)" -ForegroundColor Gray
+    $index++
 }
 
 return @($sortedRepos)
