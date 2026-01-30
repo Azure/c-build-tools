@@ -132,7 +132,7 @@ jobs:
   - task: CmdLine@2
     displayName: 'Build solution (ARM64 native msbuild)'
     inputs:
-      script: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\arm64\MSBuild.exe" build_arm64\*.sln /t:restore /t:build /p:Configuration=Debug /p:Platform=ARM64 /m'
+      script: 'msbuild build_arm64\*.sln /t:restore /t:build /p:Configuration=Debug /p:Platform=ARM64 /m'
 
   - task: CmdLine@2
     displayName: 'Run ctest Debug'
@@ -164,7 +164,7 @@ jobs:
   - task: CmdLine@2
     displayName: 'Build solution (ARM64 native msbuild)'
     inputs:
-      script: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\arm64\MSBuild.exe" build_arm64\*.sln /t:restore /t:build /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /m'
+      script: 'msbuild build_arm64\*.sln /t:restore /t:build /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /m'
 
   - task: CmdLine@2
     displayName: 'Run ctest RelWithDebInfo'

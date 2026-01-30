@@ -111,12 +111,12 @@ jobs:
       workingDirectory: '$(Build.BinariesDirectory)\c'
       cmakeArgs: '$(Build.SourcesDirectory) ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
 
-  # ARM64 builds use ARM64 native msbuild (VSBuild@1 doesn't support ARM64)
+  # ARM64 builds use msbuild directly (VSBuild@1 doesn't support ARM64)
   - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
     - task: CmdLine@2
-      displayName: '🏗️ Build solution (ARM64 native msbuild)'
+      displayName: '🏗️ Build solution (ARM64)'
       inputs:
-        script: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\arm64\MSBuild.exe" "$(Build.BinariesDirectory)\c\*.sln" /t:restore /t:build /p:Configuration=${{ parameters.build_configuration }} /p:Platform=ARM64 /m'
+        script: 'msbuild "$(Build.BinariesDirectory)\c\*.sln" /t:restore /t:build /p:Configuration=${{ parameters.build_configuration }} /p:Platform=ARM64 /m'
 
   - ${{ else }}:
     - task: VSBuild@1
