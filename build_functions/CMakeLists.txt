@@ -218,19 +218,14 @@ macro(set_default_build_options)
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
-        # VLD include path depends on architecture
-        # ARM64: VLD is installed in Program Files
-        # x86/x64: VLD is installed in Program Files (x86)
+        # VLD 2.5.14+ installs to Program Files (not x86) on 64-bit Windows
+        include_directories("$ENV{ProgramFiles}/Visual Leak Detector/include")
         if (${ARCHITECTURE} STREQUAL "ARM64")
-            include_directories("$ENV{ProgramFiles}/Visual Leak Detector/include")
             link_directories("$ENV{ProgramFiles}/Visual Leak Detector/lib/ARM64")
+        elseif (${ARCHITECTURE} STREQUAL "x86_64")
+            link_directories("$ENV{ProgramFiles}/Visual Leak Detector/lib/Win64")
         else()
-            include_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include")
-            if (${ARCHITECTURE} STREQUAL "x86_64")
-                link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win64")
-            else()
-                link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win32")
-            endif()
+            link_directories("$ENV{ProgramFiles}/Visual Leak Detector/lib/Win32")
         endif()
     endif()
 
