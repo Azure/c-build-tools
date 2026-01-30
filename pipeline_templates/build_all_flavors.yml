@@ -58,19 +58,16 @@ parameters:
     default: true
 
 jobs:
-# x64 builds (blocking)
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
   - ${{ each FSANITIZE_TYPE in parameters.FSANITIZE_TYPE_VALUES }}:
-    - ${{ each ARCH_TYPE in parameters.ARCH_TYPE_VALUES }}:
-      - ${{ each BUILD_CONFIGURATION_TYPE in parameters.BUILD_CONFIGURATION_TYPE_VALUES }}:
-        # - ${{ if not( and( eq( GBALLOC_LL_TYPE , 'MIMALLOC' ), eq(FSANITIZE_TYPE, 'ON'))) }}: <==this fails to compile, reasons "2 parameters passed to if". The below line is equivalent.
-        # there is no point in running mimalloc and fsanitize, so that combination is excluded from the whole build.
-        - ${{ if or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')) }}:
+    - ${{ each BUILD_CONFIGURATION_TYPE in parameters.BUILD_CONFIGURATION_TYPE_VALUES }}:
+      # there is no point in running jemalloc and fsanitize, so that combination is excluded
+      - ${{ if or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')) }}:
+        # x64 builds from ARCH_TYPE_VALUES (blocking)
+        - ${{ each ARCH_TYPE in parameters.ARCH_TYPE_VALUES }}:
           - template: build_and_run_tests.yml
             parameters:
-              # BUILD_SUFFIX is the concatenation of all the parameters. It exists for every single template. Because all jobs/etc in a pipeline need to have different names. So a job name will end with ${{ parameters.BUILDSUFFIX }}
               BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}
-              # passing the other parameters, each separated for easy consumption. The invoked template MUST have all these parameters listed.
               GBALLOC_LL_TYPE: ${{ GBALLOC_LL_TYPE }}
               build_configuration: ${{ BUILD_CONFIGURATION_TYPE }}
               FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
@@ -82,13 +79,8 @@ jobs:
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
               failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
-
-# ARM64 builds (optional, non-blocking with continueOnError)
-- ${{ if eq(parameters.include_arm64, true) }}:
-  - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
-    - ${{ each FSANITIZE_TYPE in parameters.FSANITIZE_TYPE_VALUES }}:
-      - ${{ each BUILD_CONFIGURATION_TYPE in parameters.BUILD_CONFIGURATION_TYPE_VALUES }}:
-        - ${{ if or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')) }}:
+        # ARM64 builds (optional, non-blocking)
+        - ${{ if eq(parameters.include_arm64, true) }}:
           - template: build_and_run_tests.yml
             parameters:
               BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_ARM64
