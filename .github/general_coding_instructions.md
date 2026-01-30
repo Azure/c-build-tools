@@ -255,8 +255,9 @@ THANDLE(TYPE) my_function_create(uint32_t count, TYPE_HANDLE* items)
 ### Validation Patterns
 - Check for `NULL` pointers first
 - Validate value ranges and constraints
+- **Combine all validations in a single `if` statement** with `||` operator whenever possible (avoid multiple separate `if` statements for parameter checks)
+- **Log ALL function arguments when validation fails** - include every parameter with its type and value in the `LogError()` call, not just the invalid ones
 - Use `LogError()` to log validation failures with parameter values
-- Group related validations in single `if` statement with `||` operator
 - Include SRS requirement comments for each validation
 
 ## Goto Usage Rules {#goto-usage}
@@ -456,14 +457,18 @@ else
 ## Additional Conventions {#additional-conventions}
 
 ### Mockable Function Declarations {#mockable-functions}
-For functions that need to be mocked in unit tests, use `MOCKABLE_FUNCTION` in header files:
+For functions that need to be mocked in unit tests, use `MOCKABLE_FUNCTION` or `MOCKABLE_FUNCTION_WITH_RETURNS` in header files:
 
 ```c
 // In header file (e.g., my_module.h)
-#include "umock_c/umock_c.h"
+#include "umock_c/umock_c_prod.h"
 
-// Mockable function declaration
+// Basic mockable function declaration
 MOCKABLE_FUNCTION(, int, my_module_function, int, param1, const char*, param2);
+
+// Preferred: MOCKABLE_FUNCTION_WITH_RETURNS when success/failure values are known
+// Syntax: MOCKABLE_FUNCTION_WITH_RETURNS(, return_type, function_name, params...)(success_value, failure_value);
+MOCKABLE_FUNCTION_WITH_RETURNS(, MY_RESULT, my_module_operation, int, param1, const char*, param2)(MY_RESULT_OK, MY_RESULT_ERROR);
 
 // In implementation file (e.g., my_module.c)
 int my_module_function(int param1, const char* param2)
@@ -474,9 +479,10 @@ int my_module_function(int param1, const char* param2)
 ```
 
 **MOCKABLE_FUNCTION Rules:**
+- **Prefer `MOCKABLE_FUNCTION_WITH_RETURNS`**: When the function has known success and failure return values, use `MOCKABLE_FUNCTION_WITH_RETURNS` to enable automatic mock return value registration
 - **Use for external dependencies**: Mock functions that your module calls from other modules
 - **Use for testable isolation**: Mock functions to isolate the unit under test
-- **Include umock_c header**: Always include `umock_c/umock_c.h` when using MOCKABLE_FUNCTION
+- **Include umock_c header**: Always include `umock_c/umock_c_prod.h` when using MOCKABLE_FUNCTION
 - **Don't mock internal functions**: Only mock functions that cross module boundaries
 - **Maintain function signature**: The MOCKABLE_FUNCTION signature must exactly match the implementation
 
@@ -660,6 +666,25 @@ For unit test files, use the `ENABLE_MOCKS` pattern between infrastructure and d
 - Use `malloc`/`free` for dynamic allocation
 - Use `malloc_2()` helper for array allocations with overflow protection
 - Always check allocation results and handle failures gracefully
+
+### Pointer Casting Rules
+- **Do NOT cast `void*` to other pointer types** - In C, `void*` implicitly converts to any other pointer type without a cast
+- This applies specifically to:
+  - **`malloc` return values**: Assign directly without casting
+  - **Callback context parameters**: Assign `void* context` directly to typed pointers
+- Unnecessary casts can hide bugs and reduce code clarity
+
+```c
+// CORRECT - no cast needed
+MY_STRUCT* ptr = malloc(sizeof(MY_STRUCT));
+MY_CONTEXT* context_ptr = context;  // void* context parameter
+
+// INCORRECT - unnecessary casts
+MY_STRUCT* ptr = (MY_STRUCT*)malloc(sizeof(MY_STRUCT));  // Don't do this
+MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
+```
+
+**Exception**: Casts ARE required when converting `void*` to `const` qualified pointer types (e.g., `const MY_STRUCT*`).
 
 ### Error Handling
 - Use `LogError()` for error conditions with descriptive messages

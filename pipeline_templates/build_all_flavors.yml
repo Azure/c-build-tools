@@ -28,7 +28,6 @@ parameters:
     default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_traceability:BOOL=ON -Drun_repo_validation:BOOL=ON"
 
   # If this parameter is specified the specified test suite will be run without invoking ctest
-  # This is very useful for debugging a single test suite because ctest still does not allow Watson dumps to be collected
   - name: run_test_suite_without_ctest
     type: string
     default: ""
@@ -39,9 +38,8 @@ parameters:
     type: boolean
     default: false
   # This may be overridden to pass a different value to run_ctest_with_appverifier.yml, depending on how c-build-tools is consumed
-  # The default empty value falls back to the default value in run_ctest_with_appverifier.yml
   - name: repo_root_override
-    default: ""
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
   # Used for app verifier script to find the binaries, typically this will be _exe_suffix.exe where suffix is defined by the project
   - name: binary_name_suffix
     default: "_exe.exe"
@@ -50,6 +48,10 @@ parameters:
   - name: appverifier_skip_tests_list
     type: string
     default: ""
+  # Set to false for repos that don't have *_ut_*.dll test assemblies (e.g. macro-utils-c)
+  - name: failOnMinTestsNotRun
+    type: boolean
+    default: true
 
   # include_arm64 enables ARM64 builds. ARM64 builds are optional and do not block the pipeline.
   # When enabled, ARM64 jobs run with continueOnError: true, so failures don't fail the overall build.
@@ -81,6 +83,7 @@ jobs:
               repo_root_override: ${{ parameters.repo_root_override }}
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
+              failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
 
 # ARM64 builds - optional, non-blocking. Runs only if include_arm64 is true.
 # These builds use continueOnError so they don't block the pipeline result.
@@ -99,4 +102,5 @@ jobs:
       repo_root_override: ${{ parameters.repo_root_override }}
       binary_name_suffix: ${{ parameters.binary_name_suffix }}
       appverifier_skip_tests_list: ""
+      failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
       is_optional: true
