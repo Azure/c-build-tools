@@ -43,6 +43,9 @@ jobs:
   displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}'
   # ARM64 builds are optional - they don't block the pipeline result
   continueOnError: ${{ parameters.is_optional }}
+  # ARM64 builds can be skipped by setting SKIP_ARM64=true variable when queueing
+  ${{ if eq(parameters.is_optional, true) }}:
+    condition: and(succeeded(), ne(variables['SKIP_ARM64'], 'true'))
 
   variables:
     ${{ if eq(parameters.FSANITIZE_TYPE, 'ON') }}:
