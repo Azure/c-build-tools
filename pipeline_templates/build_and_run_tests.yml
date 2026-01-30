@@ -35,10 +35,15 @@ parameters:
   - name: failOnMinTestsNotRun
     type: boolean
     default: true
+  # ARM64 builds are optional (continueOnError) so they don't block the gate
+  - name: is_optional
+    type: boolean
+    default: false
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
   displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}'
+  continueOnError: ${{ parameters.is_optional }}
 
   variables:
     ${{ if eq(parameters.FSANITIZE_TYPE, 'ON') }}:
@@ -46,12 +51,21 @@ jobs:
     ${{ if eq(parameters.FSANITIZE_TYPE, 'OFF') }}:
       use_vld_option: '-Duse_vld:bool=ON'
 
-  pool:
-    name: Azure-MessagingStore-WinBuildPoolVS2022_0
-    demands:
-    - msbuild
-    - cmake
-    - visualstudio
+  # ARM64 uses dedicated ARM pool, x64 uses standard pool
+  ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
+    pool:
+      name: Azure-MessagingStore-WinBuildPoolARM
+      demands:
+      - msbuild
+      - cmake
+      - visualstudio
+  ${{ else }}:
+    pool:
+      name: Azure-MessagingStore-WinBuildPoolVS2022_0
+      demands:
+      - msbuild
+      - cmake
+      - visualstudio
 
   workspace:
     clean: all
@@ -97,13 +111,21 @@ jobs:
       workingDirectory: '$(Build.BinariesDirectory)\c'
       cmakeArgs: '$(Build.SourcesDirectory) ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
 
-  - task: VSBuild@1
-    displayName: '🏗️ Build solution $(Build.BinariesDirectory)\c\*.sln'
-    inputs:
-      solution: '$(Build.BinariesDirectory)\c\*.sln'
-      msbuildArgs: '/t:restore /t:build'
-      configuration: ${{ parameters.build_configuration }}
-      maximumCpuCount: true
+  # ARM64 builds use ARM64 native msbuild (VSBuild@1 doesn't support ARM64)
+  - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
+    - task: CmdLine@2
+      displayName: '🏗️ Build solution (ARM64 native msbuild)'
+      inputs:
+        script: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\arm64\MSBuild.exe" "$(Build.BinariesDirectory)\c\*.sln" /t:restore /t:build /p:Configuration=${{ parameters.build_configuration }} /p:Platform=ARM64 /m'
+
+  - ${{ else }}:
+    - task: VSBuild@1
+      displayName: '🏗️ Build solution $(Build.BinariesDirectory)\c\*.sln'
+      inputs:
+        solution: '$(Build.BinariesDirectory)\c\*.sln'
+        msbuildArgs: '/t:restore /t:build'
+        configuration: ${{ parameters.build_configuration }}
+        maximumCpuCount: true
 
   - template : start_logman.yml
 

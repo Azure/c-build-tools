@@ -1,6 +1,7 @@
 #Copyright (C) Microsoft Corporation. All rights reserved.
 
-set(CMAKE_CSharp_FLAGS "/langversion:latest /platform:x64")
+# Use dynamic platform for ARM64 support
+set(CMAKE_CSharp_FLAGS "/langversion:latest /platform:${CMAKE_VS_PLATFORM_NAME}")
 
 add_executable(Azure.Messaging.SarifResultsChecker
     Program.cs
@@ -19,8 +20,9 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
     PROPERTY VS_GLOBAL_TreatWarningsAsErrors true
 )
 
+# .NET Framework 4.8.1 required for native ARM64 support
 set_property(TARGET Azure.Messaging.SarifResultsChecker
-    PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.7.2"
+    PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.8.1"
 )
 
 if (EXISTS ${PROJECT_SOURCE_DIR}/MSSharedLibSN1024.snk)
