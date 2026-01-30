@@ -2,39 +2,21 @@ name: $(BuildID)_$(BuildDefinitionName)_$(SourceBranchName)_$(Date:yyyyMMdd)$(Re
 resources:
 - repo: self
   clean: true
+
 jobs:
-- job: Build_Windows_x64_Debug
+# Windows builds using build_all_flavors template
+- template: /pipeline_templates/build_all_flavors.yml
+  parameters:
+    cmake_options: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON"
+    repo_root_override: $(Build.SourcesDirectory)
+    FSANITIZE_TYPE_VALUES: ["OFF"]
+
+# srs_extension tests (run once, not per build configuration)
+- job: srs_extension_tests
+  displayName: 'srs_extension npm tests'
   pool:
     name: Azure-MessagingStore-WinBuildPoolVS2022_0
-    demands:
-    - msbuild
-    - visualstudio
-    - Build
   steps:
-
-  - template: /pipeline_templates/get_machine_information.yml
-
-  - task: BatchScript@1
-    displayName: 'Setup VS Vars'
-    inputs:
-      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
-      modifyEnvironment: true
-
-  - task: CMake@1
-    displayName: 'CMake .. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -Duse_vld:BOOL=ON -G "Visual Studio 17 2022"'
-    inputs:
-      workingDirectory: 'build_x64'
-      cmakeArgs: '.. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -Duse_vld:BOOL=ON -G "Visual Studio 17 2022"'
-
-  - task: VSBuild@1
-    displayName: 'Build solution build_x64\*.sln'
-    inputs:
-      solution: 'build_x64\*.sln'
-      platform: x64
-      configuration: Debug
-      msbuildArgs: '/t:restore /t:build'
-      maximumCpuCount: true
-
   - task: Npm@1
     displayName: 'npm install for srs_extension'
     inputs:
@@ -47,130 +29,10 @@ jobs:
       command: custom
       customCommand: 'run test --verbose'
       workingDir: srs_extension
-
-  - task: CmdLine@2
-    displayName: 'Run ctest Debug'
-    inputs:
-      script: 'ctest -C "Debug" --output-on-failure'
-      workingDirectory: 'build_x64'
-
-- job: Build_Windows_x64_RelWithDebInfo
-  pool:
-    name: Azure-MessagingStore-WinBuildPoolVS2022_0
-    demands:
-    - Cmd
-    - msbuild
-    - visualstudio
-    - Build
-  steps:
-  - task: BatchScript@1
-    displayName: 'Setup VS Vars'
-    inputs:
-      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
-      modifyEnvironment: true
-
-  - task: CMake@1
-    displayName: 'CMake .. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -G "Visual Studio 17 2022" -A x64'
-    inputs:
-      workingDirectory: 'build_x64'
-      cmakeArgs: '.. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -G "Visual Studio 17 2022" -A x64'
-
-  - task: VSBuild@1
-    displayName: 'Build solution build_x64\*.sln'
-    inputs:
-      solution: 'build_x64\*.sln'
-      platform: x64
-      configuration: RelWithDebInfo
-      msbuildArgs: '/t:restore /t:build'
-      maximumCpuCount: true
-
-  - task: Npm@1
-    displayName: 'npm install for srs_extension'
-    inputs:
-      command: install
-      workingDir: srs_extension
-
-  - task: Npm@1
-    displayName: 'npm run tests for srs_extension'
-    inputs:
-      command: custom
-      customCommand: 'run test --verbose'
-      workingDir: srs_extension
-
-  - task: CmdLine@2
-    displayName: 'Run ctest RelWithDebInfo'
-    inputs:
-      script: 'ctest -C "RelWithDebInfo" --output-on-failure'
-      workingDirectory: 'build_x64'
 
 - template: /pipeline_templates/codeql3000_default.yml
   parameters:
     repo_root: $(Build.SourcesDirectory)
-
-# ARM64 builds to test ARM64 pipeline support (optional, non-blocking)
-- job: Build_Windows_ARM64_Debug
-  displayName: 'Build Windows ARM64 Debug (optional)'
-  continueOnError: true
-  pool:
-    name: Azure-MessagingStore-WinBuildPoolARM
-    demands:
-    - msbuild
-    - visualstudio
-  steps:
-  - task: BatchScript@1
-    displayName: 'Setup VS Vars'
-    inputs:
-      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
-      modifyEnvironment: true
-
-  - task: CMake@1
-    displayName: 'CMake (ARM64)'
-    inputs:
-      workingDirectory: 'build_arm64'
-      cmakeArgs: '.. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -Duse_vld:BOOL=ON -G "Visual Studio 17 2022" -A ARM64'
-
-  - task: CmdLine@2
-    displayName: 'Build solution (ARM64 native msbuild)'
-    inputs:
-      script: 'msbuild build_arm64\*.sln /t:restore /t:build /p:Configuration=Debug /p:Platform=ARM64 /m'
-
-  - task: CmdLine@2
-    displayName: 'Run ctest Debug'
-    inputs:
-      script: 'ctest -C "Debug" --output-on-failure'
-      workingDirectory: 'build_arm64'
-
-- job: Build_Windows_ARM64_RelWithDebInfo
-  displayName: 'Build Windows ARM64 RelWithDebInfo (optional)'
-  continueOnError: true
-  pool:
-    name: Azure-MessagingStore-WinBuildPoolARM
-    demands:
-    - msbuild
-    - visualstudio
-  steps:
-  - task: BatchScript@1
-    displayName: 'Setup VS Vars'
-    inputs:
-      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
-      modifyEnvironment: true
-
-  - task: CMake@1
-    displayName: 'CMake (ARM64)'
-    inputs:
-      workingDirectory: 'build_arm64'
-      cmakeArgs: '.. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -G "Visual Studio 17 2022" -A ARM64'
-
-  - task: CmdLine@2
-    displayName: 'Build solution (ARM64 native msbuild)'
-    inputs:
-      script: 'msbuild build_arm64\*.sln /t:restore /t:build /p:Configuration=RelWithDebInfo /p:Platform=ARM64 /m'
-
-  - task: CmdLine@2
-    displayName: 'Run ctest RelWithDebInfo'
-    inputs:
-      script: 'ctest -C "RelWithDebInfo" --output-on-failure'
-      workingDirectory: 'build_arm64'
 
 - job: linuxubuntu
   displayName: 'Build Linux Ubuntu 22.04'
