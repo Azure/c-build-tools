@@ -103,6 +103,42 @@ jobs:
       script: 'ctest -C "RelWithDebInfo" --output-on-failure'
       workingDirectory: 'build_x64'
 
+- job: Build_Windows_ARM64_Debug
+  displayName: 'Build Windows ARM64 Debug (optional)'
+  continueOnError: true
+  pool:
+    name: Azure-MessagingStore-WinBuildPoolARM
+    demands:
+    - msbuild
+    - visualstudio
+  steps:
+  - task: BatchScript@1
+    displayName: 'Setup VS Vars'
+    inputs:
+      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
+      modifyEnvironment: true
+
+  - task: CMake@1
+    displayName: 'CMake (ARM64)'
+    inputs:
+      workingDirectory: 'build_arm64'
+      cmakeArgs: '.. -Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON -Duse_vld:BOOL=ON -G "Visual Studio 17 2022" -A ARM64'
+
+  - task: VSBuild@1
+    displayName: 'Build solution build_arm64\*.sln'
+    inputs:
+      solution: 'build_arm64\*.sln'
+      platform: ARM64
+      configuration: Debug
+      msbuildArgs: '/t:restore /t:build'
+      maximumCpuCount: true
+
+  - task: CmdLine@2
+    displayName: 'Run ctest Debug'
+    inputs:
+      script: 'ctest -C "Debug" --output-on-failure'
+      workingDirectory: 'build_arm64'
+
 - template: /pipeline_templates/codeql3000_default.yml
   parameters:
     repo_root: $(Build.SourcesDirectory)
