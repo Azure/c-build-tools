@@ -46,6 +46,13 @@ param(
     [Parameter()][string]$binaryNameSuffix
 )
 
+# Check if appverif is available (not installed on ARM64 build pools)
+$appverifPath = Get-Command appverif -ErrorAction SilentlyContinue
+if (-not $appverifPath) {
+    Write-Output "Application Verifier (appverif) is not installed on this machine. Skipping."
+    exit 0
+}
+
 if ($on)
 {
     $allTests = & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe" -N $ctestArgs.Split()
