@@ -75,6 +75,145 @@ jobs:
     submodules: true
     clean: false
 
+  # ARM64 diagnostics: detect emulation and list agent binaries architecture
+  - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
+    - task: PowerShell@2
+      displayName: '🔍 ARM64 Diagnostics - Detect emulation and list agent binaries'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "=== ARM64 EMULATION DETECTION ==="
+          Write-Host "Processor Architecture: $env:PROCESSOR_ARCHITECTURE"
+          Write-Host "Processor Identifier: $env:PROCESSOR_IDENTIFIER"
+          
+          # Check if running under emulation
+          $isEmulated = $false
+          try {
+            $key = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction SilentlyContinue
+            if ($key) {
+              Write-Host "Windows Build: $($key.CurrentBuild)"
+              Write-Host "Windows Edition: $($key.EditionID)"
+            }
+          } catch { Write-Host "Could not read registry" }
+          
+          # Check for WoW64 (x64 emulation on ARM64)
+          if (Test-Path "C:\Windows\SysArm32") {
+            Write-Host "SysArm32 exists - native ARM64 Windows"
+          }
+          if (Test-Path "C:\Windows\SysWow64") {
+            Write-Host "SysWow64 exists - WoW64 layer present"
+          }
+          
+          # Check IsWow64Process2 via .NET
+          Add-Type -TypeDefinition @"
+          using System;
+          using System.Runtime.InteropServices;
+          public class EmulationCheck {
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern bool IsWow64Process2(IntPtr hProcess, out ushort pProcessMachine, out ushort pNativeMachine);
+            
+            public static string GetMachineType(ushort machine) {
+              switch (machine) {
+                case 0: return "UNKNOWN";
+                case 0x014c: return "I386 (x86)";
+                case 0x8664: return "AMD64 (x64)";
+                case 0xAA64: return "ARM64";
+                case 0x01c4: return "ARMNT (ARM32)";
+                default: return "OTHER (0x" + machine.ToString("X4") + ")";
+              }
+            }
+          }
+          "@
+          
+          try {
+            [ushort]$processMachine = 0
+            [ushort]$nativeMachine = 0
+            $result = [EmulationCheck]::IsWow64Process2([System.Diagnostics.Process]::GetCurrentProcess().Handle, [ref]$processMachine, [ref]$nativeMachine)
+            if ($result) {
+              Write-Host "Process Machine Type: $([EmulationCheck]::GetMachineType($processMachine))"
+              Write-Host "Native Machine Type: $([EmulationCheck]::GetMachineType($nativeMachine))"
+              if ($processMachine -ne 0 -and $processMachine -ne $nativeMachine) {
+                Write-Host "*** RUNNING UNDER EMULATION ***"
+              } else {
+                Write-Host "Running NATIVE (no emulation)"
+              }
+            }
+          } catch {
+            Write-Host "IsWow64Process2 check failed: $_"
+          }
+          
+          Write-Host ""
+          Write-Host "=== AGENT FOLDER BINARY ARCHITECTURE SCAN ==="
+          $agentRoot = "C:\vss-agent"
+          if (-not (Test-Path $agentRoot)) {
+            $agentRoot = $env:AGENT_HOMEDIRECTORY
+            if (-not $agentRoot) { $agentRoot = "C:\agent" }
+          }
+          Write-Host "Scanning agent folder: $agentRoot"
+          
+          function Get-PEArchitecture {
+            param([string]$FilePath)
+            try {
+              $stream = [System.IO.File]::OpenRead($FilePath)
+              $reader = New-Object System.IO.BinaryReader($stream)
+              
+              # Read first 4KB
+              $bytes = $reader.ReadBytes(4096)
+              $reader.Close()
+              $stream.Close()
+              
+              # Check MZ header
+              if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { return "NOT_PE" }
+              
+              # Get PE header offset from offset 0x3C
+              $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+              if ($peOffset -lt 0 -or $peOffset -gt 3500) { return "INVALID_PE" }
+              
+              # Check PE signature
+              if ($bytes[$peOffset] -ne 0x50 -or $bytes[$peOffset+1] -ne 0x45) { return "NOT_PE" }
+              
+              # Machine type at PE+4
+              $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+              switch ($machine) {
+                0x014c { return "x86" }
+                0x8664 { return "x64" }
+                0xAA64 { return "ARM64" }
+                0x01c4 { return "ARM32" }
+                default { return "UNKNOWN(0x$($machine.ToString('X4')))" }
+              }
+            } catch {
+              return "ERROR"
+            }
+          }
+          
+          # Find and analyze node.exe files
+          Write-Host ""
+          Write-Host "=== NODE.EXE FILES ==="
+          Get-ChildItem -Path $agentRoot -Filter "node.exe" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            $arch = Get-PEArchitecture $_.FullName
+            Write-Host "$arch : $($_.FullName)"
+          }
+          
+          # Find externals folder and list structure
+          Write-Host ""
+          Write-Host "=== EXTERNALS FOLDER STRUCTURE ==="
+          $externalsPath = Join-Path $agentRoot "*\externals"
+          Get-ChildItem -Path $externalsPath -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "External: $($_.Name)"
+            Get-ChildItem -Path $_.FullName -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "  - $($_.Name)"
+            }
+          }
+          
+          # Sample of other executables for comparison
+          Write-Host ""
+          Write-Host "=== SAMPLE OF AGENT EXECUTABLES ==="
+          Get-ChildItem -Path $agentRoot -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object {
+            $arch = Get-PEArchitecture $_.FullName
+            Write-Host "$arch : $($_.FullName)"
+          }
+      continueOnError: true
+
   - task: BatchScript@1
     displayName: 'Git submodule update'
     inputs:
