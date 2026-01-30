@@ -14,11 +14,11 @@
 # "all" we have to do is recursively call cmake itself (relying on any options passed to be cached)
 # then we can have "post-generate" step commands, which we will use to hack up the sln and replace "Any CPU" with "x64"
 # BUT we can't do this from a clean cmake directory, cmake needs to run normally at least once
-# This macro must be added near the top of any project using .NET6+ projects (or any SDK style C#)
+# This macro must be added near the top of any project using .NET 8+ projects (or any SDK style C#)
 # Users must generate the project normally and then enable FIX_ANY_CPU
-macro(enable_net6_sln_anycpu_fix)
+macro(enable_net8_sln_anycpu_fix)
     if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "4.2.0")
-        message(NOTICE "CMake version ${CMAKE_VERSION} detected, no need to enable ANY_CPU fix for .NET SDK projects, this macro can be removed")
+        message(NOTICE "CMake version ${CMAKE_VERSION} detected, no need to enable ANY_CPU fix for .NET 8+ SDK projects, this macro can be removed")
     else()
         option(FIX_ANY_CPU "Enable work-around to fix AnyCPU generated in sln, must run cmake once without this first" OFF)
         option(RECURSIVE_GENERATE "Recursive call to cmake" OFF)
@@ -48,7 +48,7 @@ macro(enable_net6_sln_anycpu_fix)
             # post-generate steps here
             message(CHECK_START "Fixing the csproj mess of AnyCPU...")
             execute_process(COMMAND
-                powershell -Command "(Get-Content ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.sln) -replace 'Any CPU', 'x64' | Out-File ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.sln"
+                powershell -Command "(Get-Content ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.sln) -replace 'Any CPU', '${CMAKE_VS_PLATFORM_NAME}' | Out-File ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.sln"
                 RESULT_VARIABLE any_cpu_fix_result)
             if (${any_cpu_fix_result} EQUAL 0)
                 message(CHECK_PASS "done")

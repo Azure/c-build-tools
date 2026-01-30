@@ -51,6 +51,13 @@ parameters:
     type: string
     default: ""
 
+  # include_arm64 enables ARM64 builds. ARM64 builds are optional and do not block the pipeline.
+  # When enabled, ARM64 jobs run with continueOnError: true, so failures don't fail the overall build.
+  # This allows ARM64 builds to run in parallel without blocking the gate on the smaller ARM64 pool.
+  - name: include_arm64
+    type: boolean
+    default: true
+
 jobs:
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
   - ${{ each FSANITIZE_TYPE in parameters.FSANITIZE_TYPE_VALUES }}:
@@ -74,3 +81,22 @@ jobs:
               repo_root_override: ${{ parameters.repo_root_override }}
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
+
+# ARM64 builds - optional, non-blocking. Runs only if include_arm64 is true.
+# These builds use continueOnError so they don't block the pipeline result.
+# ARM64 pool is smaller, so we run a reduced matrix: only PASSTHROUGH allocator, no fsanitize, Debug only.
+- ${{ if eq(parameters.include_arm64, true) }}:
+  - template: build_and_run_tests.yml
+    parameters:
+      BUILD_SUFFIX: _Debug_PASSTHROUGH_FSANITIZE_OFF_ARM64
+      GBALLOC_LL_TYPE: PASSTHROUGH
+      build_configuration: Debug
+      FSANITIZE_TYPE: OFF
+      ARCH_TYPE: ARM64
+      cmake_options: ${{ parameters.cmake_options }}
+      run_test_suite_without_ctest: ${{ parameters.run_test_suite_without_ctest }}
+      with_app_verifier: false
+      repo_root_override: ${{ parameters.repo_root_override }}
+      binary_name_suffix: ${{ parameters.binary_name_suffix }}
+      appverifier_skip_tests_list: ""
+      is_optional: true

@@ -2,7 +2,7 @@
 
 enable_language(CSharp)
 
-# csharp_sdk_fix is required for .NET 6+ projects
+# csharp_sdk_fix is required for .NET 8+ projects
 add_subdirectory(csharp_sdk_fix)
 
 remove_definitions(-DBUILD_CONFIG=$<CONFIG>)
@@ -22,10 +22,10 @@ add_executable(traceabilitytool assemblyinfo.cs
     settings.designer.cs
 )
 
-# Use .NET 8 Windows for WinForms support
-build_as_csharp_net8_windows_project(traceabilitytool)
+# Use .NET 8 for command-line application
+build_as_csharp_net8_project(traceabilitytool)
 
-# Override RuntimeIdentifier to use lowercase format required by .NET 6+
+# Override RuntimeIdentifier to use lowercase format required by .NET 8+
 string(TOLOWER "${CMAKE_VS_PLATFORM_NAME}" platform_lower)
 set_property(TARGET traceabilitytool
     PROPERTY VS_GLOBAL_RuntimeIdentifier "win-${platform_lower}"
@@ -45,21 +45,10 @@ set_property(TARGET traceabilitytool
     PROPERTY VS_GLOBAL_GenerateAssemblyInfo false
 )
 
-# Enable Windows Forms
-set_property(TARGET traceabilitytool
-    PROPERTY VS_GLOBAL_UseWindowsForms true
-)
-
-# Suppress CA1416 platform-specific API warnings for .NET 8 (Windows-only app)
-set_property(TARGET traceabilitytool
-    PROPERTY VS_GLOBAL_NoWarn "CA1416"
-)
-
-# Add required package references for .NET 6 WinForms
+# Add required package references
 set_property(TARGET traceabilitytool
     PROPERTY VS_PACKAGE_REFERENCES 
         "DocumentFormat.OpenXml_2.9.1"
-        "System.Configuration.ConfigurationManager_6.0.0"
 )
 
 set_property(TARGET traceabilitytool

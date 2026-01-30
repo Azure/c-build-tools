@@ -1,6 +1,8 @@
 #Copyright (C) Microsoft Corporation. All rights reserved.
 
-set(CMAKE_CSharp_FLAGS "/langversion:latest /platform:x64")
+# Platform flag for C# compiler - use CMAKE_VS_PLATFORM_NAME to support both x64 and ARM64
+string(TOLOWER "${CMAKE_VS_PLATFORM_NAME}" CSHARP_PLATFORM)
+set(CMAKE_CSharp_FLAGS "/langversion:latest /platform:${CSHARP_PLATFORM}")
 
 add_executable(Azure.Messaging.SarifResultsChecker
     Program.cs
@@ -20,7 +22,7 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
 )
 
 set_property(TARGET Azure.Messaging.SarifResultsChecker
-    PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.7.2"
+    PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.8.1"
 )
 
 if (EXISTS ${PROJECT_SOURCE_DIR}/MSSharedLibSN1024.snk)
