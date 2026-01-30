@@ -11,11 +11,10 @@ parameters:
     type: object
     default: ["ON", "OFF"]
 
-  # ARCH_TYPE_VALUES exists merely for example for future extension capabilities
-  # it provides the "walked path" of how to extend the pipeline with a completely different orthogonal parameter that can take an array of string of values
+  # ARCH_TYPE_VALUES - architectures to build. ARM64 builds are optional (non-blocking).
   - name: ARCH_TYPE_VALUES
     type: object
-    default: ["x64"]
+    default: ["x64", "ARM64"]
 
   # BUILD_CONFIGURATION_TYPE_VALUES is a list of build configurations to be used in the pipeline
   - name: BUILD_CONFIGURATION_TYPE_VALUES
@@ -52,19 +51,14 @@ parameters:
   - name: failOnMinTestsNotRun
     type: boolean
     default: true
-  # Enable ARM64 builds (optional, non-blocking)
-  - name: include_arm64
-    type: boolean
-    default: true
 
 jobs:
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
   - ${{ each FSANITIZE_TYPE in parameters.FSANITIZE_TYPE_VALUES }}:
     - ${{ each BUILD_CONFIGURATION_TYPE in parameters.BUILD_CONFIGURATION_TYPE_VALUES }}:
-      # there is no point in running jemalloc and fsanitize, so that combination is excluded
-      - ${{ if or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')) }}:
-        # x64 builds from ARCH_TYPE_VALUES (blocking)
-        - ${{ each ARCH_TYPE in parameters.ARCH_TYPE_VALUES }}:
+      - ${{ each ARCH_TYPE in parameters.ARCH_TYPE_VALUES }}:
+        # there is no point in running jemalloc and fsanitize, so that combination is excluded
+        - ${{ if or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')) }}:
           - template: build_and_run_tests.yml
             parameters:
               BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}
@@ -79,20 +73,6 @@ jobs:
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
               failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
-        # ARM64 builds (optional, non-blocking)
-        - ${{ if eq(parameters.include_arm64, true) }}:
-          - template: build_and_run_tests.yml
-            parameters:
-              BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_ARM64
-              GBALLOC_LL_TYPE: ${{ GBALLOC_LL_TYPE }}
-              build_configuration: ${{ BUILD_CONFIGURATION_TYPE }}
-              FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
-              ARCH_TYPE: ARM64
-              cmake_options: ${{ parameters.cmake_options }}
-              run_test_suite_without_ctest: ${{ parameters.run_test_suite_without_ctest }}
-              with_app_verifier: ${{ parameters.with_app_verifier }}
-              repo_root_override: ${{ parameters.repo_root_override }}
-              binary_name_suffix: ${{ parameters.binary_name_suffix }}
-              appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
-              failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
-              is_optional: true
+              # ARM64 builds are optional (non-blocking)
+              ${{ if eq(ARCH_TYPE, 'ARM64') }}:
+                is_optional: true
