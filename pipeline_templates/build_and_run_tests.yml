@@ -46,10 +46,9 @@ jobs:
   continueOnError: ${{ parameters.is_optional }}
 
   variables:
-    # VLD is disabled for fsanitize=ON (incompatible) and ARM64 (VLD doesn't support ARM64)
-    ${{ if or(eq(parameters.FSANITIZE_TYPE, 'ON'), eq(parameters.ARCH_TYPE, 'ARM64')) }}:
+    ${{ if eq(parameters.FSANITIZE_TYPE, 'ON') }}:
       use_vld_option: '-Duse_vld:bool=OFF'
-    ${{ else }}:
+    ${{ if eq(parameters.FSANITIZE_TYPE, 'OFF') }}:
       use_vld_option: '-Duse_vld:bool=ON'
 
   # ARM64 uses dedicated ARM pool, x64 uses standard pool
