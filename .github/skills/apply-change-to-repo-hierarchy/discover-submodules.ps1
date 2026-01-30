@@ -212,94 +212,56 @@ if (-not (Test-Path $buildGraphScript)) {
     }
 }
 
-$sortedRepos = @()
-
-if ((Test-Path $buildGraphScript) -and ($discoveredRepos.Count -gt 0)) {
-    Write-Host "Using build_graph.ps1 for dependency ordering..." -ForegroundColor Cyan
-    
-    # Get root repo URL for build_graph
-    $rootUrl = $discoveredRepos.Values | Where-Object { $_.Name -eq $rootName } | Select-Object -First 1 -ExpandProperty Url
-    
-    if ($rootUrl) {
-        # Create temp directory for build_graph output
-        $tempDir = Join-Path $env:TEMP "discover-submodules-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-        
-        try {
-            Push-Location $tempDir
-            try {
-                # Call build_graph.ps1 with the root URL
-                & $buildGraphScript -root_list @($rootUrl) 2>&1 | Out-Null
-                
-                # Read the order from order.json
-                $orderFile = Join-Path $tempDir "order.json"
-                if (Test-Path $orderFile) {
-                    $repoOrder = Get-Content $orderFile | ConvertFrom-Json
-                    
-                    # Map the ordered names back to our repo objects
-                    foreach ($repoName in $repoOrder) {
-                        if ($discoveredRepos.ContainsKey($repoName) -and ($repoName -notin $ExcludeRepos)) {
-                            $sortedRepos += $discoveredRepos[$repoName]
-                        }
-                    }
-                    
-                    # Add any repos that weren't in the order (shouldn't happen, but safety)
-                    foreach ($repo in $discoveredRepos.Values) {
-                        if ($repo.Name -notin $sortedRepos.Name) {
-                            $sortedRepos += $repo
-                        }
-                    }
-                }
-            }
-            finally {
-                Pop-Location
-            }
-        }
-        finally {
-            # Cleanup temp directory
-            Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
-        }
-    }
+if (-not (Test-Path $buildGraphScript)) {
+    Write-Error "Cannot find build_graph.ps1. Expected at: $buildGraphScript"
+    exit 1
 }
 
-# Fallback: if build_graph didn't work, use simple level-based ordering
-if ($sortedRepos.Count -eq 0) {
-    Write-Host "Using fallback level-based ordering..." -ForegroundColor Yellow
-    
-    # Build a simple level-based ordering: repos that are dependencies of others come first
-    $repoLevels = @{}
-    foreach ($repo in $discoveredRepos.Values) {
-        $repoLevels[$repo.Name] = 0
-    }
+$sortedRepos = @()
 
-    # Compute levels by checking which repos contain which as submodules
-    foreach ($repo in $discoveredRepos.Values) {
-        if ($repo.AbsolutePath -and (Test-Path $repo.AbsolutePath)) {
-            Push-Location $repo.AbsolutePath
-            try {
-                $submoduleNames = git submodule foreach --quiet 'echo $name' 2>$null
-                if ($submoduleNames) {
-                    foreach ($subName in $submoduleNames) {
-                        $subName = $subName.Trim()
-                        if ($repoLevels.ContainsKey($subName)) {
-                            # Submodule should have higher level (processed first)
-                            $currentLevel = $repoLevels[$subName]
-                            $parentLevel = $repoLevels[$repo.Name]
-                            if ($currentLevel -le $parentLevel) {
-                                $repoLevels[$subName] = $parentLevel + 1
-                            }
-                        }
-                    }
-                }
-            }
-            finally {
-                Pop-Location
+Write-Host "Using build_graph.ps1 for dependency ordering..." -ForegroundColor Cyan
+
+# Get root repo URL for build_graph
+$rootUrl = $discoveredRepos.Values | Where-Object { $_.Name -eq $rootName } | Select-Object -First 1 -ExpandProperty Url
+
+if (-not $rootUrl) {
+    Write-Error "Cannot determine root repository URL for dependency ordering"
+    exit 1
+}
+
+# Create temp directory for build_graph output
+$tempDir = Join-Path $env:TEMP "discover-submodules-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+
+try {
+    Push-Location $tempDir
+    try {
+        # Call build_graph.ps1 with the root URL
+        & $buildGraphScript -root_list @($rootUrl) 2>&1 | Out-Null
+        
+        # Read the order from order.json
+        $orderFile = Join-Path $tempDir "order.json"
+        if (-not (Test-Path $orderFile)) {
+            Write-Error "build_graph.ps1 did not produce order.json"
+            exit 1
+        }
+        
+        $repoOrder = Get-Content $orderFile | ConvertFrom-Json
+        
+        # Map the ordered names back to our repo objects
+        foreach ($repoName in $repoOrder) {
+            if ($discoveredRepos.ContainsKey($repoName) -and ($repoName -notin $ExcludeRepos)) {
+                $sortedRepos += $discoveredRepos[$repoName]
             }
         }
     }
-
-    # Sort repos by level descending (deepest dependencies first)
-    $sortedRepos = $discoveredRepos.Values | Sort-Object { $repoLevels[$_.Name] } -Descending
+    finally {
+        Pop-Location
+    }
+}
+finally {
+    # Cleanup temp directory
+    Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
 }
 
 # Output the results
