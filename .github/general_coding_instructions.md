@@ -336,6 +336,12 @@ callbackwillcome:
 }
 ```
 
+### Cleanup/Undo Order
+Place cleanup operations at the **end** of the `else` block following the operation they undo. Use `goto all_ok` to skip cleanup on the success path (see the Success Path example above).
+
+### `all_ok` Label Placement
+The `all_ok` label must go immediately before the `return` statement -- never with other code between the label and the return (see the Success Path example above).
+
 ### Label Naming
 - Use descriptive, lowercase labels with underscores: `all_ok`, `cleanup`, `callback_will_come`
 - Prefer snake_case for consistency with function and variable naming
@@ -391,6 +397,63 @@ int my_function(void)
 - **No space for function calls**: `function(param)`
 
 ## If/Else Formatting Rules {#if-else-formatting}
+
+### Every `if` Must Have an `else`
+Every `if` statement must have an explicit `else` block. This ensures all code paths are intentionally handled and makes the logic clear to reviewers:
+
+```c
+// Incorrect - missing else
+if (error_condition)
+{
+    LogError("...");
+    result = MU_FAILURE;
+}
+
+// Correct - explicit else
+if (error_condition)
+{
+    LogError("...");
+    result = MU_FAILURE;
+}
+else
+{
+    // Success path
+    result = 0;
+}
+```
+
+### Error Path in `if`, Success Path in `else`
+The **error/nothing-to-do** path always goes in the `if` block; the **success/main code** path goes in the `else` block:
+
+```c
+// Correct - error in if, success in else
+if (handle == NULL)
+{
+    LogError("invalid argument");
+    result = MU_FAILURE;
+}
+else
+{
+    // Main logic here
+    result = perform_operation(handle);
+}
+```
+
+### `switch` Statement Ordering
+The `default` case must always be at the **end** of a `switch` statement:
+
+```c
+// Correct - default at end
+switch (state)
+{
+    case STATE_A:
+        break;
+    case STATE_B:
+        break;
+    default:
+        break;
+}
+```
 
 ### Multi-Condition Validation
 ```c
