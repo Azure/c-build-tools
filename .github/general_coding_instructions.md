@@ -317,14 +317,14 @@ int my_async_function(HANDLE handle, CALLBACK callback, void* context)
     }
     else
     {
-        if (start_async_operation() == 0)
+        if (start_async_operation() != 0)
         {
-            result = 0;  // Success path sets result
-            goto callback_will_come;
+            result = MU_FAILURE;  // Async start failure sets result
         }
         else
         {
-            result = MU_FAILURE;  // Async start failure sets result
+            result = 0;  // Success path sets result
+            goto callback_will_come;
         }
     }
     
