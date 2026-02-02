@@ -337,10 +337,48 @@ callbackwillcome:
 ```
 
 ### Cleanup/Undo Order
-Place cleanup operations at the **end** of the `else` block following the operation they undo. Use `goto all_ok` to skip cleanup on the success path (see the Success Path example above).
+Place cleanup operations at the **end** of the `else` block following the operation they undo. Use `goto all_ok` to skip cleanup on the success path:
+
+```c
+if (sm_exec_begin(handle->sm) != SM_EXEC_GRANTED)
+{
+    LogError("sm_exec_begin failed");
+    result = MU_FAILURE;
+}
+else
+{
+    if (do_work(handle) != 0)
+    {
+        LogError("do_work failed");
+        result = MU_FAILURE;
+    }
+    else
+    {
+        result = 0;
+        goto all_ok;
+    }
+
+    // Cleanup at END of else block - only reached on error
+    sm_exec_end(handle->sm);
+}
+
+all_ok:
+    return result;
+```
 
 ### `all_ok` Label Placement
-The `all_ok` label must go immediately before the `return` statement -- never with other code between the label and the return (see the Success Path example above).
+The `all_ok` label must go immediately before the `return` statement -- never with other code between the label and the return:
+
+```c
+// Incorrect - code between label and return
+all_ok:
+    free(buffer);       // Don't put code here
+    return result;
+
+// Correct - label immediately before return
+all_ok:
+    return result;
+```
 
 ### Label Naming
 - Use descriptive, lowercase labels with underscores: `all_ok`, `cleanup`, `callback_will_come`
