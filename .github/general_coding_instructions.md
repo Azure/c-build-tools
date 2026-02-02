@@ -324,14 +324,14 @@ int my_async_function(HANDLE handle, CALLBACK callback, void* context)
         else
         {
             result = 0;  // Success path sets result
-            goto callback_will_come;
+            goto all_ok;
         }
     }
-    
+
     // Synchronous error path - call callback immediately
     callback(context, ERROR_RESULT);
-    
-callbackwillcome:
+
+all_ok:
     return result;
 }
 ```
