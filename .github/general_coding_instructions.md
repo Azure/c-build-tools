@@ -477,22 +477,6 @@ else
 }
 ```
 
-### `switch` Statement Ordering
-The `default` case must always be at the **end** of a `switch` statement:
-
-```c
-// Correct - default at end
-switch (state)
-{
-    case STATE_A:
-        break;
-    case STATE_B:
-        break;
-    default:
-        break;
-}
-```
-
 ### Multi-Condition Validation
 ```c
 if (
