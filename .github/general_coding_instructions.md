@@ -441,10 +441,9 @@ Every `if` statement must have an explicit `else` block. This ensures all code p
 
 ```c
 // Incorrect - missing else
-if (error_condition)
+if (!error)
 {
-    LogError("...");
-    result = MU_FAILURE;
+    result = 0;
 }
 
 // Correct - explicit else
