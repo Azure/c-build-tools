@@ -1,6 +1,9 @@
 #Copyright (C) Microsoft Corporation. All rights reserved.
 
-# Use dynamic platform for ARM64 support
+# Convert platform name to lowercase for NuGet RuntimeIdentifier
+string(TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFORM_NAME_LOWER)
+
+# Use dynamic platform for native x64/ARM64 builds
 set(CMAKE_CSharp_FLAGS "/langversion:latest /platform:${CMAKE_VS_PLATFORM_NAME}")
 
 add_executable(Azure.Messaging.SarifResultsChecker
@@ -38,7 +41,17 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
 )
 
 set_property(TARGET Azure.Messaging.SarifResultsChecker
-    PROPERTY VS_GLOBAL_RuntimeIdentifier "win-${CMAKE_VS_PLATFORM_NAME}"
+    PROPERTY VS_GLOBAL_RuntimeIdentifier "win-${PLATFORM_NAME_LOWER}"
+)
+
+# Include base 'win' RID for NuGet package compatibility
+set_property(TARGET Azure.Messaging.SarifResultsChecker
+    PROPERTY VS_GLOBAL_RuntimeIdentifiers "win;win-${PLATFORM_NAME_LOWER}"
+)
+
+# Set PlatformTarget for native code generation
+set_property(TARGET Azure.Messaging.SarifResultsChecker
+    PROPERTY VS_GLOBAL_PlatformTarget "${CMAKE_VS_PLATFORM_NAME}"
 )
 
 set_output_folder_properties(Azure.Messaging.SarifResultsChecker)
