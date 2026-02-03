@@ -10,7 +10,7 @@
 #   - Bot comments (azure-pipelines[bot], etc.)
 #   - Pipeline trigger comments (/AzurePipelines run)
 #
-# Outputs to cmake/ folder of current project for easy access
+# Outputs to a folder (default: cmake/) which is created if it doesn't exist
 #
 # Usage:
 #   pwsh -File .github/scripts/parse_github_pr_comments.ps1 -prUrl "https://github.com/owner/repo/pull/123" -ShowResolved YES
