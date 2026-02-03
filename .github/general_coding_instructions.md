@@ -337,36 +337,6 @@ all_ok:
 }
 ```
 
-### Cleanup/Undo Order
-Place cleanup operations at the **end** of the `else` block following the operation they undo. Use `goto all_ok` to skip cleanup on the success path:
-
-```c
-if (sm_exec_begin(handle->sm) != SM_EXEC_GRANTED)
-{
-    LogError("sm_exec_begin failed");
-    result = MU_FAILURE;
-}
-else
-{
-    if (do_work(handle) != 0)
-    {
-        LogError("do_work failed");
-        result = MU_FAILURE;
-    }
-    else
-    {
-        result = 0;
-        goto all_ok;
-    }
-
-    // Cleanup at END of else block - only reached on error
-    sm_exec_end(handle->sm);
-}
-
-all_ok:
-    return result;
-```
-
 ### Multi-Level Cleanup Placement
 When multiple operations need cleanup, place each undo at the end of the corresponding `else` block. This ensures:
 1. Cleanup is only executed on error paths
@@ -548,13 +518,13 @@ When an `if` statement handles a condition but the `else` case requires no actio
 
 ```c
 // Correct - explicit else with "do nothing" comment
-if (should_process)
+if (item == NULL)
 {
-    process_item(item);
+    /* do nothing */
 }
 else
 {
-    /* do nothing */
+    process_item(item);
 }
 ```
 
@@ -892,7 +862,7 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 **Pattern:** `when_<condition>_then_<expected_outcome>`
 
 ```c
-// Correct - follows when/then pattern
+// Follows when/then pattern
 TEST_FUNCTION(when_handle_is_NULL_then_function_fails)
 TEST_FUNCTION(when_malloc_fails_then_create_returns_NULL)
 TEST_FUNCTION(when_all_calls_succeed_then_operation_succeeds)
@@ -900,11 +870,9 @@ TEST_FUNCTION(when_bsdl_open_complete_indicates_OK_then_user_callback_receives_O
 TEST_FUNCTION(when_sm_exec_begin_fails_then_write_records_async_fails)
 TEST_FUNCTION(when_callback_context_is_NULL_then_process_terminates)
 
-// Incorrect - missing when/then structure
-TEST_FUNCTION(function_with_NULL_fails)
-TEST_FUNCTION(function_succeeds)
-TEST_FUNCTION(on_callback_translates_ok_result)
-TEST_FUNCTION(test_error_handling)
+// Alternative patterns also acceptable
+TEST_FUNCTION(my_function_succeeds)  // Simple happy path
+TEST_FUNCTION(my_function_fails_when_underlying_functions_fail)  // Negative tests
 ```
 
 **Guidelines:**
@@ -912,26 +880,33 @@ TEST_FUNCTION(test_error_handling)
 - Use `then_` to describe the expected outcome or behavior
 - Be specific about what condition triggers the behavior
 - Be specific about what outcome is expected
-- Avoid generic names that don't describe the scenario
+- Simple `<function>_succeeds` naming is acceptable for straightforward happy path tests
 
 ### Test Helper Functions
 Create helper functions to reduce code duplication and improve test readability.
 
 **Naming Patterns:**
-- `create_<object>()` - Creates an object in default state
+- `setup_<object>_expectations()` - Sets up expected calls for creating an object
+- `setup_<scenario>_expectations()` - Sets up expected calls for a specific scenario
 - `create_<state>_<object>()` - Creates an object in a specific state (e.g., `create_opened_my_object`)
-- `setup_<scenario>()` - Sets up a specific test scenario
 
 ```c
-// Helper to create an object in default state
-static MY_HANDLE create_my_object(void)
+// Helper to set up expectations for object creation
+static void setup_create_my_object_expectations(void)
 {
     STRICT_EXPECTED_CALL(malloc(IGNORED_ARG));
     STRICT_EXPECTED_CALL(dependency_create());
+}
+
+// Helper to create an object and verify expectations
+static MY_HANDLE create_my_object(void)
+{
+    setup_create_my_object_expectations();
     
     MY_HANDLE handle = my_object_create();
     ASSERT_IS_NOT_NULL(handle);
-    umock_c_reset_all_calls();  // Always reset after setup
+    ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());
+    umock_c_reset_all_calls();
     return handle;
 }
 
@@ -939,14 +914,17 @@ static MY_HANDLE create_my_object(void)
 static MY_HANDLE create_opened_my_object(void)
 {
     MY_HANDLE handle = create_my_object();
+    setup_open_my_object_expectations();
     open_my_object(handle);
-    umock_c_reset_all_calls();  // Include reset in helper
+    ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());
+    umock_c_reset_all_calls();
     return handle;
 }
 ```
 
 **Guidelines:**
-- Include `umock_c_reset_all_calls()` inside helpers to provide clean mock state
+- Verify expected calls match actual calls in helpers with `ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls())` to catch setup bugs early
+- Include `umock_c_reset_all_calls()` at the end of helpers to provide clean mock state
 - Use descriptive names that indicate the state of the returned object
 - Combine related setup steps into single helpers to avoid repetitive patterns
 - Use helpers wherever the same setup pattern appears in multiple tests
