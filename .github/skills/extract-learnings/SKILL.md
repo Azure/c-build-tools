@@ -1,18 +1,22 @@
 ---
 name: extract-learnings
-description: Extract engineering learnings from PR feedback and save them to general_coding_guidelines.md. Use when a PR review cycle is complete or when the user wants to capture team style/preferences/practices.
-argument-hint: Optional PR URL, or add "background" to run async
+description: Extract engineering learnings from PR feedback and save them to general_coding_instructions.md. Use when a PR review cycle is complete or when the user wants to capture team style/preferences/practices.
+argument-hint: PR URL
 ---
 
-Extract learnings about team style, preferences, and engineering practices from PR review comments, then save them to the project's `general_coding_guidelines.md` file.
+Extract learnings about team style, preferences, and engineering practices from PR review comments, then save them to the project's `general_coding_instructions.md` file.
 
-## Target File: general_coding_guidelines.md
+## Target File: general_coding_instructions.md
 
-All learnings extracted from PR feedback should be saved to the project's `.github/general_coding_guidelines.md` file. This file contains team-wide coding conventions, style preferences, and best practices.
+All learnings extracted from PR feedback should be saved to `general_coding_instructions.md`. This file contains team-wide coding conventions, style preferences, and best practices.
+
+**File location:**
+- In c-build-tools repo: `.github/general_coding_instructions.md`
+- In higher-level repos: `deps/c-build-tools/.github/general_coding_instructions.md`
 
 ### Before Adding Learnings
 
-1. **Read the current file**: Read `.github/general_coding_guidelines.md` to understand its structure and existing content.
+1. **Read the current file**: Read `.github/general_coding_instructions.md` to understand its structure and existing content.
 
 2. **Check for duplicates**: Ensure the learning is not already documented. If it exists, skip it.
 
@@ -20,108 +24,7 @@ All learnings extracted from PR feedback should be saved to the project's `.gith
 
 4. **Add the learning**: Use the `Edit` tool to add the learning to the appropriate section.
 
-## Execution Modes
-
-### Mode Detection
-Check the arguments for execution mode:
-- **Inline mode** (default): Arguments contain only a PR URL
-- **Background mode**: Arguments contain "background", "async", or "bg"
-
-### Background/Async Mode
-
-If the user requests background execution (e.g., `/extract-learnings background <PR_URL>`):
-
-1. **Spawn a background agent** using the Task tool:
-   ```
-   Task tool with:
-   - subagent_type: "general-purpose"
-   - run_in_background: true
-   - prompt: Contains the full extraction workflow below
-   ```
-
-2. **The background agent will**:
-   - Fetch and parse PR threads
-   - Analyze learnings
-   - Check for duplicates against `.github/general_coding_guidelines.md`
-   - Write proposed learnings to: `pending_learnings/<PR_ID>_learnings.md`
-
-3. **Notify the user**:
-   - "Learning extraction started in background for PR #<ID>"
-   - "Results will be saved to: `<output_file>`"
-   - "Run `/extract-learnings approve <PR_ID>` to review and apply"
-
-4. **User can continue working** and later:
-   - Check the output file manually
-   - Run `/extract-learnings approve <PR_ID>` to review and apply learnings
-   - Run `/extract-learnings status` to check background agent progress
-
-### Background Agent Prompt Template
-
-When spawning the background agent, use this prompt:
-
-```
-Extract learnings from PR: <PR_URL>
-
-## Instructions
-1. Fetch all PR threads (use mcp__azure-devops__repo_list_pull_request_threads or parse_github_pr_comments.ps1)
-2. If response is too large, use parse_pr_threads.ps1 script
-3. Read `.github/general_coding_guidelines.md` to understand existing content
-4. For each learning, check if it already exists in general_coding_guidelines.md
-5. Identify NEW learnings (not already documented)
-6. For each learning, create markdown with:
-   - Thread ID/source
-   - Category
-   - Priority (High/Medium/Low)
-   - Proposed text (with code examples)
-   - Target section in general_coding_guidelines.md
-
-## Output
-Write results to: pending_learnings/<PR_ID>_learnings.md
-
-Format:
-# Proposed Learnings from PR #<ID>
-
-## Summary
-- Total threads analyzed: X
-- Learnings found: Y
-- Already documented (skip): Z
-- New learnings to add: W
-
-## New Learnings
-
-### Learning 1: <Title>
-- **Source**: Thread <ID>
-- **Category**: <category>
-- **Priority**: <High/Medium/Low>
-- **Target section**: <section name in general_coding_guidelines.md>
-
-**Proposed text:**
-```markdown
-<exact markdown to add>
-```
-
-### Learning 2: ...
-(repeat for each learning)
-
-## Already Documented (Skipped)
-- <pattern>: Already in general_coding_guidelines.md
-- ...
-```
-
-### Approval Workflow
-
-When user runs `/extract-learnings approve <PR_ID>`:
-1. Read `pending_learnings/<PR_ID>_learnings.md`
-2. Present the proposed learnings to user
-3. Ask for confirmation
-4. Apply approved learnings to `.github/general_coding_guidelines.md`
-5. Delete the pending file after successful application
-
----
-
-## Inline Mode Workflow (Default)
-
-When running inline (no "background" in arguments), follow this workflow:
+## Workflow
 
 ### Step 1: Fetch PR Comments
 
@@ -148,7 +51,7 @@ URL pattern: https://github.com/{owner}/{repo}/pull/{number}
 pwsh -File .github/scripts/parse_github_pr_comments.ps1 -prUrl "https://github.com/owner/repo/pull/123" -outputDir "cmake" -ShowResolved YES
 ```
 
-Then read the output: `Read cmake/github_pr_comments_parsed.txt`
+Then read the output: `Read cmake/extract-learnings/github_pr_comments_parsed.txt`
 
 The script automatically:
 - Fetches comments via `gh api` (requires GitHub CLI authenticated)
@@ -156,7 +59,7 @@ The script automatically:
 - With `-ShowResolved NO`: Only shows active/unresolved comments
 - Groups comments by file for easier reading
 - Shows active comment count vs resolved count
-- Writes output to `cmake/github_pr_comments_parsed.txt` for easy access
+- Writes output to `cmake/extract-learnings/github_pr_comments_parsed.txt` for easy access
 
 ### Step 1b: Handle Large Azure DevOps API Responses
 
@@ -193,18 +96,21 @@ Output is written to `cmake/pr_threads_parsed.txt` for easy access.
 
 ### Step 2: Categorize Learnings
 
-Extract and categorize learnings into these categories:
+Match learnings to existing sections in `general_coding_instructions.md`:
 
-| Category | Examples |
-|----------|----------|
-| **Code Style** | Naming conventions, brace placement, comment style |
-| **Error Handling** | Patterns for error paths, cleanup order, goto usage |
-| **Testing Practices** | Test structure, mocking patterns, cleanup requirements |
-| **Memory Management** | THANDLE patterns, leak prevention, allocation rules |
-| **Documentation** | Comment requirements, SRS tagging, test documentation |
-| **Build/CI** | Build commands, test execution, validation targets |
-| **Git Workflow** | Commit message style, branch naming, PR practices |
-| **Platform Specifics** | Windows vs Linux patterns, cross-platform considerations |
+| Section | Examples |
+|---------|----------|
+| **Function Naming Conventions** | Naming patterns, module prefixes, visibility rules |
+| **Function Structure Guidelines** | Organization, async callbacks, complexity |
+| **Variable Naming Conventions** | Variable naming patterns, special types |
+| **Result Variable Conventions** | Initialization, return patterns |
+| **Parameter Validation Rules** | Validation order, combined checks, logging |
+| **Goto Usage Rules** | Permitted patterns, label naming |
+| **Indentation and Formatting** | Spacing, brace style, alignment |
+| **If/Else Formatting Rules** | Multi-condition, bracing, error chains |
+| **Additional Conventions** | Mockable functions, header order, memory management, pointer casting, error handling, reference counting, async operations, requirements traceability |
+
+If a learning doesn't fit an existing section, propose a new section.
 
 ### Step 3: Identify Specific Patterns
 
@@ -223,7 +129,7 @@ Look for these types of learnings in feedback:
 3. **Implicit Patterns**:
    - Repeated similar corrections across multiple comments
    - Consistent feedback about specific constructs
-   - HAE ("Here And Everywhere") comments indicating codebase-wide patterns
+   - Comments indicating codebase-wide patterns (e.g., "do this everywhere", "same issue")
 
 4. **Best Practices**:
    - Performance recommendations
@@ -233,7 +139,7 @@ Look for these types of learnings in feedback:
 ### Learning Prioritization
 
 **High Priority** (always capture):
-- HAE ("Here And Everywhere") comments - team-wide conventions
+- Comments indicating team-wide conventions (e.g., "do this everywhere", "same issue")
 - Thread-safety/deadlock patterns
 - Memory leak prevention patterns
 - Patterns repeated by multiple reviewers
@@ -246,13 +152,6 @@ Look for these types of learnings in feedback:
 **Low Priority** (consider skipping):
 - One-off fixes for specific code
 - Subjective preferences without team consensus
-
-### Reviewer Context
-
-Note the reviewer's role when weighing feedback:
-- **Senior team members**: High authority, likely represent team standards
-- **Code owners**: Domain experts for their area
-- **Bots (MerlinBot)**: Automated suggestions, useful but lower priority than human reviewers
 
 ### Step 4: Formulate Learning Statements
 
@@ -278,10 +177,10 @@ TYPE items[SIZE];
 
 ### Step 5: Check for Duplicates
 
-Before adding learnings, check if they already exist in `.github/general_coding_guidelines.md`:
+Before adding learnings, check if they already exist in `.github/general_coding_instructions.md`:
 
 1. **Read the guidelines file**:
-   - Read `.github/general_coding_guidelines.md`
+   - Read `.github/general_coding_instructions.md`
    - Understand its structure and existing sections
    - Check if the learning is already documented
 
@@ -298,11 +197,12 @@ Before modifying any files, present to the user:
 
 #### Grouping Related Learnings by Section
 
-Before presenting, group related learnings by their target section in general_coding_guidelines.md:
-- Lock-related patterns -> Threading/Concurrency section
-- Test-related patterns -> Testing section
-- Logging patterns -> Logging section
-- Style patterns -> Code Style section
+Before presenting, group related learnings by their target section in general_coding_instructions.md:
+- Naming patterns -> Function Naming Conventions or Variable Naming Conventions
+- Error handling patterns -> Result Variable Conventions or Parameter Validation Rules
+- Formatting patterns -> Indentation and Formatting or If/Else Formatting Rules
+- Memory/pointer patterns -> Additional Conventions (Memory Management, Pointer Casting)
+- Test patterns -> Additional Conventions (Mockable Functions)
 - New topic -> propose a new section name
 
 #### Summary Format
@@ -313,14 +213,14 @@ Before presenting, group related learnings by their target section in general_co
 
 2. **Proposed additions**:
    - Show the exact text to be added
-   - Indicate which section of general_coding_guidelines.md it will be added to
+   - Indicate which section of general_coding_instructions.md it will be added to
 
 3. **Wait for user approval** before making changes
 
-### Step 7: Update general_coding_guidelines.md
+### Step 7: Update general_coding_instructions.md
 
 After approval:
-1. **Read the current file**: Read `.github/general_coding_guidelines.md` to get the current content
+1. **Read the current file**: Read `.github/general_coding_instructions.md` to get the current content
 2. **Find the target section**: Locate the appropriate section for each learning
 3. **Add the learning**: Use the `Edit` tool to add the learning to the appropriate section
 4. **Create new sections if needed**: If no existing section fits, add a new section with a clear heading
@@ -338,7 +238,7 @@ Use this summary template to report changes:
 | Testing | X | Y | Z |
 | Memory Management | X | Y | Z |
 
-**Added to general_coding_guidelines.md:** [numbered list with section name and source thread/comment IDs]
+**Added to general_coding_instructions.md:** [numbered list with section name and source thread/comment IDs]
 
 **New sections created:** [list of new section names, if any]
 
@@ -386,10 +286,10 @@ The skill integrates with existing workflows:
 |------|------|----------------|
 | Fetch ADO PR threads | `mcp__azure-devops__repo_list_pull_request_threads` | `pullRequestId`, `repositoryId`, `project` |
 | Parse large PR threads | `Bash` | `pwsh -File .github/scripts/parse_pr_threads.ps1 -jsonFile "<path>" -outputDir "cmake"` -> Read `cmake/pr_threads_parsed.txt` |
-| Parse GitHub comments | `Bash` | `pwsh -File .github/scripts/parse_github_pr_comments.ps1 -prUrl "<url>" -outputDir "cmake"` -> Read `cmake/github_pr_comments_parsed.txt` |
-| Read guidelines | `Read` | `file_path: .github/general_coding_guidelines.md` |
-| Search for duplicates | `Grep` | `pattern` (learning keywords), `path: .github/general_coding_guidelines.md` |
-| Update guidelines | `Edit` | `file_path: .github/general_coding_guidelines.md`, `old_string`, `new_string` |
+| Parse GitHub comments | `Bash` | `pwsh -File .github/scripts/parse_github_pr_comments.ps1 -prUrl "<url>" -outputDir "cmake"` -> Read `cmake/extract-learnings/github_pr_comments_parsed.txt` |
+| Read guidelines | `Read` | `file_path: .github/general_coding_instructions.md` |
+| Search for duplicates | `Grep` | `pattern` (learning keywords), `path: .github/general_coding_instructions.md` |
+| Update guidelines | `Edit` | `file_path: .github/general_coding_instructions.md`, `old_string`, `new_string` |
 
 ## Example Extraction
 

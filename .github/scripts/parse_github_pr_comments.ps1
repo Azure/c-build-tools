@@ -10,7 +10,7 @@
 #   - Bot comments (azure-pipelines[bot], etc.)
 #   - Pipeline trigger comments (/AzurePipelines run)
 #
-# Outputs to a folder (default: cmake/) which is created if it doesn't exist
+# Creates an output folder inside the specified directory (default: cmake/extract-learnings/)
 #
 # Usage:
 #   pwsh -File .github/scripts/parse_github_pr_comments.ps1 -prUrl "https://github.com/owner/repo/pull/123" -ShowResolved YES
@@ -56,12 +56,13 @@ if (-not $owner -or -not $repo -or $prNumber -eq 0) {
     exit 1
 }
 
-# Ensure output directory exists
-if (-not (Test-Path $outputDir)) {
-    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+# Create output folder inside $outputDir
+$outputFolder = Join-Path $outputDir "extract-learnings"
+if (-not (Test-Path $outputFolder)) {
+    New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
 }
 
-$outputFile = Join-Path $outputDir $outputFileName
+$outputFile = Join-Path $outputFolder $outputFileName
 
 Write-Host "Fetching PR comments for: $owner/$repo#$prNumber" -ForegroundColor Cyan
 Write-Host "=" * 60
