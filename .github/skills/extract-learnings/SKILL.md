@@ -1,26 +1,24 @@
 ---
 name: extract-learnings
-description: Extract engineering learnings from PR feedback, then save to the appropriate skill file (or create a new skill). Use when a PR review cycle is complete or when the user wants to capture team style/preferences/practices.
+description: Extract engineering learnings from PR feedback and save them to general_coding_guidelines.md. Use when a PR review cycle is complete or when the user wants to capture team style/preferences/practices.
 argument-hint: Optional PR URL, or add "background" to run async
 ---
 
-Extract learnings about team style, preferences, and engineering practices from PR review comments, then save them to the appropriate skill file or create a new skill.
+Extract learnings about team style, preferences, and engineering practices from PR review comments, then save them to the project's `general_coding_guidelines.md` file.
 
-## Key Principle: Skills Over Global Instructions
+## Target File: general_coding_guidelines.md
 
-**NEVER add learnings directly to global instruction files.** Global instruction files are reserved for cross-cutting, always-needed content (environment setup, workflow basics, shell quirks). All domain-specific learnings belong in skill files.
+All learnings extracted from PR feedback should be saved to the project's `.github/general_coding_guidelines.md` file. This file contains team-wide coding conventions, style preferences, and best practices.
 
-### Where to Save Learnings
+### Before Adding Learnings
 
-For each learning, follow this decision tree:
+1. **Read the current file**: Read `.github/general_coding_guidelines.md` to understand its structure and existing content.
 
-1. **Find the relevant skill**: List all skills and read their SKILL.md files. Match the learning to the most relevant skill by topic.
+2. **Check for duplicates**: Ensure the learning is not already documented. If it exists, skip it.
 
-2. **Check if the skill already has it**: Read the skill's SKILL.md and check if the learning is already documented. If yes, skip.
+3. **Find the right section**: Match the learning to an existing section (e.g., Code Style, Error Handling, Testing) or add a new section if needed.
 
-3. **Add to the existing skill**: If the skill exists but doesn't have the learning, use the `Edit` tool to add the learning to the appropriate section of that skill's SKILL.md.
-
-4. **Create a new skill**: If no existing skill is relevant, create a new skill directory with proper frontmatter (name, description, autoContext globs).
+4. **Add the learning**: Use the `Edit` tool to add the learning to the appropriate section.
 
 ## Execution Modes
 
@@ -44,7 +42,7 @@ If the user requests background execution (e.g., `/extract-learnings background 
 2. **The background agent will**:
    - Fetch and parse PR threads
    - Analyze learnings
-   - Check for duplicates against existing skills
+   - Check for duplicates against `.github/general_coding_guidelines.md`
    - Write proposed learnings to: `pending_learnings/<PR_ID>_learnings.md`
 
 3. **Notify the user**:
@@ -67,15 +65,15 @@ Extract learnings from PR: <PR_URL>
 ## Instructions
 1. Fetch all PR threads (use mcp__azure-devops__repo_list_pull_request_threads or parse_github_pr_comments.ps1)
 2. If response is too large, use parse_pr_threads.ps1 script
-3. List all skills under skills/ and read their SKILL.md files
-4. For each learning, find the relevant skill and check if it already documents the pattern
-5. Identify NEW learnings (not already documented in any skill)
+3. Read `.github/general_coding_guidelines.md` to understand existing content
+4. For each learning, check if it already exists in general_coding_guidelines.md
+5. Identify NEW learnings (not already documented)
 6. For each learning, create markdown with:
    - Thread ID/source
    - Category
    - Priority (High/Medium/Low)
    - Proposed text (with code examples)
-   - Target skill file to update (or "NEW SKILL: <name>" if no existing skill fits)
+   - Target section in general_coding_guidelines.md
 
 ## Output
 Write results to: pending_learnings/<PR_ID>_learnings.md
@@ -95,7 +93,7 @@ Format:
 - **Source**: Thread <ID>
 - **Category**: <category>
 - **Priority**: <High/Medium/Low>
-- **Target**: Update skill `<skill-name>` (or "Create new skill `<skill-name>`")
+- **Target section**: <section name in general_coding_guidelines.md>
 
 **Proposed text:**
 ```markdown
@@ -106,7 +104,7 @@ Format:
 (repeat for each learning)
 
 ## Already Documented (Skipped)
-- <pattern>: Already in skill `<skill-name>`
+- <pattern>: Already in general_coding_guidelines.md
 - ...
 ```
 
@@ -116,7 +114,7 @@ When user runs `/extract-learnings approve <PR_ID>`:
 1. Read `pending_learnings/<PR_ID>_learnings.md`
 2. Present the proposed learnings to user
 3. Ask for confirmation
-4. Apply approved learnings to the target skill files (or create new skills)
+4. Apply approved learnings to `.github/general_coding_guidelines.md`
 5. Delete the pending file after successful application
 
 ---
@@ -278,49 +276,34 @@ TYPE items[SIZE];
 ```
 ```
 
-### Step 5: Check Existing Skills for Duplicates
+### Step 5: Check for Duplicates
 
-Before adding learnings, check if they already exist:
+Before adding learnings, check if they already exist in `.github/general_coding_guidelines.md`:
 
-1. **Scan all skill files**:
-   - List all directories under `skills/`
-   - Read each skill's `SKILL.md` file
-   - Check if the learning is already documented in any skill
-   - Note which skill is the best target for each new learning
+1. **Read the guidelines file**:
+   - Read `.github/general_coding_guidelines.md`
+   - Understand its structure and existing sections
+   - Check if the learning is already documented
 
-2. **Check global instruction files** (cross-cutting content only):
-   - Only contains environment setup, workflow basics, shell quirks
-   - Do NOT add domain-specific learnings here
-
-3. **Project instruction files**:
-   - Read the project's instruction files in the repository root
-   - Extract all `@`-referenced instruction files
-   - These files are already loaded into context - search them for existing documentation of the pattern
-
-4. **Duplicate Detection Rules**:
-   - If a learning is already documented in any skill or `@`-referenced instruction file, **skip it**
+2. **Duplicate Detection Rules**:
+   - If a learning is already documented, **skip it**
    - Only add learnings that are:
-     - User/team-specific preferences not in standard docs
-     - Project-specific conventions not covered by dependencies
-     - Workflow preferences unique to this user's environment
-     - Corrections to or clarifications of standard patterns
-
-5. **When to update copilot-instructions.md instead**:
-   - If a learning should apply to all developers on the project, suggest adding it to the project's `.github/copilot-instructions.md`
-   - If a learning is about a dependency's patterns, note that it may belong in that dependency's instructions
+     - Team-specific preferences not already in the file
+     - New conventions established through PR feedback
+     - Corrections to or clarifications of existing patterns
 
 ### Step 6: Present Proposed Changes
 
 Before modifying any files, present to the user:
 
-#### Grouping Related Learnings by Target Skill
+#### Grouping Related Learnings by Section
 
-Before presenting, group related learnings by their target skill file:
-- Lock-related patterns -> relevant lock/threading skill
-- Test-related patterns -> test patterns skill
-- Logging patterns -> logging skill
-- Style patterns -> code conventions skill
-- New topic with no existing skill -> propose a new skill name
+Before presenting, group related learnings by their target section in general_coding_guidelines.md:
+- Lock-related patterns -> Threading/Concurrency section
+- Test-related patterns -> Testing section
+- Logging patterns -> Logging section
+- Style patterns -> Code Style section
+- New topic -> propose a new section name
 
 #### Summary Format
 
@@ -330,26 +313,19 @@ Before presenting, group related learnings by their target skill file:
 
 2. **Proposed additions**:
    - Show the exact text to be added
-   - Indicate which skill's SKILL.md it will be added to (or "New skill: `<name>`")
+   - Indicate which section of general_coding_guidelines.md it will be added to
 
 3. **Wait for user approval** before making changes
 
-### Step 7: Update Skill Files
+### Step 7: Update general_coding_guidelines.md
 
 After approval:
-1. **Existing skills**: Use the `Edit` tool to add new sections to the target skill's SKILL.md
-2. **New skills**: Create `skills/<skill-name>/SKILL.md` with proper frontmatter:
-   ```yaml
-   ---
-   name: <skill-name>
-   description: <what it covers and when to use it>
-   autoContext:
-     - glob: "<relevant file pattern>"
-   ---
-   ```
-3. Follow the existing format of the target skill file
-4. Use code examples with CORRECT/WRONG patterns where applicable
-5. **Never add to global instruction files** -- all learnings go into skill files
+1. **Read the current file**: Read `.github/general_coding_guidelines.md` to get the current content
+2. **Find the target section**: Locate the appropriate section for each learning
+3. **Add the learning**: Use the `Edit` tool to add the learning to the appropriate section
+4. **Create new sections if needed**: If no existing section fits, add a new section with a clear heading
+5. Follow the existing format of the file
+6. Use code examples with CORRECT/WRONG patterns where applicable
 
 ### Step 8: Summarize Changes
 
@@ -362,15 +338,15 @@ Use this summary template to report changes:
 | Testing | X | Y | Z |
 | Memory Management | X | Y | Z |
 
-**Added to skills:** [numbered list with target skill name and source thread/comment IDs]
+**Added to general_coding_guidelines.md:** [numbered list with section name and source thread/comment IDs]
 
-**New skills created:** [list of new skill names, if any]
+**New sections created:** [list of new section names, if any]
 
-**Skipped (already documented):** [list with location in existing skill]
+**Skipped (already documented):** [list with location in existing section]
 
 Report:
 - Number of new learnings added
-- Skills updated (and any new skills created)
+- Sections updated (and any new sections created)
 - Categories covered
 
 ## Guidelines
@@ -402,7 +378,6 @@ Report:
 
 The skill integrates with existing workflows:
 - **addressPrReviewComments**: After addressing PR comments, run this to capture learnings
-- **saveSkill**: Learnings about agent usage can become skills instead
 - **Manual review**: User can trigger after completing any significant work
 
 ## Tool Usage Reference
@@ -412,12 +387,9 @@ The skill integrates with existing workflows:
 | Fetch ADO PR threads | `mcp__azure-devops__repo_list_pull_request_threads` | `pullRequestId`, `repositoryId`, `project` |
 | Parse large PR threads | `Bash` | `pwsh -File .github/scripts/parse_pr_threads.ps1 -jsonFile "<path>" -outputDir "cmake"` -> Read `cmake/pr_threads_parsed.txt` |
 | Parse GitHub comments | `Bash` | `pwsh -File .github/scripts/parse_github_pr_comments.ps1 -prUrl "<url>" -outputDir "cmake"` -> Read `cmake/github_pr_comments_parsed.txt` |
-| List all skills | `Bash` | `ls skills/` |
-| Read a skill | `Read` | `file_path: skills/<name>/SKILL.md` |
-| Read project instructions | `Read` | `file_path: <repo_root>/<instruction_file>` |
-| Search skills for duplicates | `Grep` | `pattern` (learning keywords), `path: skills/` |
-| Update a skill | `Edit` | `file_path: skills/<name>/SKILL.md`, `old_string`, `new_string` |
-| Create new skill | `Write` | `file_path: skills/<name>/SKILL.md` (with frontmatter) |
+| Read guidelines | `Read` | `file_path: .github/general_coding_guidelines.md` |
+| Search for duplicates | `Grep` | `pattern` (learning keywords), `path: .github/general_coding_guidelines.md` |
+| Update guidelines | `Edit` | `file_path: .github/general_coding_guidelines.md`, `old_string`, `new_string` |
 
 ## Example Extraction
 
