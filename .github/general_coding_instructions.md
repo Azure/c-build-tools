@@ -569,12 +569,6 @@ static void on_item_inc_ref(void* item)
         /* do nothing */
     }
 }
-
-// Incorrect - missing else
-if (should_process)
-{
-    process_item(item);
-}
 ```
 
 ### Error Path in `if`, Success Path in `else`
@@ -906,7 +900,7 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 ## Unit Testing Guidelines {#unit-testing}
 
 ### Test Function Naming Convention
-All `TEST_FUNCTION` names must follow the `when_X_then_Y` pattern to clearly express the test scenario:
+`TEST_FUNCTION` names should generally follow the `when_X_then_Y` pattern to clearly express the test scenario:
 
 **Pattern:** `when_<condition>_then_<expected_outcome>`
 
