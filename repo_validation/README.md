@@ -452,7 +452,9 @@ To exempt a test from this requirement, add '// no-srs' to the TEST_FUNCTION lin
 
 **Script:** `scripts/validate_aaa_comments.ps1`
 
-**Purpose:** Ensures that all test functions (`TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`) in unit test (`*_ut.c`) and integration test (`*_int.c`) files contain AAA (Arrange, Act, Assert) comments in the correct order.
+**Purpose:** Ensures that all test functions (`TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`) in unit test (`*_ut.c`) files contain AAA (Arrange, Act, Assert) comments in the correct order.
+
+**Note:** Integration test files (`*_int.c`) are **not** validated by this script. Integration tests often have more complex structures (setup/teardown across multiple functions, scenario-based testing, etc.) that don't fit the simple AAA pattern.
 
 **Rationale:** The AAA pattern provides a clear structure for test functions:
 - **Arrange**: Set up the test preconditions and inputs
@@ -469,7 +471,7 @@ Using AAA comments consistently:
 - Default exclusions (if not customized): `deps`, `cmake`
 - Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
 
-**File Types Checked:** Unit test files (`*_ut.c`) and integration test files (`*_int.c`)
+**File Types Checked:** Unit test files (`*_ut.c`) only
 
 **Test Function Macros Detected:** `TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`
 
