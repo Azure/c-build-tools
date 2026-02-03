@@ -556,19 +556,6 @@ else
 {
     /* do nothing */
 }
-
-// Common pattern for callback ref counting
-static void on_item_inc_ref(void* item)
-{
-    if (item != NULL)
-    {
-        item_inc_ref(item);
-    }
-    else
-    {
-        /* do nothing */
-    }
-}
 ```
 
 ### Error Path in `if`, Success Path in `else`
