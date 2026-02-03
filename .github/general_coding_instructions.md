@@ -95,7 +95,7 @@ int my_operation_async(
 int my_operation_async(MY_HANDLE handle, const char* param, MY_ASYNC_CALLBACK callback, void* context)
 {
     int result;
-    
+
     // Parameter validation
     if (
         (handle == NULL) ||
@@ -118,7 +118,7 @@ int my_operation_async(MY_HANDLE handle, const char* param, MY_ASYNC_CALLBACK ca
             result = MU_FAILURE;  // Failed to start async operation
         }
     }
-    
+
 callback_will_come:
     return result;
 }
@@ -247,7 +247,7 @@ THANDLE(TYPE) my_function_create(uint32_t count, TYPE_HANDLE* items)
         // Actual function implementation follows validation
         result = create_actual_object(count, items);  // Must set result in success path
     }
-    
+
     return result;
 }
 ```
@@ -270,7 +270,7 @@ Goto is **permitted and encouraged** for the following patterns:
 int my_function(void)
 {
     int result;  // Uninitialized - all paths must set it
-    
+
     if (condition1_failed)
     {
         LogError("condition1 failed");
@@ -278,7 +278,7 @@ int my_function(void)
     }
     else if (condition2_failed)
     {
-        LogError("condition2 failed"); 
+        LogError("condition2 failed");
         result = MU_FAILURE;  // Error path sets result
     }
     else
@@ -295,10 +295,10 @@ int my_function(void)
             goto all_ok;
         }
     }
-    
+
     // Cleanup code here
     cleanup_resources();
-    
+
 all_ok:
     return result;
 }
@@ -309,7 +309,7 @@ all_ok:
 int my_async_function(HANDLE handle, CALLBACK callback, void* context)
 {
     int result;  // Uninitialized - all paths must set it
-    
+
     if (validation_failed)
     {
         LogError("validation failed");
@@ -367,7 +367,7 @@ all_ok:
 ```
 
 ### `all_ok` Label Placement
-The `all_ok` label must go immediately before the `return` statement -- never with other code between the label and the return:
+The `all_ok` label must go after the "undo".
 
 ```c
 // Incorrect - code between label and return
@@ -378,6 +378,36 @@ all_ok:
 // Correct - label immediately before return
 all_ok:
     return result;
+```
+
+If there are any "undo" operations that must be performed even in the success case, they can go after the all_ok label:
+
+```c
+srw_lock_acquire();
+if (sm_exec_begin(handle->sm) != SM_EXEC_GRANTED)
+{
+    LogError("sm_exec_begin failed");
+    result = MU_FAILURE;
+}
+else
+{
+    if (do_work(handle) != 0)
+    {
+        LogError("do_work failed");
+        result = MU_FAILURE;
+    }
+    else
+    {
+        result = 0;
+        goto all_ok;
+    }
+    // Cleanup at END of else block - only reached on error
+    sm_exec_end(handle->sm);
+}
+
+all_ok:
+srw_lock_release(); // lock must always be released
+return result;
 ```
 
 ### Label Naming
@@ -399,7 +429,7 @@ all_ok:
 ```c
 int long_function_name(
     VERY_LONG_TYPE_NAME* first_parameter,
-    ANOTHER_LONG_TYPE_NAME* second_parameter, 
+    ANOTHER_LONG_TYPE_NAME* second_parameter,
     uint32_t third_parameter,
     const char* fourth_parameter
     )
@@ -416,14 +446,14 @@ int my_function(void)
     }
     else
     {
-        // code  
+        // code
     }
-    
+
     while (condition)
     {
         // code
     }
-    
+
     for (uint32_t i = 0; i < count; i++)
     {
         // code
@@ -580,7 +610,7 @@ static int bsdl_internal_validate_address_array(uint32_t count, BSDL_ADDRESS_HAN
 {
     int result;
     uint32_t i;
-    
+
     // Implementation details not exposed to callers
     for (i = 0; i < count; i++)
     {
@@ -589,7 +619,7 @@ static int bsdl_internal_validate_address_array(uint32_t count, BSDL_ADDRESS_HAN
             break;  // Break on error
         }
     }
-    
+
     // Check if loop completed successfully
     if (i < count)
     {
@@ -599,7 +629,7 @@ static int bsdl_internal_validate_address_array(uint32_t count, BSDL_ADDRESS_HAN
     {
         result = 0;  // Loop completed successfully
     }
-    
+
     return result;
 }
 
@@ -607,7 +637,7 @@ static int bsdl_internal_validate_address_array(uint32_t count, BSDL_ADDRESS_HAN
 int bsdl_address_list_create(uint32_t count, BSDL_ADDRESS_HANDLE* addresses)
 {
     int result;
-    
+
     if (bsdl_internal_validate_address_array(count, addresses) != 0)
     {
         LogError("Address validation failed");
@@ -618,7 +648,7 @@ int bsdl_address_list_create(uint32_t count, BSDL_ADDRESS_HANDLE* addresses)
         // Create the address list
         result = 0;
     }
-    
+
     return result;
 }
 ```
@@ -628,7 +658,7 @@ int bsdl_address_list_create(uint32_t count, BSDL_ADDRESS_HANDLE* addresses)
 Headers must be included in a specific order to ensure proper compilation and avoid conflicts:
 
 1. **Standard C Library Headers** (first)
-2. **System/Platform Headers** 
+2. **System/Platform Headers**
 3. **Test Framework Headers** (for test files only)
 4. **Memory Management Headers** (gballoc_hl_redirect.h - MANDATORY)
 5. **Core Infrastructure Headers** (macro_utils, c_logging)
@@ -819,7 +849,7 @@ Requirements are traced to implementation using `Codes_SRS_` comments:
 int module_function(void* parameter)
 {
     int result;
-    
+
     /*Codes_SRS_MODULE_42_001: [ If parameter is NULL then module_function shall fail and return a non-zero value. ]*/
     if (parameter == NULL)
     {
@@ -842,7 +872,7 @@ int module_function(void* parameter)
             result = 0;
         }
     }
-    
+
     return result;
 }
 ```
@@ -856,7 +886,7 @@ TEST_FUNCTION(module_function_with_NULL_parameter_fails)
     // arrange
     // act
     int result = module_function(NULL);
-    
+
     // assert
     ASSERT_ARE_NOT_EQUAL(int, 0, result);
 }
@@ -868,10 +898,10 @@ TEST_FUNCTION(module_function_when_malloc_fails_returns_failure)
     // arrange
     STRICT_EXPECTED_CALL(malloc(IGNORED_ARG))
         .SetReturn(NULL);
-        
+
     // act
     int result = module_function(&some_parameter);
-    
+
     // assert
     ASSERT_ARE_NOT_EQUAL(int, 0, result);
     ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());
