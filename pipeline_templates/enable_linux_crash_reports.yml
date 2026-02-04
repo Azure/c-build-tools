@@ -1,9 +1,10 @@
-# This template enables Linux core dump collection for crash debugging
-# Run this template BEFORE running tests to ensure core dumps are captured on crashes
+# This template enables Linux core dump collection for crash debugging.
+# Sets kernel.core_pattern to write core files directly to the crash reports directory.
+# This is a system-level setting that persists across pipeline steps.
 #
-# It sets the kernel core_pattern to write core files directly to the crash reports
-# directory. This is a system-level setting that persists across pipeline steps
-# (unlike ulimit which is per-shell).
+# IMPORTANT: The consuming pipeline must also run `ulimit -c unlimited` in the same
+# shell/step that executes the tests. ulimit is per-process and does NOT persist
+# across pipeline steps.
 #
 # Usage:
 #   - template: pipeline_templates/enable_linux_crash_reports.yml@c_build_tools
@@ -21,15 +22,8 @@ steps:
       echo "Crash reports directory created: ${{ parameters.crash_reports_directory }}"
 
       # Set kernel core pattern to write core files to the crash reports directory
-      # This persists across pipeline steps (unlike ulimit which is per-shell)
       # Format: core.<executable_name>.<pid>.<timestamp>
+      # Note: ulimit -c must be set in the same shell that runs tests
       sudo sysctl -w kernel.core_pattern="${{ parameters.crash_reports_directory }}/core.%e.%p.%t"
       echo "Core pattern set to: $(cat /proc/sys/kernel/core_pattern)"
-
-      # Remove core file size limit (system-wide via sudo)
-      # ulimit only affects the current shell, so we also update the system default
-      sudo sh -c 'echo "* soft core unlimited" >> /etc/security/limits.conf'
-      sudo sh -c 'echo "* hard core unlimited" >> /etc/security/limits.conf'
-      ulimit -c unlimited
-      echo "Core dump limit: $(ulimit -c)"
     displayName: 'Enable Linux crash reports'

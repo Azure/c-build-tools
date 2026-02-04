@@ -14,11 +14,6 @@ steps:
           sudo sysctl -w kernel.core_pattern="core"
       fi
       echo "Core pattern restored to: $(cat /proc/sys/kernel/core_pattern)"
-
-      # Remove the unlimited core dump lines we added
-      sudo sed -i '/^\* soft core unlimited$/d' /etc/security/limits.conf
-      sudo sed -i '/^\* hard core unlimited$/d' /etc/security/limits.conf
-      echo "Removed core dump limit overrides from /etc/security/limits.conf"
     displayName: 'Disable Linux crash reports'
     condition: always()
     continueOnError: true

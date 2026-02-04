@@ -146,7 +146,9 @@ Three templates work together to capture Linux crash dumps in CI pipelines:
 - `collect_linux_crash_reports.yml` - collects core files and publishes as artifacts
 - `disable_linux_crash_reports.yml` - restores default core dump settings
 
-The enable template modifies system-level kernel settings (`core_pattern`, `limits.conf`) so core dumps are captured from all test executables. The disable template must be called afterward to restore defaults.
+The enable template sets `kernel.core_pattern` (a system-level kernel setting) so core dumps are written to a known directory. The disable template restores the default `core_pattern` afterward.
+
+**Important**: `ulimit -c unlimited` must be run in the **same shell/step** that executes the tests. `ulimit` is per-process and does not persist across pipeline steps. The enable template only sets `core_pattern` (which tells the kernel *where* to write core files); `ulimit` controls *whether* core files are written at all.
 
 Example usage in a Linux job:
 
@@ -157,12 +159,12 @@ Example usage in a Linux job:
     parameters:
       crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
 
-  # Run tests
-  - task: Bash@3
-    displayName: 'Build and run tests'
-    inputs:
-      filePath: './build/linux/build_linux.sh'
-      arguments: '$(Build.Repository.LocalPath)'
+  # Run tests (ulimit -c unlimited must be in the same shell that runs tests)
+  - bash: |
+      ulimit -c unlimited
+      ctest -j $(nproc) --output-on-failure
+    displayName: 'Run tests'
+    workingDirectory: $(Build.SourcesDirectory)/cmake_linux
 
   # Collect and publish crash reports
   - template: pipeline_templates/collect_linux_crash_reports.yml@c_build_tools
