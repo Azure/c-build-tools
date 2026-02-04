@@ -212,7 +212,14 @@ After approval:
 5. Follow the existing format of the file
 6. Use code examples with CORRECT/WRONG patterns where applicable
 
-### Step 8: Summarize Changes
+### Step 8: Create PR to c-build-tools
+
+After updating `general_coding_instructions.md`, create a PR to the c-build-tools repository with the changes:
+
+1. **If working in c-build-tools repo**: Create a branch and PR directly
+2. **If working in a higher-level repo**: The changes are in `deps/c-build-tools/.github/general_coding_instructions.md`. Create a PR to the [Azure/c-build-tools](https://github.com/Azure/c-build-tools) repository with the updated file.
+
+### Step 9: Summarize Changes
 
 Use this summary template to report changes:
 
@@ -242,15 +249,6 @@ Report:
 - **Actionable**: Shows what TO DO and what NOT to do
 - **Generalizable**: Applies beyond the specific PR/file
 - **Documented with examples**: Include code snippets when relevant
-
-### What to Skip
-
-- One-off typos or simple mistakes
-- Context-specific fixes that don't generalize
-- **Already documented in copilot-instructions.md or general_coding_instructions.md**
-- Patterns that are standard practice in the dependency chain
-- Temporary workarounds
-- Learnings that belong in project docs rather than personal memory
 
 ### Format Conventions
 
