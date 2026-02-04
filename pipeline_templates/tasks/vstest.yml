@@ -145,8 +145,9 @@ steps:
           $args += "/Settings:`"${{ parameters.runSettingsFile }}`""
         }
         
-        if ("${{ parameters.otherConsoleOptions }}" -ne "") {
-          $args += "${{ parameters.otherConsoleOptions }}".Split(' ')
+        $otherOptions = $env:OTHER_CONSOLE_OPTIONS
+        if ($otherOptions -ne "") {
+          $args += $otherOptions
         }
         
         Write-Host "Running: $vstestPath $($args -join ' ')"
@@ -160,6 +161,8 @@ steps:
       displayName: ${{ coalesce(parameters.displayName, 'VSTest (ARM64 Native)') }}
       condition: ${{ parameters.condition }}
       continueOnError: ${{ parameters.continueOnError }}
+      env:
+        OTHER_CONSOLE_OPTIONS: ${{ parameters.otherConsoleOptions }}
     
     # Publish test results from the native runner
     - task: PublishTestResults@2
