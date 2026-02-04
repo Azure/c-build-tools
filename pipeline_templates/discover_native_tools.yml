@@ -12,6 +12,7 @@
 #   $(msbuildPath)  - Path to MSBuild.exe (architecture-specific)
 #   $(cmakeArch)    - CMake architecture flag (x64, Win32, ARM64)
 #   $(targetPlatform) - MSBuild platform (x64, Win32, ARM64)
+#   $(cmakeGenerator) - CMake generator string (e.g., "Visual Studio 17 2022")
 #
 # Usage:
 #   - template: discover_native_tools.yml@c_build_tools
@@ -86,6 +87,21 @@ steps:
         }
         Write-Host "Visual Studio found at: $vsPath"
         Write-Host "##vso[task.setvariable variable=vsPath]$vsPath"
+        
+        # Get VS version to determine CMake generator
+        $vsVersion = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationVersion
+        $vsMajor = [int]($vsVersion -split '\.')[0]
+        Write-Host "Visual Studio version: $vsVersion (major: $vsMajor)"
+        
+        # Map VS major version to CMake generator
+        $cmakeGenerator = switch ($vsMajor) {
+            18 { "Visual Studio 18 2026" }
+            17 { "Visual Studio 17 2022" }
+            16 { "Visual Studio 16 2019" }
+            default { "Visual Studio $vsMajor" }
+        }
+        Write-Host "CMake generator: $cmakeGenerator"
+        Write-Host "##vso[task.setvariable variable=cmakeGenerator]$cmakeGenerator"
         Write-Host ""
         
         # Find CMake bundled with Visual Studio
@@ -153,7 +169,7 @@ steps:
         Write-Host "============================================================"
         Write-Host ""
         Write-Host "Use these variables in subsequent steps:"
-        Write-Host '  CMake:    "$(cmakePath)" -S . -B build -A $(cmakeArch)'
+        Write-Host '  CMake:    "$(cmakePath)" -S . -B build -G "$(cmakeGenerator)" -A $(cmakeArch)'
         Write-Host '  MSBuild:  "$(msbuildPath)" solution.sln /p:Platform=$(targetPlatform)'
         Write-Host '  CTest:    "$(ctestPath)" -C Debug --output-on-failure'
         Write-Host ""

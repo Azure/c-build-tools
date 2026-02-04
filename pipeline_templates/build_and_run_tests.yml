@@ -161,7 +161,7 @@ jobs:
           "${{ variables.use_vld_option }}",
           "-DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }}",
           "-DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}",
-          '-G "Visual Studio 17 2022"',
+          "-G `"$(cmakeGenerator)`"",
           "-A $(cmakeArch)"
         ) -join " "
         
