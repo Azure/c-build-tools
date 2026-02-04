@@ -106,29 +106,68 @@ steps:
         ${{ if ne(parameters.testRunTitle, '') }}:
           testRunTitle: '${{ parameters.testRunTitle }}'
 
-  # ARM64: Use VSTest@3 (experimental - VS 18 support)
-  # VSTest@2 fails on ARM64 because it only searches for VS [17.0, 18.0)
+  # ARM64: Use native vstest.console.arm64.exe directly
+  # VSTest@2/VSTest@3 tasks use emulated x64 runner which is slow
   - ${{ if eq(parameters.architecture, 'ARM64') }}:
-    - task: VSTest@3
-      displayName: ${{ coalesce(parameters.displayName, format('VSTest ({0}) [VSTest@3]', parameters.architecture)) }}
+    - pwsh: |
+        $vstestPath = Join-Path "$(vsPath)" "Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.arm64.exe"
+        if (-not (Test-Path $vstestPath)) {
+          Write-Error "Native ARM64 vstest runner not found at: $vstestPath"
+          exit 1
+        }
+        Write-Host "Using native ARM64 vstest: $vstestPath"
+        
+        $testAssemblies = Get-ChildItem -Path "$(Build.BinariesDirectory)" -Recurse -Filter "*_ut_*.dll" | Where-Object { $_.FullName -notmatch '\\ref\\' }
+        if ($testAssemblies.Count -eq 0) {
+          Write-Error "No test assemblies found matching pattern"
+          exit 1
+        }
+        
+        $args = @()
+        foreach ($dll in $testAssemblies) {
+          $args += "`"$($dll.FullName)`""
+        }
+        
+        $args += "/Platform:ARM64"
+        $args += "/Logger:trx"
+        
+        if ("${{ parameters.runTestsInIsolation }}" -eq "true") {
+          $args += "/InIsolation"
+        }
+        
+        if ("${{ parameters.resultsFolder }}" -ne "") {
+          $args += "/ResultsDirectory:`"${{ parameters.resultsFolder }}`""
+        } else {
+          $args += "/ResultsDirectory:`"$(Agent.TempDirectory)\TestResults`""
+        }
+        
+        if ("${{ parameters.runSettingsFile }}" -ne "") {
+          $args += "/Settings:`"${{ parameters.runSettingsFile }}`""
+        }
+        
+        if ("${{ parameters.otherConsoleOptions }}" -ne "") {
+          $args += "${{ parameters.otherConsoleOptions }}".Split(' ')
+        }
+        
+        Write-Host "Running: $vstestPath $($args -join ' ')"
+        & $vstestPath $args
+        $exitCode = $LASTEXITCODE
+        
+        if ($exitCode -ne 0) {
+          Write-Error "vstest.console.arm64.exe failed with exit code $exitCode"
+          exit $exitCode
+        }
+      displayName: ${{ coalesce(parameters.displayName, 'VSTest (ARM64 Native)') }}
       condition: ${{ parameters.condition }}
       continueOnError: ${{ parameters.continueOnError }}
+    
+    # Publish test results from the native runner
+    - task: PublishTestResults@2
+      displayName: 'Publish ARM64 Test Results'
+      condition: succeededOrFailed()
       inputs:
-        testAssemblyVer2: '${{ parameters.testAssemblies }}'
-        platform: '$(targetPlatform)'
-        configuration: '${{ parameters.configuration }}'
-        # Note: ARM64 parallel execution can be problematic
-        runInParallel: false
-        runTestsInIsolation: ${{ parameters.runTestsInIsolation }}
-        # Note: Code coverage on ARM64 may have limitations
-        codeCoverageEnabled: ${{ parameters.codeCoverageEnabled }}
-        failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
-        diagnosticsEnabled: ${{ parameters.diagnosticsEnabled }}
-        ${{ if ne(parameters.otherConsoleOptions, '') }}:
-          otherConsoleOptions: '${{ parameters.otherConsoleOptions }}'
-        ${{ if ne(parameters.runSettingsFile, '') }}:
-          runSettingsFile: '${{ parameters.runSettingsFile }}'
-        ${{ if ne(parameters.resultsFolder, '') }}:
-          resultsFolder: '${{ parameters.resultsFolder }}'
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '**/*.trx'
+        searchFolder: '$(Agent.TempDirectory)/TestResults'
         ${{ if ne(parameters.testRunTitle, '') }}:
           testRunTitle: '${{ parameters.testRunTitle }}'
