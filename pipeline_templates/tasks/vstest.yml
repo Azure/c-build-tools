@@ -108,19 +108,14 @@ steps:
 
   # ARM64: Use native vstest.console.exe directly
   # VSTest@2/VSTest@3 tasks use emulated x64 runner which is slow
+  # Requires discover_native_tools.yml to be called first to set $(vstestPath)
   - ${{ if eq(parameters.architecture, 'ARM64') }}:
     - powershell: |
-        $vstestBase = Join-Path "$(vsPath)" "Common7\IDE\CommonExtensions\Microsoft\TestWindow"
+        $vstestPath = "$(vstestPath)"
         
-        # Try arm64-specific runner first, then fall back to regular vstest.console.exe
-        # VS 2026+ may have a universal binary that works natively on ARM64
-        $vstestPath = Join-Path $vstestBase "vstest.console.arm64.exe"
-        if (-not (Test-Path $vstestPath)) {
-          $vstestPath = Join-Path $vstestBase "vstest.console.exe"
-        }
-        
-        if (-not (Test-Path $vstestPath)) {
-          Write-Error "VSTest runner not found in: $vstestBase"
+        if (-not $vstestPath -or -not (Test-Path $vstestPath)) {
+          Write-Error "VSTest runner not found at: $vstestPath"
+          Write-Error "Ensure discover_native_tools.yml was called before this template"
           exit 1
         }
         Write-Host "Using vstest: $vstestPath"

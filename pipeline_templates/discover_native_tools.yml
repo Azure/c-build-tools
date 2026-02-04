@@ -11,6 +11,7 @@
 #   $(ctestPath)    - Path to ctest.exe  
 #   $(msbuildPath)  - Path to MSBuild.exe (architecture-specific)
 #   $(dumpbinPath)  - Path to dumpbin.exe (architecture-specific)
+#   $(vstestPath)   - Path to vstest.console.exe (architecture-specific)
 #   $(cmakeArch)    - CMake architecture flag (x64, Win32, ARM64)
 #   $(targetPlatform) - MSBuild platform (x64, Win32, ARM64)
 #   $(cmakeGenerator) - CMake generator string (e.g., "Visual Studio 17 2022")
@@ -207,6 +208,36 @@ steps:
         }
         Write-Host ""
         
+        # Find vstest.console.exe for the correct architecture
+        # On ARM64, prefer vstest.console.arm64.exe if available, otherwise use vstest.console.exe
+        $vstestDir = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\TestWindow"
+        $vstestPath = $null
+        
+        if ($arch -eq "ARM64") {
+            # Try ARM64-specific runner first
+            $candidatePath = Join-Path $vstestDir "vstest.console.arm64.exe"
+            if (Test-Path $candidatePath) {
+                $vstestPath = $candidatePath
+            } else {
+                # Fall back to regular vstest.console.exe (may be universal binary in newer VS)
+                $candidatePath = Join-Path $vstestDir "vstest.console.exe"
+                if (Test-Path $candidatePath) {
+                    $vstestPath = $candidatePath
+                    Write-Host "##[warning]vstest.console.arm64.exe not found, using vstest.console.exe"
+                }
+            }
+        } else {
+            $vstestPath = Join-Path $vstestDir "vstest.console.exe"
+        }
+        
+        if ($vstestPath -and (Test-Path $vstestPath)) {
+            Write-Host "vstest: $vstestPath"
+            Write-Host "##vso[task.setvariable variable=vstestPath]$vstestPath"
+        } else {
+            Write-Host "##[warning]vstest.console.exe not found in $vstestDir"
+        }
+        Write-Host ""
+        
         # Set architecture variables for use in build commands
         Write-Host "##vso[task.setvariable variable=cmakeArch]$cmakeArch"
         Write-Host "##vso[task.setvariable variable=targetPlatform]$targetPlatform"
@@ -220,6 +251,7 @@ steps:
         Write-Host '  MSBuild:  "$(msbuildPath)" solution.sln /p:Platform=$(targetPlatform)'
         Write-Host '  CTest:    "$(ctestPath)" -C Debug --output-on-failure'
         Write-Host '  dumpbin:  "$(dumpbinPath)" /ALL mylib.lib'
+        Write-Host '  vstest:   "$(vstestPath)" test.dll /Platform:$(targetPlatform)'
         Write-Host ""
         Write-Host "Environment variable DUMPBIN_PATH is also set for subprocesses (e.g., ctest)"
         Write-Host ""
