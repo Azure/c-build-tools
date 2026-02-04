@@ -209,14 +209,17 @@ steps:
         Write-Host ""
         
         # Find vstest.console.exe using vswhere
+        # On ARM64, look for vstest.console.arm64.exe specifically
         $vstestPath = $null
-        $vstestCandidates = & $vswhere -latest -products * -requires Microsoft.VisualStudio.TestTools.TestPlatform -find "**\vstest.console.exe" 2>$null
+        $vstestExeName = if ($arch -eq "ARM64") { "vstest.console.arm64.exe" } else { "vstest.console.exe" }
+        
+        $vstestCandidates = & $vswhere -latest -products * -requires Microsoft.VisualStudio.TestTools.TestPlatform -find "**\$vstestExeName" 2>$null
         
         if ($vstestCandidates) {
             # vswhere may return multiple results, pick the first one
             if ($vstestCandidates -is [array]) {
                 $vstestPath = $vstestCandidates[0]
-                Write-Host "Found $($vstestCandidates.Count) vstest.console.exe candidates, using first"
+                Write-Host "Found $($vstestCandidates.Count) $vstestExeName candidates, using first"
             } else {
                 $vstestPath = $vstestCandidates
             }
@@ -224,8 +227,8 @@ steps:
         
         if (-not $vstestPath) {
             # Fallback: search the VS installation directory
-            Write-Host "vswhere -find did not locate vstest, searching VS directory..."
-            $searchResult = Get-ChildItem -Path $vsPath -Recurse -Filter "vstest.console.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            Write-Host "vswhere -find did not locate $vstestExeName, searching VS directory..."
+            $searchResult = Get-ChildItem -Path $vsPath -Recurse -Filter $vstestExeName -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($searchResult) {
                 $vstestPath = $searchResult.FullName
             }
@@ -235,7 +238,7 @@ steps:
             Write-Host "vstest: $vstestPath"
             Write-Host "##vso[task.setvariable variable=vstestPath]$vstestPath"
         } else {
-            Write-Host "##[warning]vstest.console.exe not found"
+            Write-Host "##[warning]$vstestExeName not found"
         }
         Write-Host ""
         
