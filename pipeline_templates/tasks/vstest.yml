@@ -157,6 +157,32 @@ steps:
         & $vstestPath $args
         $exitCode = $LASTEXITCODE
         
+        # Check for minimum tests run (equivalent to failOnMinTestsNotRun)
+        if ("${{ parameters.failOnMinTestsNotRun }}" -eq "true") {
+          # Parse trx files to check if any tests ran
+          $resultsDir = if ("${{ parameters.resultsFolder }}" -ne "") { "${{ parameters.resultsFolder }}" } else { "$(Agent.TempDirectory)\TestResults" }
+          $trxFiles = Get-ChildItem -Path $resultsDir -Filter "*.trx" -ErrorAction SilentlyContinue
+          if (-not $trxFiles -or $trxFiles.Count -eq 0) {
+            Write-Error "failOnMinTestsNotRun: No test result files (.trx) were generated"
+            exit 1
+          }
+          
+          $totalTests = 0
+          foreach ($trx in $trxFiles) {
+            [xml]$trxContent = Get-Content $trx.FullName
+            $counters = $trxContent.TestRun.ResultSummary.Counters
+            if ($counters) {
+              $totalTests += [int]$counters.total
+            }
+          }
+          
+          if ($totalTests -eq 0) {
+            Write-Error "failOnMinTestsNotRun: No tests were executed (total=0)"
+            exit 1
+          }
+          Write-Host "Total tests executed: $totalTests"
+        }
+        
         if ($exitCode -ne 0) {
           Write-Error "vstest.console.arm64.exe failed with exit code $exitCode"
           exit $exitCode
