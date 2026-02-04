@@ -208,29 +208,41 @@ steps:
         }
         Write-Host ""
         
-        # Find vstest.console.exe using vswhere
+        # Find vstest.console.exe
         # On ARM64, look for vstest.console.arm64.exe specifically
+        # Path pattern: <vsPath>\Common7\IDE\CommonExtensions\<Microsoft|Platform>\TestPlatform
         $vstestPath = $null
         $vstestExeName = if ($arch -eq "ARM64") { "vstest.console.arm64.exe" } else { "vstest.console.exe" }
         
-        $vstestCandidates = & $vswhere -latest -products * -requires Microsoft.VisualStudio.TestTools.TestPlatform -find "**\$vstestExeName" 2>$null
+        # Check known locations under Common7\IDE\CommonExtensions
+        $commonExtensions = Join-Path $vsPath "Common7\IDE\CommonExtensions"
+        $searchPaths = @(
+            (Join-Path $commonExtensions "Microsoft\TestPlatform"),
+            (Join-Path $commonExtensions "Platform\TestPlatform"),
+            (Join-Path $commonExtensions "Microsoft\TestWindow"),
+            (Join-Path $commonExtensions "Platform\TestWindow")
+        )
         
-        if ($vstestCandidates) {
-            # vswhere may return multiple results, pick the first one
-            if ($vstestCandidates -is [array]) {
-                $vstestPath = $vstestCandidates[0]
-                Write-Host "Found $($vstestCandidates.Count) $vstestExeName candidates, using first"
-            } else {
-                $vstestPath = $vstestCandidates
+        foreach ($searchPath in $searchPaths) {
+            $candidatePath = Join-Path $searchPath $vstestExeName
+            Write-Host "Checking: $candidatePath"
+            if (Test-Path $candidatePath) {
+                $vstestPath = $candidatePath
+                Write-Host "Found vstest at: $vstestPath"
+                break
             }
         }
         
         if (-not $vstestPath) {
-            # Fallback: search the VS installation directory
-            Write-Host "vswhere -find did not locate $vstestExeName, searching VS directory..."
-            $searchResult = Get-ChildItem -Path $vsPath -Recurse -Filter $vstestExeName -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($searchResult) {
-                $vstestPath = $searchResult.FullName
+            # Fallback: use vswhere -find
+            Write-Host "vstest not found in known locations, trying vswhere -find..."
+            $vstestCandidates = & $vswhere -latest -products * -requires Microsoft.VisualStudio.TestTools.TestPlatform -find "**\$vstestExeName" 2>$null
+            if ($vstestCandidates) {
+                if ($vstestCandidates -is [array]) {
+                    $vstestPath = $vstestCandidates[0]
+                } else {
+                    $vstestPath = $vstestCandidates
+                }
             }
         }
         
