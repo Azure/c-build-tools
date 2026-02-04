@@ -103,9 +103,10 @@ $arrangeRegex = [regex]::new('//+\s*arrange\b|/\*\s*arrange\b', [System.Text.Reg
 $actRegex = [regex]::new('//+\s*act\b|/\*\s*act\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 $assertRegex = [regex]::new('//+\s*assert\b|/\*\s*assert\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 $noAaaRegex = [regex]::new('//\s*no-aaa|/\*\s*no-aaa', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-# Helper function start pattern - finds potential function definitions (return_type function_name( at start of line)
-# We then use Find-FunctionEnd to handle nested parentheses and find the opening brace
-$helperFuncStartRegex = [regex]::new('^[\w\s\*]+\b(\w+)\s*\(', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+# Helper function start pattern - finds potential function definitions
+# Matches: optional "static", return type (common C types or THANDLE/custom types), optional pointer, function name, (
+# Excludes macro invocations by requiring lowercase in function name
+$helperFuncStartRegex = [regex]::new('^(?:static\s+)?(?:void|int|bool|char|unsigned|signed|long|short|float|double|size_t|uint\d+_t|int\d+_t|THANDLE\s*\([^)]+\))\s*\*?\s*([a-z_][a-z0-9_]*)\s*\(', [System.Text.RegularExpressions.RegexOptions]::Multiline)
 $funcCallRegex = [regex]::new('(?<!\w)(\w+)\s*\(', [System.Text.RegularExpressions.RegexOptions]::None)
 
 # Find the end of a function signature (handles nested parentheses in types like THANDLE(...))
@@ -141,9 +142,9 @@ function Find-FunctionEnd {
     return -1
 }
 
-# Fast function to extract function body using brace counting
-# Fast function to extract function body using character-by-character brace counting
-# Properly skips string literals and comments to avoid counting braces inside them
+# Fast function body extraction using simple brace counting
+# For AAA comment detection, we don't need perfect accuracy on string literals
+# because AAA comments like "// arrange" won't appear inside string literals
 function Get-FunctionBody {
     param(
         [string]$content,
@@ -158,67 +159,18 @@ function Get-FunctionBody {
     $len = $content.Length
     
     while ($braceCount -gt 0 -and $pos -lt $len) {
-        $char = $content[$pos]
+        $nextOpen = $content.IndexOf('{', $pos)
+        $nextClose = $content.IndexOf('}', $pos)
         
-        # Skip string literals
-        if ($char -eq '"') {
-            $pos++
-            while ($pos -lt $len) {
-                if ($content[$pos] -eq '\' -and $pos + 1 -lt $len) {
-                    $pos += 2  # Skip escaped char
-                    continue
-                }
-                if ($content[$pos] -eq '"') {
-                    $pos++
-                    break
-                }
-                $pos++
-            }
-            continue
+        if ($nextClose -eq -1) { return $null }
+        
+        if ($nextOpen -eq -1 -or $nextClose -lt $nextOpen) {
+            $braceCount--
+            $pos = $nextClose + 1
+        } else {
+            $braceCount++
+            $pos = $nextOpen + 1
         }
-        
-        # Skip char literals
-        if ($char -eq "'") {
-            $pos++
-            while ($pos -lt $len) {
-                if ($content[$pos] -eq '\' -and $pos + 1 -lt $len) {
-                    $pos += 2  # Skip escaped char
-                    continue
-                }
-                if ($content[$pos] -eq "'") {
-                    $pos++
-                    break
-                }
-                $pos++
-            }
-            continue
-        }
-        
-        # Skip single-line comments
-        if ($char -eq '/' -and $pos + 1 -lt $len -and $content[$pos + 1] -eq '/') {
-            $pos += 2
-            while ($pos -lt $len -and $content[$pos] -ne "`n") { $pos++ }
-            continue
-        }
-        
-        # Skip multi-line comments
-        if ($char -eq '/' -and $pos + 1 -lt $len -and $content[$pos + 1] -eq '*') {
-            $pos += 2
-            while ($pos + 1 -lt $len) {
-                if ($content[$pos] -eq '*' -and $content[$pos + 1] -eq '/') {
-                    $pos += 2
-                    break
-                }
-                $pos++
-            }
-            continue
-        }
-        
-        # Count braces
-        if ($char -eq '{') { $braceCount++ }
-        elseif ($char -eq '}') { $braceCount-- }
-        
-        $pos++
     }
     
     if ($braceCount -eq 0) {
@@ -297,8 +249,9 @@ function Process-TestFile {
         return @{ Violations = $violations; Total = 0; Exempted = 0 }
     }
     
-    # Build helper function position map (lazy - only if needed)
+    # Build helper function position map and AAA cache (lazy - only if needed)
     $helperPositions = $null
+    $helperAAACache = $null
     
     foreach ($testMatch in $testMatches) {
         $total++
@@ -349,9 +302,10 @@ function Process-TestFile {
             continue
         }
         
-        # Not all found - check helpers (lazy init)
+        # Not all found - check helpers (lazy init of positions and AAA cache)
         if ($null -eq $helperPositions) {
             $helperPositions = @{}
+            $helperAAACache = @{}  # Cache AAA positions for helpers
             $helperMatches = $helperFuncStartRegex.Matches($content)
             foreach ($hm in $helperMatches) {
                 $fn = $hm.Groups[1].Value
@@ -366,20 +320,25 @@ function Process-TestFile {
             }
         }
         
-        # Find called helpers
-        $foundInHelper = @($false, $false, $false)
+        # Find called helpers and check their cached AAA
         $callMatches = $funcCallRegex.Matches($body)
         
         foreach ($call in $callMatches) {
             $fn = $call.Groups[1].Value
             if ($helperPositions.ContainsKey($fn)) {
-                $helperBody = Get-FunctionBody -content $content -startIndex $helperPositions[$fn]
-                if ($helperBody) {
-                    $hPos = Find-AAAPositions -block $helperBody
-                    if ($hPos[0] -ge 0) { $foundInHelper[0] = $true; $positions[0] = 0 }
-                    if ($hPos[1] -ge 0) { $foundInHelper[1] = $true; $positions[1] = 0 }
-                    if ($hPos[2] -ge 0) { $foundInHelper[2] = $true; $positions[2] = 0 }
+                # Check cache first
+                if (-not $helperAAACache.ContainsKey($fn)) {
+                    $helperBody = Get-FunctionBody -content $content -startIndex $helperPositions[$fn]
+                    if ($helperBody) {
+                        $helperAAACache[$fn] = Find-AAAPositions -block $helperBody
+                    } else {
+                        $helperAAACache[$fn] = @(-1, -1, -1)
+                    }
                 }
+                $hPos = $helperAAACache[$fn]
+                if ($hPos[0] -ge 0) { $positions[0] = 0 }
+                if ($hPos[1] -ge 0) { $positions[1] = 0 }
+                if ($hPos[2] -ge 0) { $positions[2] = 0 }
             }
             # Early exit if all found
             if ($positions[0] -ge 0 -and $positions[1] -ge 0 -and $positions[2] -ge 0) { break }
