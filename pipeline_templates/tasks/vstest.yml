@@ -106,16 +106,24 @@ steps:
         ${{ if ne(parameters.testRunTitle, '') }}:
           testRunTitle: '${{ parameters.testRunTitle }}'
 
-  # ARM64: Use native vstest.console.arm64.exe directly
+  # ARM64: Use native vstest.console.exe directly
   # VSTest@2/VSTest@3 tasks use emulated x64 runner which is slow
   - ${{ if eq(parameters.architecture, 'ARM64') }}:
     - powershell: |
-        $vstestPath = Join-Path "$(vsPath)" "Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.arm64.exe"
+        $vstestBase = Join-Path "$(vsPath)" "Common7\IDE\CommonExtensions\Microsoft\TestWindow"
+        
+        # Try arm64-specific runner first, then fall back to regular vstest.console.exe
+        # VS 2026+ may have a universal binary that works natively on ARM64
+        $vstestPath = Join-Path $vstestBase "vstest.console.arm64.exe"
         if (-not (Test-Path $vstestPath)) {
-          Write-Error "Native ARM64 vstest runner not found at: $vstestPath"
+          $vstestPath = Join-Path $vstestBase "vstest.console.exe"
+        }
+        
+        if (-not (Test-Path $vstestPath)) {
+          Write-Error "VSTest runner not found in: $vstestBase"
           exit 1
         }
-        Write-Host "Using native ARM64 vstest: $vstestPath"
+        Write-Host "Using vstest: $vstestPath"
         
         $testAssemblies = Get-ChildItem -Path "$(Build.BinariesDirectory)" -Recurse -Filter "*_ut_*.dll" | Where-Object { $_.FullName -notmatch '\\ref\\' }
         if ($testAssemblies.Count -eq 0) {
