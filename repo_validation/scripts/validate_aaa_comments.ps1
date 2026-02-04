@@ -98,14 +98,52 @@ $exemptedTestFunctions = 0
 
 # Pre-compile regex patterns for performance
 $testFunctionRegex = [regex]::new('^\s*(TEST_FUNCTION|TEST_METHOD|CTEST_FUNCTION)\s*\(\s*(\w+)\s*\)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
-$arrangeRegex = [regex]::new('//+\s*arrange|/\*\s*arrange', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-$actRegex = [regex]::new('//+\s*act|/\*\s*act', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-$assertRegex = [regex]::new('//+\s*assert|/\*\s*assert', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+# AAA comment patterns - require word boundary after the keyword to avoid matching //ASSERT_... as assert comment
+$arrangeRegex = [regex]::new('//+\s*arrange\b|/\*\s*arrange\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+$actRegex = [regex]::new('//+\s*act\b|/\*\s*act\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+$assertRegex = [regex]::new('//+\s*assert\b|/\*\s*assert\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 $noAaaRegex = [regex]::new('//\s*no-aaa|/\*\s*no-aaa', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-$helperFuncRegex = [regex]::new('^\s*(?:static\s+)?[\w\s\*]+?\s+(\w+)\s*\([^)]*\)\s*\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+# Helper function start pattern - finds potential function definitions (return_type function_name( at start of line)
+# We then use Find-FunctionEnd to handle nested parentheses and find the opening brace
+$helperFuncStartRegex = [regex]::new('^[\w\s\*]+\b(\w+)\s*\(', [System.Text.RegularExpressions.RegexOptions]::Multiline)
 $funcCallRegex = [regex]::new('(?<!\w)(\w+)\s*\(', [System.Text.RegularExpressions.RegexOptions]::None)
 
+# Find the end of a function signature (handles nested parentheses in types like THANDLE(...))
+# Returns index of opening brace, or -1 if not a function definition
+function Find-FunctionEnd {
+    param(
+        [string]$content,
+        [int]$parenStart  # Index of opening paren after function name
+    )
+    
+    $len = $content.Length
+    $parenCount = 1
+    $pos = $parenStart + 1
+    
+    # Find matching closing paren
+    while ($parenCount -gt 0 -and $pos -lt $len) {
+        $char = $content[$pos]
+        if ($char -eq '(') { $parenCount++ }
+        elseif ($char -eq ')') { $parenCount-- }
+        $pos++
+    }
+    
+    if ($parenCount -ne 0) { return -1 }
+    
+    # Skip whitespace and newlines, look for opening brace
+    while ($pos -lt $len) {
+        $char = $content[$pos]
+        if ($char -eq '{') { return $pos }
+        if ($char -match '\s') { $pos++; continue }
+        return -1  # Found non-whitespace, non-brace - not a function definition
+    }
+    
+    return -1
+}
+
 # Fast function to extract function body using brace counting
+# Fast function to extract function body using character-by-character brace counting
+# Properly skips string literals and comments to avoid counting braces inside them
 function Get-FunctionBody {
     param(
         [string]$content,
@@ -116,26 +154,75 @@ function Get-FunctionBody {
     if ($braceStart -eq -1) { return $null }
     
     $braceCount = 1
-    $searchStart = $braceStart + 1
+    $pos = $braceStart + 1
     $len = $content.Length
     
-    while ($braceCount -gt 0 -and $searchStart -lt $len) {
-        $nextOpen = $content.IndexOf('{', $searchStart)
-        $nextClose = $content.IndexOf('}', $searchStart)
+    while ($braceCount -gt 0 -and $pos -lt $len) {
+        $char = $content[$pos]
         
-        if ($nextClose -eq -1) { return $null }
-        
-        if ($nextOpen -eq -1 -or $nextClose -lt $nextOpen) {
-            $braceCount--
-            $searchStart = $nextClose + 1
-        } else {
-            $braceCount++
-            $searchStart = $nextOpen + 1
+        # Skip string literals
+        if ($char -eq '"') {
+            $pos++
+            while ($pos -lt $len) {
+                if ($content[$pos] -eq '\' -and $pos + 1 -lt $len) {
+                    $pos += 2  # Skip escaped char
+                    continue
+                }
+                if ($content[$pos] -eq '"') {
+                    $pos++
+                    break
+                }
+                $pos++
+            }
+            continue
         }
+        
+        # Skip char literals
+        if ($char -eq "'") {
+            $pos++
+            while ($pos -lt $len) {
+                if ($content[$pos] -eq '\' -and $pos + 1 -lt $len) {
+                    $pos += 2  # Skip escaped char
+                    continue
+                }
+                if ($content[$pos] -eq "'") {
+                    $pos++
+                    break
+                }
+                $pos++
+            }
+            continue
+        }
+        
+        # Skip single-line comments
+        if ($char -eq '/' -and $pos + 1 -lt $len -and $content[$pos + 1] -eq '/') {
+            $pos += 2
+            while ($pos -lt $len -and $content[$pos] -ne "`n") { $pos++ }
+            continue
+        }
+        
+        # Skip multi-line comments
+        if ($char -eq '/' -and $pos + 1 -lt $len -and $content[$pos + 1] -eq '*') {
+            $pos += 2
+            while ($pos + 1 -lt $len) {
+                if ($content[$pos] -eq '*' -and $content[$pos + 1] -eq '/') {
+                    $pos += 2
+                    break
+                }
+                $pos++
+            }
+            continue
+        }
+        
+        # Count braces
+        if ($char -eq '{') { $braceCount++ }
+        elseif ($char -eq '}') { $braceCount-- }
+        
+        $pos++
     }
     
     if ($braceCount -eq 0) {
-        return $content.Substring($braceStart, $searchStart - $braceStart)
+        return $content.Substring($braceStart, $pos - $braceStart)
     }
     return $null
 }
@@ -265,11 +352,16 @@ function Process-TestFile {
         # Not all found - check helpers (lazy init)
         if ($null -eq $helperPositions) {
             $helperPositions = @{}
-            $helperMatches = $helperFuncRegex.Matches($content)
+            $helperMatches = $helperFuncStartRegex.Matches($content)
             foreach ($hm in $helperMatches) {
                 $fn = $hm.Groups[1].Value
-                if ($fn -notmatch '^(TEST_FUNCTION|TEST_METHOD|CTEST_FUNCTION|if|while|for|switch|else|do)$') {
-                    $helperPositions[$fn] = $hm.Index
+                if ($fn -notmatch '^(TEST_FUNCTION|TEST_METHOD|CTEST_FUNCTION|if|while|for|switch|else|do|TEST_DEFINE_ENUM_TYPE|TEST_SUITE_INITIALIZE|TEST_SUITE_CLEANUP|TEST_FUNCTION_INITIALIZE|TEST_FUNCTION_CLEANUP)$') {
+                    # Find the opening paren position
+                    $parenPos = $hm.Index + $hm.Length - 1  # Last char is '('
+                    $bracePos = Find-FunctionEnd -content $content -parenStart $parenPos
+                    if ($bracePos -ge 0) {
+                        $helperPositions[$fn] = $bracePos
+                    }
                 }
             }
         }
