@@ -163,23 +163,21 @@ jobs:
           Write-Host "Created build directory: $buildDir"
         }
         
-        $cmakeArgs = @(
-          "$(Build.SourcesDirectory)",
-          "${{ parameters.cmake_options }}",
-          "${{ variables.use_vld_option }}",
-          "-DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }}",
-          "-DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}",
-          "-G `"$(cmakeGenerator)`"",
-          "-A $(cmakeArch)"
-        ) -join " "
+        Write-Host "Running CMake from: $buildDir"
+        Write-Host "CMake path: $(cmakePath)"
+        Write-Host "Generator: $(cmakeGenerator)"
+        Write-Host "Architecture: $(cmakeArch)"
         
-        Write-Host "Running: `"$(cmakePath)`" $cmakeArgs"
-        Write-Host "Working directory: $buildDir"
-        $process = Start-Process -FilePath "$(cmakePath)" -ArgumentList $cmakeArgs -WorkingDirectory $buildDir -NoNewWindow -Wait -PassThru
-        if ($process.ExitCode -ne 0) {
-          Write-Error "CMake failed with exit code $($process.ExitCode)"
-          exit $process.ExitCode
+        Push-Location $buildDir
+        & "$(cmakePath)" "$(Build.SourcesDirectory)" ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} "-DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }}" "-DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}" -G "$(cmakeGenerator)" -A $(cmakeArch)
+        $cmakeExitCode = $LASTEXITCODE
+        Pop-Location
+        
+        if ($cmakeExitCode -ne 0) {
+          Write-Error "CMake failed with exit code $cmakeExitCode"
+          exit $cmakeExitCode
         }
+        Write-Host "CMake generation completed successfully"
 
   # Use discovered msbuild path for all architectures (ensures native ARM64 compilation)
   - task: PowerShell@2
