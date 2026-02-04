@@ -32,13 +32,16 @@ This folder contains pipeline yml templates for devops pipelines.
   - It runs Sarif results checker to verify that there are no errors and fails the build
   - Runs SarifBob to pretty print all the errors in the Sarif in case of failures.
 - enable_linux_crash_reports.yml
-  - Enables Linux core dumps by setting `ulimit -c unlimited`.
+  - Sets `kernel.core_pattern` to write core files to the crash reports directory and removes core file size limits.
   - Creates the crash reports output directory.
   - Run this BEFORE tests to ensure core dumps are captured.
 - collect_linux_crash_reports.yml
-  - Collects crash reports from `/var/crash` (Ubuntu apport system) and core files from the build directory.
+  - Collects crash reports from the crash reports directory, `/var/crash` (Ubuntu apport system), and core files from the build directory.
   - Publishes collected crash reports as build artifacts.
   - Runs with `condition: always()` to ensure collection even when tests fail.
+- disable_linux_crash_reports.yml
+  - Restores default `kernel.core_pattern` and removes core dump limit overrides from `/etc/security/limits.conf`.
+  - Run this AFTER collecting crash reports to clean up system-level changes.
 
 ## How to Consume
 
@@ -136,9 +139,14 @@ See [Cuzz](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/ap
            workingFolder: $(Build.BinariesDirectory)\c
 ```
 
-### enable_linux_crash_reports.yml and collect_linux_crash_reports.yml
+### Linux crash report templates
 
-These templates work together to capture Linux crash dumps in CI pipelines.
+Three templates work together to capture Linux crash dumps in CI pipelines:
+- `enable_linux_crash_reports.yml` - sets `kernel.core_pattern` to write core files to the crash reports directory
+- `collect_linux_crash_reports.yml` - collects core files and publishes as artifacts
+- `disable_linux_crash_reports.yml` - restores default core dump settings
+
+The enable template modifies system-level kernel settings (`core_pattern`, `limits.conf`) so core dumps are captured from all test executables. The disable template must be called afterward to restore defaults.
 
 Example usage in a Linux job:
 
@@ -163,6 +171,9 @@ Example usage in a Linux job:
       build_directory: $(Build.SourcesDirectory)/cmake_linux
       search_depth: 4
       artifact_name: Linux_crash_reports
+
+  # Restore default core dump settings
+  - template: pipeline_templates/disable_linux_crash_reports.yml@c_build_tools
 ```
 
 Parameters for `enable_linux_crash_reports.yml`:
@@ -173,3 +184,5 @@ Parameters for `collect_linux_crash_reports.yml`:
 - `build_directory`: Directory to search for core files (default: `$(Build.SourcesDirectory)`)
 - `search_depth`: How deep to search for core files (default: 4)
 - `artifact_name`: Name for the published artifact (default: `Linux_crash_reports`)
+
+`disable_linux_crash_reports.yml` has no parameters.
