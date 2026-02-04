@@ -4,11 +4,11 @@
 # Usage:
 #   - template: pipeline_templates/enable_linux_crash_reports.yml@c_build_tools
 #     parameters:
-#       crash_reports_directory: $(Build.BinariesDirectory)/crash_reports
+#       crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
 
 parameters:
   - name: crash_reports_directory
-    default: $(Build.BinariesDirectory)/crash_reports
+    default: $(Build.ArtifactStagingDirectory)/crash_reports
 
 steps:
   - bash: |

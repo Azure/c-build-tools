@@ -147,7 +147,7 @@ Example usage in a Linux job:
   # Enable core dumps before running tests
   - template: pipeline_templates/enable_linux_crash_reports.yml@c_build_tools
     parameters:
-      crash_reports_directory: $(Build.BinariesDirectory)/crash_reports
+      crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
 
   # Run tests
   - task: Bash@3
@@ -159,17 +159,17 @@ Example usage in a Linux job:
   # Collect and publish crash reports
   - template: pipeline_templates/collect_linux_crash_reports.yml@c_build_tools
     parameters:
-      crash_reports_directory: $(Build.BinariesDirectory)/crash_reports
+      crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
       build_directory: $(Build.SourcesDirectory)/cmake_linux
       search_depth: 4
       artifact_name: Linux_crash_reports
 ```
 
 Parameters for `enable_linux_crash_reports.yml`:
-- `crash_reports_directory`: Directory to store crash reports (default: `$(Build.BinariesDirectory)/crash_reports`)
+- `crash_reports_directory`: Directory to store crash reports (default: `$(Build.ArtifactStagingDirectory)/crash_reports`)
 
 Parameters for `collect_linux_crash_reports.yml`:
-- `crash_reports_directory`: Directory where crash reports are stored (default: `$(Build.BinariesDirectory)/crash_reports`)
+- `crash_reports_directory`: Directory where crash reports are stored (default: `$(Build.ArtifactStagingDirectory)/crash_reports`)
 - `build_directory`: Directory to search for core files (default: `$(Build.SourcesDirectory)`)
 - `search_depth`: How deep to search for core files (default: 4)
 - `artifact_name`: Name for the published artifact (default: `Linux_crash_reports`)

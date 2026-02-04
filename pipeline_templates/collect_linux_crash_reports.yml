@@ -4,14 +4,14 @@
 # Usage:
 #   - template: pipeline_templates/collect_linux_crash_reports.yml@c_build_tools
 #     parameters:
-#       crash_reports_directory: $(Build.BinariesDirectory)/crash_reports
+#       crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
 #       build_directory: $(Build.SourcesDirectory)/cmake_linux
 #       search_depth: 4
 #       artifact_name: Linux_crash_reports
 
 parameters:
   - name: crash_reports_directory
-    default: $(Build.BinariesDirectory)/crash_reports
+    default: $(Build.ArtifactStagingDirectory)/crash_reports
   - name: build_directory
     default: $(Build.SourcesDirectory)
   - name: search_depth
