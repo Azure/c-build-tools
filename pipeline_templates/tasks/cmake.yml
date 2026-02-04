@@ -57,7 +57,7 @@ steps:
       continueOnError: ${{ parameters.continueOnError }}
       inputs:
         workingDirectory: '${{ parameters.buildDirectory }}'
-        cmakeArgs: '${{ parameters.cmakeArgs }} -G "$(cmakeGenerator)" -A $(cmakeArch)'
+        cmakeArgs: '${{ parameters.sourceDirectory }} ${{ parameters.cmakeArgs }} -G "$(cmakeGenerator)" -A $(cmakeArch)'
 
   # ARM64: Use native cmake.exe via PowerShell
   - ${{ if eq(parameters.architecture, 'ARM64') }}:
