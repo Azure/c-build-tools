@@ -22,7 +22,7 @@ All learnings extracted from PR feedback should be saved to `general_coding_inst
 
 3. **Find the right section**: Match the learning to an existing section (e.g., Code Style, Error Handling, Testing) or add a new section if needed.
 
-4. **Add the learning**: Use the `Edit` tool to add the learning to the appropriate section.
+4. **Add the learning**: Add the learning to the appropriate section.
 
 ## Workflow
 
@@ -90,7 +90,6 @@ Output is written to `cmake/pr_threads_parsed.txt` for easy access.
 
 **Exclude:**
 - Bot comments (MerlinBot, Azure Pipelines, etc.)
-- Closed/resolved threads (already addressed)
 - PR-level comments without file context
 - System-generated threads (build status, etc.)
 
@@ -149,10 +148,6 @@ Look for these types of learnings in feedback:
 - Performance recommendations
 - Test patterns
 
-**Low Priority** (consider skipping):
-- One-off fixes for specific code
-- Subjective preferences without team consensus
-
 ### Step 4: Formulate Learning Statements
 
 Convert raw feedback into actionable learning statements:
@@ -193,29 +188,19 @@ Before adding learnings, check if they already exist in `.github/general_coding_
 
 ### Step 6: Present Proposed Changes
 
-Before modifying any files, present to the user:
+Before modifying any files, present a **numbered list** of proposed learnings so the user can select which to keep:
 
-#### Grouping Related Learnings by Section
-
-Before presenting, group related learnings by their target section in general_coding_instructions.md:
-- Naming patterns -> Function Naming Conventions or Variable Naming Conventions
-- Error handling patterns -> Result Variable Conventions or Parameter Validation Rules
-- Formatting patterns -> Indentation and Formatting or If/Else Formatting Rules
-- Memory/pointer patterns -> Additional Conventions (Memory Management, Pointer Casting)
-- Test patterns -> Additional Conventions (Mockable Functions)
-- New topic -> propose a new section name
-
-#### Summary Format
-
-1. **Summary of learnings found**:
-   - List each learning with its source (PR comment ID)
-   - Indicate which are new vs already documented
-
-2. **Proposed additions**:
-   - Show the exact text to be added
-   - Indicate which section of general_coding_instructions.md it will be added to
-
-3. **Wait for user approval** before making changes
+1. **Group learnings by target section** in general_coding_instructions.md
+2. **Present each learning as a numbered item**:
+   ```
+   1. [Function Naming] Use snake_case for all internal helpers (Source: PR comment #123)
+   2. [Error Handling] Always log all parameters on validation failure (Source: PR comment #456)
+   3. [Memory Management] Use malloc_2 for array allocations (Source: PR comment #789)
+   ```
+3. **Ask user to respond with**:
+   - Specific numbers to keep (e.g., "1, 3")
+   - "keep all" to apply all proposed changes
+4. **Only apply the selected learnings**
 
 ### Step 7: Update general_coding_instructions.md
 
@@ -273,56 +258,3 @@ Report:
 - Use code blocks with language hints (```c, ```powershell)
 - Use tables for reference information
 - Use CORRECT/WRONG patterns with comments
-
-### Integration Points
-
-The skill integrates with existing workflows:
-- **addressPrReviewComments**: After addressing PR comments, run this to capture learnings
-- **Manual review**: User can trigger after completing any significant work
-
-## Tool Usage Reference
-
-| Task | Tool | Key Parameters |
-|------|------|----------------|
-| Fetch ADO PR threads | `mcp__azure-devops__repo_list_pull_request_threads` | `pullRequestId`, `repositoryId`, `project` |
-| Parse large PR threads | `Bash` | `pwsh -File .github/scripts/parse_pr_threads.ps1 -jsonFile "<path>" -outputDir "cmake"` -> Read `cmake/pr_threads_parsed.txt` |
-| Parse GitHub comments | `Bash` | `pwsh -File .github/scripts/parse_github_pr_comments.ps1 -prUrl "<url>" -outputDir "cmake"` -> Read `cmake/extract-learnings/github_pr_comments_parsed.txt` |
-| Read guidelines | `Read` | `file_path: .github/general_coding_instructions.md` |
-| Search for duplicates | `Grep` | `pattern` (learning keywords), `path: .github/general_coding_instructions.md` |
-| Update guidelines | `Edit` | `file_path: .github/general_coding_instructions.md`, `old_string`, `new_string` |
-
-## Example Extraction
-
-### PR Comment:
-```
-Thread on src/module.c line 125:
-"Helgrind stack address reuse - use heap-allocated callback contexts"
-```
-
-### Extracted Learning:
-```markdown
-### Avoiding Global State Issues
-- **Use heap-allocated callback contexts**: Avoids stack address reuse issues in multi-threaded tests
-- **All callbacks must complete**: Ensure all callbacks from a test are awaited before the next test starts
-
-Pattern for heap-allocated contexts:
-```c
-// Create helper
-CONTEXT* context_create(void) {
-    CONTEXT* ctx = malloc(sizeof(CONTEXT));
-    (void)interlocked_exchange(&ctx->flag, 0);
-    return ctx;
-}
-
-// Destroy helper
-void context_destroy(CONTEXT* ctx) {
-    free(ctx);
-}
-
-// Usage in test
-CONTEXT* ctx = context_create();
-// ... use ctx ...
-context_destroy(ctx);
-```
-```
-
