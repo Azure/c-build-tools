@@ -208,33 +208,34 @@ steps:
         }
         Write-Host ""
         
-        # Find vstest.console.exe for the correct architecture
-        # On ARM64, prefer vstest.console.arm64.exe if available, otherwise use vstest.console.exe
-        $vstestDir = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\TestWindow"
+        # Find vstest.console.exe using vswhere
         $vstestPath = $null
+        $vstestCandidates = & $vswhere -latest -products * -requires Microsoft.VisualStudio.TestTools.TestPlatform -find "**\vstest.console.exe" 2>$null
         
-        if ($arch -eq "ARM64") {
-            # Try ARM64-specific runner first
-            $candidatePath = Join-Path $vstestDir "vstest.console.arm64.exe"
-            if (Test-Path $candidatePath) {
-                $vstestPath = $candidatePath
+        if ($vstestCandidates) {
+            # vswhere may return multiple results, pick the first one
+            if ($vstestCandidates -is [array]) {
+                $vstestPath = $vstestCandidates[0]
+                Write-Host "Found $($vstestCandidates.Count) vstest.console.exe candidates, using first"
             } else {
-                # Fall back to regular vstest.console.exe (may be universal binary in newer VS)
-                $candidatePath = Join-Path $vstestDir "vstest.console.exe"
-                if (Test-Path $candidatePath) {
-                    $vstestPath = $candidatePath
-                    Write-Host "##[warning]vstest.console.arm64.exe not found, using vstest.console.exe"
-                }
+                $vstestPath = $vstestCandidates
             }
-        } else {
-            $vstestPath = Join-Path $vstestDir "vstest.console.exe"
+        }
+        
+        if (-not $vstestPath) {
+            # Fallback: search the VS installation directory
+            Write-Host "vswhere -find did not locate vstest, searching VS directory..."
+            $searchResult = Get-ChildItem -Path $vsPath -Recurse -Filter "vstest.console.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($searchResult) {
+                $vstestPath = $searchResult.FullName
+            }
         }
         
         if ($vstestPath -and (Test-Path $vstestPath)) {
             Write-Host "vstest: $vstestPath"
             Write-Host "##vso[task.setvariable variable=vstestPath]$vstestPath"
         } else {
-            Write-Host "##[warning]vstest.console.exe not found in $vstestDir"
+            Write-Host "##[warning]vstest.console.exe not found"
         }
         Write-Host ""
         
