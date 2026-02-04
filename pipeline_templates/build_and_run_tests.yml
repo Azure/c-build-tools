@@ -109,11 +109,32 @@ jobs:
       filename: 'C:\Program Files\Git\bin\git.exe'
       arguments: 'clean -xdff'
 
-  - task: BatchScript@1
+  # Setup VS environment - use discovered vsPath for correct VS version
+  - task: PowerShell@2
     displayName: 'Setup VS Vars'
     inputs:
-      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
-      modifyEnvironment: true
+      targetType: 'inline'
+      script: |
+        # Find VS using vswhere (works for any VS version)
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+          $vsPath = & $vswhere -latest -products * -property installationPath
+          if ($vsPath) {
+            $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
+            if (Test-Path $vsDevCmd) {
+              Write-Host "Running VsDevCmd from: $vsDevCmd"
+              cmd /c "`"$vsDevCmd`" && set" | ForEach-Object {
+                if ($_ -match "^([^=]+)=(.*)$") {
+                  [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+                }
+              }
+            } else {
+              Write-Host "##[warning]VsDevCmd.bat not found at $vsDevCmd"
+            }
+          }
+        } else {
+          Write-Host "##[warning]vswhere not found"
+        }
 
   # Cleanup appverifier from any previous runs
   - template : disable_appverifier.yml
