@@ -110,7 +110,7 @@ steps:
         try {
           [EmulationCheck]::Check()
         } catch {
-          Write-Host "  IsWow64Process2 check failed: $_"
+          Write-Host "  IsWow64Process2 check failed: $($_.Exception.Message)"
         }
         Write-Host ""
         

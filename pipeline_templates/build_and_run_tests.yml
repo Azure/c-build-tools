@@ -235,14 +235,17 @@ jobs:
           displayName: '🧪 Run ctest'
           inputs:
             targetType: 'inline'
-            ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
-              script: |
-                & "$(ctestPath)" -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 -E ${{ parameters.appverifier_skip_tests_list }} --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml
-                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            ${{ else }}:
-              script: |
-                & "$(ctestPath)" -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml
-                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            script: |
+              $ctestArgs = @('-C', '${{ parameters.build_configuration }}', '--output-on-failure', '--interactive-debug-mode', '1')
+              $skipTests = '${{ parameters.appverifier_skip_tests_list }}'
+              if ($skipTests -ne '') {
+                $ctestArgs += @('-E', $skipTests)
+              } else {
+                $ctestArgs += '--no-tests=error'
+              }
+              $ctestArgs += @('--output-junit', 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml')
+              & "$(ctestPath)" @ctestArgs
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             workingDirectory: $(Build.BinariesDirectory)\c
 
     - task: PublishTestResults@2
