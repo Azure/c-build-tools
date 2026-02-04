@@ -122,8 +122,16 @@ jobs:
           if ($vsPath) {
             $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
             if (Test-Path $vsDevCmd) {
-              Write-Host "Running VsDevCmd from: $vsDevCmd"
-              cmd /c "`"$vsDevCmd`" && set" | ForEach-Object {
+              # Set architecture parameters for VsDevCmd based on target architecture
+              $arch = "${{ parameters.ARCH_TYPE }}"
+              if ($arch -eq "ARM64") {
+                $archArgs = "-arch=arm64 -host_arch=arm64"
+                Write-Host "Running VsDevCmd with ARM64 architecture: $vsDevCmd $archArgs"
+              } else {
+                $archArgs = "-arch=amd64"
+                Write-Host "Running VsDevCmd with x64 architecture: $vsDevCmd $archArgs"
+              }
+              cmd /c "`"$vsDevCmd`" $archArgs && set" | ForEach-Object {
                 if ($_ -match "^([^=]+)=(.*)$") {
                   [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
                 }
