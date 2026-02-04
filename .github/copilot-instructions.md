@@ -229,7 +229,9 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 - Include relevant work item or issue references if applicable
 
 ### Starting Builds on GitHub PRs
-- **Trigger builds**: After creating a PR, add a comment with `/azp run Azure-C-Build-Tools-Gate` to start the CI build
+- **Trigger builds**: After creating a PR, add a comment with `/azp run <pipeline-name>` to start the CI build
+  - For **c-build-tools** repo: `/azp run Azure-C-Build-Tools-Gate`
+  - For other repos: Check the repo's pipeline configuration or ask a team member for the correct pipeline name
 - Builds do not start automatically; the comment is required
 
 ### Repository-Specific Tooling
