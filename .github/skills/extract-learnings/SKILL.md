@@ -85,7 +85,7 @@ Output is written to `cmake/pr_threads_parsed.txt` for easy access.
 
 **Include:**
 - Comments with `threadContext` (file-specific feedback)
-- Status: `active` or `pending` (not `closed`)
+- All statuses (closed threads can still provide value)
 - Human reviewers (team members)
 
 **Exclude:**
