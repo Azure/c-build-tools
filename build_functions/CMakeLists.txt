@@ -443,13 +443,20 @@ macro(use_vcpkg vcpkgPath)
             else()
                 set(VCPKG_TARGET_TRIPLET "x64-windows-static-cbt")
             endif()
+        elseif (${ARCHITECTURE} STREQUAL "ARM64")
+            if(${fsanitize_address})
+                set(VCPKG_TARGET_TRIPLET "arm64-windows-static-cbt-asan")
+            else()
+                set(VCPKG_TARGET_TRIPLET "arm64-windows-static-cbt")
+            endif()
         else()
-        if(${fsanitize_address})
-            set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt-asan")
-        else()
-            set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt")
+            # x86 fallback
+            if(${fsanitize_address})
+                set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt-asan")
+            else()
+                set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt")
+            endif()
         endif()
-    endif()
         include(deps/vcpkg/scripts/buildsystems/vcpkg.cmake)
     endif()
 
@@ -517,4 +524,37 @@ function(add_vld_if_defined DIR)
 
         add_vld_if_defined_impl(${DIR})
     endif()
+endfunction()
+
+# Configure a C# target for native ARM64/x64 code generation
+# This function sets the necessary MSBuild properties for C# projects to produce
+# native binaries instead of IL/AnyCPU binaries.
+#
+# Usage:
+#   add_executable(my_csharp_exe Program.cs)
+#   configure_csharp_native_platform(my_csharp_exe)
+#
+# This sets:
+#   - RuntimeIdentifier: win-x64 or win-arm64 (lowercase required)
+#   - RuntimeIdentifiers: includes base 'win' for NuGet package compatibility
+#   - PlatformTarget: x64 or ARM64 for native code generation
+#
+# Note: NuGet RIDs must be lowercase (win-arm64, not win-ARM64)
+function(configure_csharp_native_platform target_name)
+    # Get lowercase platform name for NuGet RID
+    string(TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFORM_NAME_LOWER)
+    
+    # Set RuntimeIdentifier (lowercase required by NuGet)
+    set_property(TARGET ${target_name}
+        PROPERTY VS_GLOBAL_RuntimeIdentifier "win-${PLATFORM_NAME_LOWER}")
+    
+    # Set RuntimeIdentifiers (includes base 'win' for packages that don't have arch-specific builds)
+    set_property(TARGET ${target_name}
+        PROPERTY VS_GLOBAL_RuntimeIdentifiers "win;win-${PLATFORM_NAME_LOWER}")
+    
+    # Set PlatformTarget for native code generation (preserves case)
+    set_property(TARGET ${target_name}
+        PROPERTY VS_GLOBAL_PlatformTarget "${CMAKE_VS_PLATFORM_NAME}")
+    
+    message(STATUS "Configured ${target_name} for native ${CMAKE_VS_PLATFORM_NAME} (RID: win-${PLATFORM_NAME_LOWER})")
 endfunction()

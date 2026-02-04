@@ -1,0 +1,140 @@
+# Template: Verify Agent Architecture
+# Checks and reports the agent architecture - useful for diagnosing ARM64 emulation issues.
+# This template is informational only and does not fail the build.
+#
+# Usage:
+#   - template: verify_agent_architecture.yml@c_build_tools
+#     parameters:
+#       expected_architecture: 'ARM64'  # Optional: warns if mismatch
+
+parameters:
+  - name: expected_architecture
+    type: string
+    default: 'ARM64'
+    values:
+      - 'ARM64'
+      - 'x64'
+      - 'x86'
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Verify Agent Architecture (${{ parameters.expected_architecture }})'
+    inputs:
+      targetType: 'inline'
+      script: |
+        Write-Host "============================================================"
+        Write-Host "AGENT ARCHITECTURE VERIFICATION"
+        Write-Host "Expected Architecture: ${{ parameters.expected_architecture }}"
+        Write-Host "============================================================"
+        Write-Host ""
+        
+        # Current process info
+        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess()
+        Write-Host "Current Process:"
+        Write-Host "  Name: $($currentProcess.ProcessName)"
+        Write-Host "  PID: $($currentProcess.Id)"
+        Write-Host "  PowerShell Version: $($PSVersionTable.PSVersion)"
+        Write-Host ""
+        
+        # Environment variables
+        Write-Host "Environment:"
+        Write-Host "  PROCESSOR_ARCHITECTURE: $env:PROCESSOR_ARCHITECTURE"
+        Write-Host "  PROCESSOR_ARCHITEW6432: $env:PROCESSOR_ARCHITEW6432"
+        Write-Host "  NUMBER_OF_PROCESSORS: $env:NUMBER_OF_PROCESSORS"
+        Write-Host ""
+        
+        # Check Agent.Worker.exe PE header
+        $agentDir = $env:AGENT_HOMEDIRECTORY
+        $workerExe = Join-Path $agentDir "bin\Agent.Worker.exe"
+        $agentArch = "Unknown"
+        
+        if (Test-Path $workerExe) {
+            $bytes = [System.IO.File]::ReadAllBytes($workerExe)
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+            
+            $agentArch = switch ($machine) {
+                0x014C { "x86" }
+                0x8664 { "x64" }
+                0xAA64 { "ARM64" }
+                default { "Unknown (0x$($machine.ToString('X4')))" }
+            }
+            Write-Host "Agent.Worker.exe:"
+            Write-Host "  Path: $workerExe"
+            Write-Host "  Architecture: $agentArch"
+        } else {
+            Write-Host "##[warning]Could not find Agent.Worker.exe at $workerExe"
+        }
+        Write-Host ""
+        
+        # Check IsWow64Process2 for emulation detection
+        Write-Host "Emulation Detection (IsWow64Process2):"
+        Add-Type -TypeDefinition @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class EmulationCheck {
+          [DllImport("kernel32.dll", SetLastError = true)]
+          public static extern bool IsWow64Process2(IntPtr hProcess, out UInt16 pProcessMachine, out UInt16 pNativeMachine);
+          
+          public static string GetMachineType(UInt16 machine) {
+            switch (machine) {
+              case 0: return "NATIVE";
+              case 0x014c: return "x86";
+              case 0x8664: return "x64";
+              case 0xAA64: return "ARM64";
+              case 0x01c4: return "ARM32";
+              default: return "OTHER (0x" + machine.ToString("X4") + ")";
+            }
+          }
+          
+          public static void Check() {
+            UInt16 processMachine = 0;
+            UInt16 nativeMachine = 0;
+            bool result = IsWow64Process2(System.Diagnostics.Process.GetCurrentProcess().Handle, out processMachine, out nativeMachine);
+            if (result) {
+              Console.WriteLine("  Process Machine: " + GetMachineType(processMachine));
+              Console.WriteLine("  Native Machine:  " + GetMachineType(nativeMachine));
+              if (processMachine != 0 && processMachine != nativeMachine) {
+                Console.WriteLine("  Status: RUNNING UNDER EMULATION");
+              } else {
+                Console.WriteLine("  Status: Running native");
+              }
+            } else {
+              Console.WriteLine("  IsWow64Process2 check failed");
+            }
+          }
+        }
+"@
+        
+        $isEmulated = $false
+        try {
+          [EmulationCheck]::Check()
+        } catch {
+          Write-Host "  IsWow64Process2 check failed: $_"
+        }
+        Write-Host ""
+        
+        # Check system folders for ARM64 Windows indicators
+        Write-Host "System Folders:"
+        Write-Host "  SysArm32 exists: $(Test-Path 'C:\Windows\SysArm32') (ARM64 Windows indicator)"
+        Write-Host ""
+        
+        # Compare against expected
+        $expected = "${{ parameters.expected_architecture }}"
+        if ($agentArch -ne "Unknown" -and $agentArch -ne $expected) {
+            Write-Host "##[warning]============================================================"
+            Write-Host "##[warning]ARCHITECTURE MISMATCH DETECTED"
+            Write-Host "##[warning]============================================================"
+            Write-Host "##[warning]Expected: $expected"
+            Write-Host "##[warning]Actual Agent: $agentArch"
+            Write-Host "##[warning]"
+            Write-Host "##[warning]The Azure DevOps agent is running as $agentArch instead of $expected."
+            Write-Host "##[warning]This is a known issue with 1ES ARM64 pools."
+            Write-Host "##[warning]"
+            Write-Host "##[warning]The build will use explicit native tool paths to work around this."
+            Write-Host "##[warning]============================================================"
+        } elseif ($agentArch -eq $expected) {
+            Write-Host "Agent architecture verification PASSED! ($agentArch)"
+        }
+        
+        Write-Host "============================================================"

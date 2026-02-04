@@ -75,203 +75,21 @@ jobs:
     submodules: true
     clean: false
 
-  # ARM64 diagnostics: detect emulation and list agent binaries architecture
+  # ARM64: Verify agent architecture and discover native tools
   - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
-    - task: PowerShell@2
-      displayName: '🔍 ARM64 Diagnostics - Detect emulation and list agent binaries'
-      inputs:
-        targetType: 'inline'
-        script: |
-          Write-Host "=== ARM64 EMULATION DETECTION ==="
-          Write-Host ""
-          
-          # Current process info
-          $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess()
-          Write-Host "Current Process:"
-          Write-Host "  Name: $($currentProcess.ProcessName)"
-          Write-Host "  Path: $($currentProcess.MainModule.FileName)"
-          Write-Host "  PID: $($currentProcess.Id)"
-          Write-Host "  PowerShell Version: $($PSVersionTable.PSVersion)"
-          Write-Host "  PowerShell Edition: $($PSVersionTable.PSEdition)"
-          Write-Host "  CLR Version: $($PSVersionTable.CLRVersion)"
-          Write-Host ""
-          
-          # Environment variables
-          Write-Host "Environment:"
-          Write-Host "  PROCESSOR_ARCHITECTURE: $env:PROCESSOR_ARCHITECTURE"
-          Write-Host "  PROCESSOR_ARCHITEW6432: $env:PROCESSOR_ARCHITEW6432"
-          Write-Host "  PROCESSOR_IDENTIFIER: $env:PROCESSOR_IDENTIFIER"
-          Write-Host "  NUMBER_OF_PROCESSORS: $env:NUMBER_OF_PROCESSORS"
-          Write-Host ""
-          
-          # Registry info
-          Write-Host "Windows Info:"
-          try {
-            $key = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction SilentlyContinue
-            if ($key) {
-              Write-Host "  Build: $($key.CurrentBuild).$($key.UBR)"
-              Write-Host "  Edition: $($key.EditionID)"
-              Write-Host "  Product: $($key.ProductName)"
-            }
-          } catch { Write-Host "  Could not read registry: $_" }
-          Write-Host ""
-          
-          # System folders
-          Write-Host "System Folders:"
-          Write-Host "  System32: $(Test-Path 'C:\Windows\System32') - exists"
-          Write-Host "  SysWow64: $(Test-Path 'C:\Windows\SysWow64') - $(if (Test-Path 'C:\Windows\SysWow64') { 'exists (WoW64 layer)' } else { 'not found' })"
-          Write-Host "  SysArm32: $(Test-Path 'C:\Windows\SysArm32') - $(if (Test-Path 'C:\Windows\SysArm32') { 'exists (ARM64 Windows)' } else { 'not found' })"
-          Write-Host ""
-          
-          # Check IsWow64Process2 via .NET - use UInt16 instead of ushort for compatibility
-          Write-Host "Emulation Detection (IsWow64Process2):"
-          Add-Type -TypeDefinition @"
-          using System;
-          using System.Runtime.InteropServices;
-          public class EmulationCheck {
-            [DllImport("kernel32.dll", SetLastError = true)]
-            public static extern bool IsWow64Process2(IntPtr hProcess, out UInt16 pProcessMachine, out UInt16 pNativeMachine);
-            
-            public static string GetMachineType(UInt16 machine) {
-              switch (machine) {
-                case 0: return "UNKNOWN (native process)";
-                case 0x014c: return "I386 (x86)";
-                case 0x8664: return "AMD64 (x64)";
-                case 0xAA64: return "ARM64";
-                case 0x01c4: return "ARMNT (ARM32)";
-                default: return "OTHER (0x" + machine.ToString("X4") + ")";
-              }
-            }
-            
-            public static void Check() {
-              UInt16 processMachine = 0;
-              UInt16 nativeMachine = 0;
-              bool result = IsWow64Process2(System.Diagnostics.Process.GetCurrentProcess().Handle, out processMachine, out nativeMachine);
-              if (result) {
-                Console.WriteLine("  Process Machine: " + GetMachineType(processMachine) + " (0x" + processMachine.ToString("X4") + ")");
-                Console.WriteLine("  Native Machine:  " + GetMachineType(nativeMachine) + " (0x" + nativeMachine.ToString("X4") + ")");
-                if (processMachine != 0 && processMachine != nativeMachine) {
-                  Console.WriteLine("  *** RUNNING UNDER EMULATION ***");
-                } else if (processMachine == 0) {
-                  Console.WriteLine("  Running NATIVE (processMachine=0 means no emulation)");
-                } else {
-                  Console.WriteLine("  Running NATIVE (process matches native)");
-                }
-              } else {
-                Console.WriteLine("  IsWow64Process2 returned false, error: " + Marshal.GetLastWin32Error());
-              }
-            }
-          }
-          "@
-          
-          try {
-            [EmulationCheck]::Check()
-          } catch {
-            Write-Host "  IsWow64Process2 check failed: $_"
-          }
-          
-          Write-Host ""
-          Write-Host "=== AGENT FOLDER BINARY ARCHITECTURE SCAN ==="
-          $agentRoot = "C:\vss-agent"
-          if (-not (Test-Path $agentRoot)) {
-            $agentRoot = $env:AGENT_HOMEDIRECTORY
-            if (-not $agentRoot) { $agentRoot = "C:\agent" }
-          }
-          Write-Host "Agent root: $agentRoot"
-          Write-Host "AGENT_HOMEDIRECTORY: $env:AGENT_HOMEDIRECTORY"
-          Write-Host "AGENT_TOOLSDIRECTORY: $env:AGENT_TOOLSDIRECTORY"
-          Write-Host "AGENT_VERSION: $env:AGENT_VERSION"
-          Write-Host ""
-          
-          function Get-PEArchitecture {
-            param([string]$FilePath)
-            try {
-              $stream = [System.IO.File]::OpenRead($FilePath)
-              $reader = New-Object System.IO.BinaryReader($stream)
-              
-              # Read first 4KB
-              $bytes = $reader.ReadBytes(4096)
-              $reader.Close()
-              $stream.Close()
-              
-              # Check MZ header
-              if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { return "NOT_PE" }
-              
-              # Get PE header offset from offset 0x3C
-              $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
-              if ($peOffset -lt 0 -or $peOffset -gt 3500) { return "INVALID_PE" }
-              
-              # Check PE signature
-              if ($bytes[$peOffset] -ne 0x50 -or $bytes[$peOffset+1] -ne 0x45) { return "NOT_PE" }
-              
-              # Machine type at PE+4
-              $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
-              switch ($machine) {
-                0x014c { return "x86" }
-                0x8664 { return "x64" }
-                0xAA64 { return "ARM64" }
-                0x01c4 { return "ARM32" }
-                default { return "UNKNOWN(0x$($machine.ToString('X4')))" }
-              }
-            } catch {
-              return "ERROR: $_"
-            }
-          }
-          
-          # Check architecture of current PowerShell
-          Write-Host "=== POWERSHELL EXECUTABLE ARCHITECTURE ==="
-          $psPath = (Get-Process -Id $PID).MainModule.FileName
-          $psArch = Get-PEArchitecture $psPath
-          Write-Host "$psArch : $psPath"
-          Write-Host ""
-          
-          # Find and analyze node.exe files
-          Write-Host "=== NODE.EXE FILES ==="
-          $nodeFiles = Get-ChildItem -Path $agentRoot -Filter "node.exe" -Recurse -ErrorAction SilentlyContinue
-          Write-Host "Found $($nodeFiles.Count) node.exe files:"
-          $nodeFiles | ForEach-Object {
-            $arch = Get-PEArchitecture $_.FullName
-            Write-Host "  $arch : $($_.FullName)"
-          }
-          Write-Host ""
-          
-          # Find externals folder and list structure with more detail
-          Write-Host "=== EXTERNALS FOLDER STRUCTURE ==="
-          $agentVersions = Get-ChildItem -Path $agentRoot -Directory -ErrorAction SilentlyContinue
-          foreach ($ver in $agentVersions) {
-            Write-Host "Agent Version: $($ver.Name)"
-            $externalsPath = Join-Path $ver.FullName "externals"
-            if (Test-Path $externalsPath) {
-              Get-ChildItem -Path $externalsPath -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-                $nodeExe = Join-Path $_.FullName "bin\node.exe"
-                if (Test-Path $nodeExe) {
-                  $arch = Get-PEArchitecture $nodeExe
-                  Write-Host "  $($_.Name): $arch"
-                } else {
-                  Write-Host "  $($_.Name): (no node.exe)"
-                }
-              }
-            } else {
-              Write-Host "  (no externals folder)"
-            }
-          }
-          Write-Host ""
-          
-          # Agent.Listener.exe architectures
-          Write-Host "=== AGENT.LISTENER.EXE FILES ==="
-          Get-ChildItem -Path $agentRoot -Filter "Agent.Listener.exe" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-            $arch = Get-PEArchitecture $_.FullName
-            Write-Host "  $arch : $($_.FullName)"
-          }
-          Write-Host ""
-          
-          # Sample of other executables for comparison
-          Write-Host "=== SAMPLE OF AGENT EXECUTABLES (first 15) ==="
-          Get-ChildItem -Path $agentRoot -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 15 | ForEach-Object {
-            $arch = Get-PEArchitecture $_.FullName
-            Write-Host "  $arch : $($_.FullName)"
-          }
-      continueOnError: true
+    - template: verify_agent_architecture.yml
+      parameters:
+        expected_architecture: 'ARM64'
+
+    - template: discover_native_tools.yml
+      parameters:
+        architecture: 'ARM64'
+
+  # x64/x86: Discover native tools for consistency
+  - ${{ if ne(parameters.ARCH_TYPE, 'ARM64') }}:
+    - template: discover_native_tools.yml
+      parameters:
+        architecture: ${{ parameters.ARCH_TYPE }}
 
   - task: BatchScript@1
     displayName: 'Git submodule update'
@@ -303,36 +121,43 @@ jobs:
       ${{ if ne(parameters.repo_root_override, '') }}:
         repo_root: ${{ parameters.repo_root_override }}
 
-  - task: CMake@1
-    displayName: '🏗️ CMake $(Build.SourcesDirectory) ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
+  # Use discovered cmake path for consistent behavior across architectures
+  - task: PowerShell@2
+    displayName: '🏗️ CMake Generate (${{ parameters.ARCH_TYPE }})'
     inputs:
-      workingDirectory: '$(Build.BinariesDirectory)\c'
-      cmakeArgs: '$(Build.SourcesDirectory) ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }} -G "Visual Studio 17 2022" -A ${{ parameters.ARCH_TYPE }}'
+      targetType: 'inline'
+      script: |
+        $cmakeArgs = @(
+          "$(Build.SourcesDirectory)",
+          "${{ parameters.cmake_options }}",
+          "${{ variables.use_vld_option }}",
+          "-DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }}",
+          "-DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}",
+          '-G "Visual Studio 17 2022"',
+          "-A $(cmakeArch)"
+        ) -join " "
+        
+        Write-Host "Running: `"$(cmakePath)`" $cmakeArgs"
+        $process = Start-Process -FilePath "$(cmakePath)" -ArgumentList $cmakeArgs -WorkingDirectory "$(Build.BinariesDirectory)\c" -NoNewWindow -Wait -PassThru
+        if ($process.ExitCode -ne 0) {
+          Write-Error "CMake failed with exit code $($process.ExitCode)"
+          exit $process.ExitCode
+        }
 
-  # ARM64 builds use msbuild directly (VSBuild@1 doesn't support ARM64)
-  - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
-    - task: PowerShell@2
-      displayName: '🏗️ Build solution (ARM64)'
-      inputs:
-        targetType: 'inline'
-        script: |
-          $sln = Get-ChildItem -Path "$(Build.BinariesDirectory)\c" -Filter "*.sln" | Select-Object -First 1
-          if ($null -eq $sln) {
-            Write-Error "No .sln file found in $(Build.BinariesDirectory)\c"
-            exit 1
-          }
-          Write-Host "Building $($sln.FullName)"
-          msbuild $sln.FullName /t:restore /t:build /p:Configuration=${{ parameters.build_configuration }} /p:Platform=ARM64 /m
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-  - ${{ else }}:
-    - task: VSBuild@1
-      displayName: '🏗️ Build solution $(Build.BinariesDirectory)\c\*.sln'
-      inputs:
-        solution: '$(Build.BinariesDirectory)\c\*.sln'
-        msbuildArgs: '/t:restore /t:build'
-        configuration: ${{ parameters.build_configuration }}
-        maximumCpuCount: true
+  # Use discovered msbuild path for all architectures (ensures native ARM64 compilation)
+  - task: PowerShell@2
+    displayName: '🏗️ MSBuild (${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration }})'
+    inputs:
+      targetType: 'inline'
+      script: |
+        $sln = Get-ChildItem -Path "$(Build.BinariesDirectory)\c" -Filter "*.sln" | Select-Object -First 1
+        if ($null -eq $sln) {
+          Write-Error "No .sln file found in $(Build.BinariesDirectory)\c"
+          exit 1
+        }
+        Write-Host "Building $($sln.FullName) with $(msbuildPath)"
+        & "$(msbuildPath)" $sln.FullName /t:restore /t:build /p:Configuration=${{ parameters.build_configuration }} /p:Platform=$(targetPlatform) /m
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   - template : start_logman.yml
     parameters:
@@ -375,11 +200,14 @@ jobs:
         pathToSources: '$(Build.SourcesDirectory)'
 
   - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
-    - task: CmdLine@2
+    - task: PowerShell@2
       displayName: '🧪 Run ctest'
       inputs:
-        # --interactive-debug-mode 1 is needed to get Watson dumps when running tests under ctest: https://gitlab.kitware.com/cmake/cmake/-/merge_requests/9855/diffs?commit_id=0a4ee422c1a5a5f6e9fd8893c5029da446ae8a91#diff-content-073a6620d87def59fe2a133050c1d68204635312
-        script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+        targetType: 'inline'
+        script: |
+          # --interactive-debug-mode 1 is needed to get Watson dumps when running tests under ctest
+          & "$(ctestPath)" -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         workingDirectory: $(Build.BinariesDirectory)\c
 
   - task: PublishTestResults@2
@@ -403,14 +231,18 @@ jobs:
         ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
           ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
         test_steps:
-        - task: CmdLine@2
+        - task: PowerShell@2
           displayName: '🧪 Run ctest'
           inputs:
-            # --interactive-debug-mode 1 is needed to get Watson dumps when running tests under ctest: https://gitlab.kitware.com/cmake/cmake/-/merge_requests/9855/diffs?commit_id=0a4ee422c1a5a5f6e9fd8893c5029da446ae8a91#diff-content-073a6620d87def59fe2a133050c1d68204635312
+            targetType: 'inline'
             ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 -E ${{ parameters.appverifier_skip_tests_list }} --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+              script: |
+                & "$(ctestPath)" -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 -E ${{ parameters.appverifier_skip_tests_list }} --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml
+                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             ${{ else }}:
-              script: 'ctest -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+              script: |
+                & "$(ctestPath)" -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml
+                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             workingDirectory: $(Build.BinariesDirectory)\c
 
     - task: PublishTestResults@2

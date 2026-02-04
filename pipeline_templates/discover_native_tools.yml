@@ -1,0 +1,159 @@
+# Template: Discover Native Build Tools
+# Finds native build tools (CMake, MSBuild, CTest) for the specified architecture.
+# Sets pipeline variables that can be used in subsequent steps.
+#
+# This template solves the ARM64 agent emulation problem by explicitly finding
+# and using native ARM64 tools instead of relying on the (broken) agent environment.
+#
+# Output Variables:
+#   $(vsPath)       - Visual Studio installation path
+#   $(cmakePath)    - Path to cmake.exe
+#   $(ctestPath)    - Path to ctest.exe  
+#   $(msbuildPath)  - Path to MSBuild.exe (architecture-specific)
+#   $(cmakeArch)    - CMake architecture flag (x64, Win32, ARM64)
+#   $(targetPlatform) - MSBuild platform (x64, Win32, ARM64)
+#
+# Usage:
+#   - template: discover_native_tools.yml@c_build_tools
+#     parameters:
+#       architecture: 'ARM64'
+#
+#   # Then use in subsequent steps:
+#   - script: '"$(cmakePath)" -S . -B build -A $(cmakeArch)'
+#   - script: '"$(msbuildPath)" build\solution.sln /p:Platform=$(targetPlatform)'
+
+parameters:
+  - name: architecture
+    type: string
+    default: 'x64'
+    values:
+      - 'x64'
+      - 'x86'
+      - 'ARM64'
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Discover Native Tools (${{ parameters.architecture }})'
+    inputs:
+      targetType: 'inline'
+      script: |
+        $arch = "${{ parameters.architecture }}"
+        Write-Host "============================================================"
+        Write-Host "DISCOVERING NATIVE BUILD TOOLS FOR $arch"
+        Write-Host "============================================================"
+        Write-Host ""
+        
+        # Map architecture to CMake arch, target platform, and MSBuild host folder
+        switch ($arch) {
+            'x64'   { 
+                $cmakeArch = 'x64'
+                $targetPlatform = 'x64'
+                $msbuildHost = 'amd64'
+            }
+            'x86'   { 
+                $cmakeArch = 'Win32'
+                $targetPlatform = 'Win32'
+                $msbuildHost = 'amd64'  # Use x64 MSBuild even for x86 targets
+            }
+            'ARM64' { 
+                $cmakeArch = 'ARM64'
+                $targetPlatform = 'ARM64'
+                $msbuildHost = 'arm64'
+            }
+            default {
+                Write-Error "Unknown architecture: $arch"
+                exit 1
+            }
+        }
+        
+        Write-Host "Architecture mapping:"
+        Write-Host "  CMake -A flag:     $cmakeArch"
+        Write-Host "  MSBuild Platform:  $targetPlatform"
+        Write-Host "  MSBuild Host:      $msbuildHost"
+        Write-Host ""
+        
+        # Find Visual Studio using vswhere
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (-not (Test-Path $vswhere)) {
+            Write-Error "vswhere.exe not found at $vswhere"
+            exit 1
+        }
+        
+        $vsPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+        if (-not $vsPath) {
+            Write-Error "Could not find Visual Studio installation"
+            exit 1
+        }
+        Write-Host "Visual Studio found at: $vsPath"
+        Write-Host "##vso[task.setvariable variable=vsPath]$vsPath"
+        Write-Host ""
+        
+        # Find CMake bundled with Visual Studio
+        $cmakeBinDir = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+        $cmakePath = Join-Path $cmakeBinDir "cmake.exe"
+        $ctestPath = Join-Path $cmakeBinDir "ctest.exe"
+        
+        if (-not (Test-Path $cmakePath)) {
+            Write-Error "CMake not found at $cmakePath"
+            exit 1
+        }
+        
+        Write-Host "CMake: $cmakePath"
+        Write-Host "CTest: $ctestPath"
+        Write-Host "##vso[task.setvariable variable=cmakePath]$cmakePath"
+        Write-Host "##vso[task.setvariable variable=ctestPath]$ctestPath"
+        Write-Host ""
+        
+        # Find MSBuild for the correct host architecture
+        # For ARM64, we need MSBuild\Current\Bin\arm64\MSBuild.exe to get native compilation
+        $msbuildPath = Join-Path $vsPath "MSBuild\Current\Bin\$msbuildHost\MSBuild.exe"
+        
+        if (-not (Test-Path $msbuildPath)) {
+            # Fallback to default MSBuild location
+            $msbuildPath = Join-Path $vsPath "MSBuild\Current\Bin\MSBuild.exe"
+            Write-Host "##[warning]Architecture-specific MSBuild not found, falling back to: $msbuildPath"
+        }
+        
+        if (-not (Test-Path $msbuildPath)) {
+            Write-Error "MSBuild not found"
+            exit 1
+        }
+        
+        Write-Host "MSBuild: $msbuildPath"
+        Write-Host "##vso[task.setvariable variable=msbuildPath]$msbuildPath"
+        Write-Host ""
+        
+        # Verify MSBuild architecture matches what we expect
+        if (Test-Path $msbuildPath) {
+            $bytes = [System.IO.File]::ReadAllBytes($msbuildPath)
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+            
+            $msbuildArch = switch ($machine) {
+                0x014C { "x86" }
+                0x8664 { "x64" }
+                0xAA64 { "ARM64" }
+                default { "Unknown" }
+            }
+            Write-Host "MSBuild binary architecture: $msbuildArch"
+            
+            if ($arch -eq "ARM64" -and $msbuildArch -ne "ARM64") {
+                Write-Host "##[warning]Expected ARM64 MSBuild but found $msbuildArch"
+                Write-Host "##[warning]This may cause cross-compilation instead of native compilation"
+            }
+        }
+        Write-Host ""
+        
+        # Set architecture variables for use in build commands
+        Write-Host "##vso[task.setvariable variable=cmakeArch]$cmakeArch"
+        Write-Host "##vso[task.setvariable variable=targetPlatform]$targetPlatform"
+        
+        Write-Host "============================================================"
+        Write-Host "TOOL DISCOVERY COMPLETE"
+        Write-Host "============================================================"
+        Write-Host ""
+        Write-Host "Use these variables in subsequent steps:"
+        Write-Host '  CMake:    "$(cmakePath)" -S . -B build -A $(cmakeArch)'
+        Write-Host '  MSBuild:  "$(msbuildPath)" solution.sln /p:Platform=$(targetPlatform)'
+        Write-Host '  CTest:    "$(ctestPath)" -C Debug --output-on-failure'
+        Write-Host ""
