@@ -1,12 +1,74 @@
 #Copyright (c) Microsoft. All rights reserved.
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+# Find dumpbin via vswhere (works for any VS version and architecture)
+function Get-DumpbinPath {
+    $dumpbin = $null
+    
+    # Try to find dumpbin in PATH first
+    $dumpbin = Get-Command "dumpbin.exe" -ErrorAction SilentlyContinue
+    if ($dumpbin) {
+        return $dumpbin.Path
+    }
+    
+    # Use vswhere to find VS installation
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) {
+        # Try Program Files for ARM64
+        $vswhere = "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
+    }
+    
+    if (Test-Path $vswhere) {
+        $vsPath = & $vswhere -latest -products * -property installationPath 2>$null
+        if ($vsPath) {
+            # Find MSVC tools directory
+            $vcToolsDir = Join-Path $vsPath "VC\Tools\MSVC"
+            if (Test-Path $vcToolsDir) {
+                # Get the latest version
+                $versions = Get-ChildItem $vcToolsDir -Directory | Sort-Object Name -Descending
+                foreach ($version in $versions) {
+                    # Try native host architecture first
+                    $arch = $env:PROCESSOR_ARCHITECTURE
+                    if ($arch -eq "ARM64") {
+                        $hostArch = "Hostarm64\arm64"
+                    } elseif ($arch -eq "AMD64") {
+                        $hostArch = "Hostx64\x64"
+                    } else {
+                        $hostArch = "Hostx86\x86"
+                    }
+                    
+                    $dumpbin = Join-Path $version.FullName "bin\$hostArch\dumpbin.exe"
+                    if (Test-Path $dumpbin) {
+                        return $dumpbin
+                    }
+                    
+                    # Fallback to x64
+                    $dumpbin = Join-Path $version.FullName "bin\Hostx64\x64\dumpbin.exe"
+                    if (Test-Path $dumpbin) {
+                        return $dumpbin
+                    }
+                }
+            }
+        }
+    }
+    
+    return $null
+}
+
+# Get dumpbin path once for all checks
+$script:dumpbinPath = Get-DumpbinPath
+if (-not $script:dumpbinPath) {
+    Write-Error "Unable to find dumpbin.exe. Ensure Visual Studio is installed."
+    exit 2
+}
+Write-Host "Using dumpbin: $script:dumpbinPath"
+
 function Check-Symbols {
     param(
         [string] $lib
     )   
     try {
-        [string]$output = cmd.exe /c dumpbin /ALL $lib
+        [string]$output = cmd.exe /c "`"$script:dumpbinPath`" /ALL `"$lib`""
     }
     catch {
         Write-Error  "Unable to run dumpbin on given lib $lib"
