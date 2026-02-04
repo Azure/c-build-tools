@@ -109,7 +109,7 @@ steps:
   # ARM64: Use native vstest.console.arm64.exe directly
   # VSTest@2/VSTest@3 tasks use emulated x64 runner which is slow
   - ${{ if eq(parameters.architecture, 'ARM64') }}:
-    - pwsh: |
+    - powershell: |
         $vstestPath = Join-Path "$(vsPath)" "Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.arm64.exe"
         if (-not (Test-Path $vstestPath)) {
           Write-Error "Native ARM64 vstest runner not found at: $vstestPath"
