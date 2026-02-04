@@ -54,7 +54,7 @@ After all comments have been addressed:
 - Always build and test after each change to catch issues early
 - Commit after each comment to maintain clear history
 - Wait for user approval before pushing to allow for review of changes
-- Reply to comments with specific details about how they were addressed
+- Ask the user if they would like you to reply to comments. If yes, reply with specific details about how they were addressed
 - Use the correct platform tools (ADO MCP for Azure DevOps, GitHub MCP/CLI for GitHub)
 
 ## AI Reply Format
