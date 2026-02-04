@@ -14,7 +14,6 @@ set(VALIDATE_AAA_COMMENTS_SCRIPT "${VALIDATION_SCRIPTS_DIR}/validate_aaa_comment
 add_custom_target(test_validate_aaa_comments_detection
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_AAA_COMMENTS_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa"
-        -ExcludeFolders ""
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment detection on files with missing comments"
 )
@@ -23,7 +22,6 @@ add_custom_target(test_validate_aaa_comments_detection
 add_custom_target(test_validate_aaa_comments_clean
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_AAA_COMMENTS_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa"
-        -ExcludeFolders ""
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment validation on clean files"
 )
@@ -32,7 +30,6 @@ add_custom_target(test_validate_aaa_comments_clean
 add_custom_target(test_validate_aaa_comments_exempted
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_AAA_COMMENTS_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa"
-        -ExcludeFolders ""
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment validation with exempted tests"
 )
@@ -41,7 +38,6 @@ add_custom_target(test_validate_aaa_comments_exempted
 add_custom_target(test_validate_aaa_comments_fix_noop
     COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_AAA_COMMENTS_SCRIPT}"
         -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa"
-        -ExcludeFolders ""
         -Fix
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing that -Fix parameter has no effect"

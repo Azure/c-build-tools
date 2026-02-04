@@ -58,6 +58,7 @@ param(
     [string]$RepoRoot,
     
     [Parameter(Mandatory=$false)]
+    [AllowEmptyString()]
     [string]$ExcludeFolders = "deps,cmake",
     
     [Parameter(Mandatory=$false)]
@@ -66,6 +67,9 @@ param(
 
 # Set error action preference
 $ErrorActionPreference = "Stop"
+
+# Resolve the RepoRoot to an absolute path
+$RepoRoot = (Resolve-Path $RepoRoot).Path.TrimEnd('\', '/')
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "AAA Comment Validation" -ForegroundColor Cyan
@@ -98,14 +102,53 @@ $exemptedTestFunctions = 0
 
 # Pre-compile regex patterns for performance
 $testFunctionRegex = [regex]::new('^\s*(TEST_FUNCTION|TEST_METHOD|CTEST_FUNCTION)\s*\(\s*(\w+)\s*\)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
-$arrangeRegex = [regex]::new('//+\s*arrange|/\*\s*arrange', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-$actRegex = [regex]::new('//+\s*act|/\*\s*act', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-$assertRegex = [regex]::new('//+\s*assert|/\*\s*assert', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+# AAA comment patterns - require word boundary after the keyword to avoid matching //ASSERT_... as assert comment
+$arrangeRegex = [regex]::new('//+\s*arrange\b|/\*\s*arrange\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+$actRegex = [regex]::new('//+\s*act\b|/\*\s*act\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+$assertRegex = [regex]::new('//+\s*assert\b|/\*\s*assert\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 $noAaaRegex = [regex]::new('//\s*no-aaa|/\*\s*no-aaa', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-$helperFuncRegex = [regex]::new('^\s*(?:static\s+)?[\w\s\*]+?\s+(\w+)\s*\([^)]*\)\s*\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+# Helper function start pattern - finds potential function definitions
+# Matches: optional "static", return type (common C types or THANDLE/custom types), optional pointer, function name, (
+# Function names can contain uppercase letters (e.g., test_onReadRecordSegments_failure)
+# Macro exclusion is done separately in the processing loop
+$helperFuncStartRegex = [regex]::new('^(?:static\s+)?(?:void|int|bool|char|unsigned|signed|long|short|float|double|size_t|uint\d+_t|int\d+_t|THANDLE\s*\([^)]+\))\s*\*?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', [System.Text.RegularExpressions.RegexOptions]::Multiline)
 $funcCallRegex = [regex]::new('(?<!\w)(\w+)\s*\(', [System.Text.RegularExpressions.RegexOptions]::None)
 
-# Fast function to extract function body using brace counting
+# Find the end of a function signature (handles nested parentheses in types like THANDLE(...))
+# Returns index of opening brace, or -1 if not a function definition
+function Find-FunctionEnd {
+    param(
+        [string]$content,
+        [int]$parenStart  # Index of opening paren after function name
+    )
+    
+    $len = $content.Length
+    $parenCount = 1
+    $pos = $parenStart + 1
+    
+    # Find matching closing paren
+    while ($parenCount -gt 0 -and $pos -lt $len) {
+        $char = $content[$pos]
+        if ($char -eq '(') { $parenCount++ }
+        elseif ($char -eq ')') { $parenCount-- }
+        $pos++
+    }
+    
+    if ($parenCount -ne 0) { return -1 }
+    
+    # Skip whitespace and newlines, look for opening brace
+    while ($pos -lt $len) {
+        $char = $content[$pos]
+        if ($char -eq '{') { return $pos }
+        if ($char -match '\s') { $pos++; continue }
+        return -1  # Found non-whitespace, non-brace - not a function definition
+    }
+    
+    return -1
+}
+
+# Function body extraction with string-literal awareness
+# Skips braces inside double-quoted strings and character literals
 function Get-FunctionBody {
     param(
         [string]$content,
@@ -116,26 +159,55 @@ function Get-FunctionBody {
     if ($braceStart -eq -1) { return $null }
     
     $braceCount = 1
-    $searchStart = $braceStart + 1
+    $pos = $braceStart + 1
     $len = $content.Length
     
-    while ($braceCount -gt 0 -and $searchStart -lt $len) {
-        $nextOpen = $content.IndexOf('{', $searchStart)
-        $nextClose = $content.IndexOf('}', $searchStart)
+    while ($braceCount -gt 0 -and $pos -lt $len) {
+        $char = $content[$pos]
         
-        if ($nextClose -eq -1) { return $null }
-        
-        if ($nextOpen -eq -1 -or $nextClose -lt $nextOpen) {
-            $braceCount--
-            $searchStart = $nextClose + 1
-        } else {
-            $braceCount++
-            $searchStart = $nextOpen + 1
+        # Skip string literals
+        if ($char -eq '"') {
+            $pos++
+            while ($pos -lt $len) {
+                if ($content[$pos] -eq '\' -and ($pos + 1) -lt $len) {
+                    $pos += 2  # Skip escaped character
+                } elseif ($content[$pos] -eq '"') {
+                    $pos++
+                    break
+                } else {
+                    $pos++
+                }
+            }
+            continue
         }
+        
+        # Skip character literals
+        if ($char -eq "'") {
+            $pos++
+            while ($pos -lt $len) {
+                if ($content[$pos] -eq '\' -and ($pos + 1) -lt $len) {
+                    $pos += 2  # Skip escaped character
+                } elseif ($content[$pos] -eq "'") {
+                    $pos++
+                    break
+                } else {
+                    $pos++
+                }
+            }
+            continue
+        }
+        
+        # Count braces
+        if ($char -eq '{') {
+            $braceCount++
+        } elseif ($char -eq '}') {
+            $braceCount--
+        }
+        $pos++
     }
     
     if ($braceCount -eq 0) {
-        return $content.Substring($braceStart, $searchStart - $braceStart)
+        return $content.Substring($braceStart, $pos - $braceStart)
     }
     return $null
 }
@@ -210,8 +282,9 @@ function Process-TestFile {
         return @{ Violations = $violations; Total = 0; Exempted = 0 }
     }
     
-    # Build helper function position map (lazy - only if needed)
+    # Build helper function position map and AAA cache (lazy - only if needed)
     $helperPositions = $null
+    $helperAAACache = $null
     
     foreach ($testMatch in $testMatches) {
         $total++
@@ -262,32 +335,43 @@ function Process-TestFile {
             continue
         }
         
-        # Not all found - check helpers (lazy init)
+        # Not all found - check helpers (lazy init of positions and AAA cache)
         if ($null -eq $helperPositions) {
             $helperPositions = @{}
-            $helperMatches = $helperFuncRegex.Matches($content)
+            $helperAAACache = @{}  # Cache AAA positions for helpers
+            $helperMatches = $helperFuncStartRegex.Matches($content)
             foreach ($hm in $helperMatches) {
                 $fn = $hm.Groups[1].Value
-                if ($fn -notmatch '^(TEST_FUNCTION|TEST_METHOD|CTEST_FUNCTION|if|while|for|switch|else|do)$') {
-                    $helperPositions[$fn] = $hm.Index
+                if ($fn -notmatch '^(TEST_FUNCTION|TEST_METHOD|CTEST_FUNCTION|if|while|for|switch|else|do|TEST_DEFINE_ENUM_TYPE|TEST_SUITE_INITIALIZE|TEST_SUITE_CLEANUP|TEST_FUNCTION_INITIALIZE|TEST_FUNCTION_CLEANUP)$') {
+                    # Find the opening paren position
+                    $parenPos = $hm.Index + $hm.Length - 1  # Last char is '('
+                    $bracePos = Find-FunctionEnd -content $content -parenStart $parenPos
+                    if ($bracePos -ge 0) {
+                        $helperPositions[$fn] = $bracePos
+                    }
                 }
             }
         }
         
-        # Find called helpers
-        $foundInHelper = @($false, $false, $false)
+        # Find called helpers and check their cached AAA
         $callMatches = $funcCallRegex.Matches($body)
         
         foreach ($call in $callMatches) {
             $fn = $call.Groups[1].Value
             if ($helperPositions.ContainsKey($fn)) {
-                $helperBody = Get-FunctionBody -content $content -startIndex $helperPositions[$fn]
-                if ($helperBody) {
-                    $hPos = Find-AAAPositions -block $helperBody
-                    if ($hPos[0] -ge 0) { $foundInHelper[0] = $true; $positions[0] = 0 }
-                    if ($hPos[1] -ge 0) { $foundInHelper[1] = $true; $positions[1] = 0 }
-                    if ($hPos[2] -ge 0) { $foundInHelper[2] = $true; $positions[2] = 0 }
+                # Check cache first
+                if (-not $helperAAACache.ContainsKey($fn)) {
+                    $helperBody = Get-FunctionBody -content $content -startIndex $helperPositions[$fn]
+                    if ($helperBody) {
+                        $helperAAACache[$fn] = Find-AAAPositions -block $helperBody
+                    } else {
+                        $helperAAACache[$fn] = @(-1, -1, -1)
+                    }
                 }
+                $hPos = $helperAAACache[$fn]
+                if ($hPos[0] -ge 0) { $positions[0] = 0 }
+                if ($hPos[1] -ge 0) { $positions[1] = 0 }
+                if ($hPos[2] -ge 0) { $positions[2] = 0 }
             }
             # Early exit if all found
             if ($positions[0] -ge 0 -and $positions[1] -ge 0 -and $positions[2] -ge 0) { break }
@@ -321,14 +405,12 @@ foreach ($pattern in $filePatterns) {
     $allFiles += Get-ChildItem -Path $RepoRoot -Recurse -Filter $pattern -ErrorAction SilentlyContinue
 }
 
-Write-Host "Found $($allFiles.Count) test files to check" -ForegroundColor White
-Write-Host ""
-
+# Filter excluded files upfront
+$filesToProcess = [System.Collections.ArrayList]::new()
+$skippedFiles = 0
 foreach ($file in $allFiles) {
-    # Check if file should be excluded
     $relativePath = $file.FullName.Substring($RepoRoot.Length).TrimStart('\', '/')
     $isExcluded = $false
-    
     foreach ($excludeDir in $excludeDirs) {
         if ($relativePath -like "$excludeDir\*" -or $relativePath -like "$excludeDir/*") {
             $isExcluded = $true
@@ -336,34 +418,315 @@ foreach ($file in $allFiles) {
             break
         }
     }
-    
-    if ($isExcluded) { continue }
-    
-    $totalFiles++
-    
-    # Read file content
-    try {
-        $content = [System.IO.File]::ReadAllText($file.FullName)
+    if (-not $isExcluded) {
+        [void]$filesToProcess.Add(@{ FullName = $file.FullName; RelativePath = $relativePath })
     }
-    catch {
-        Write-Host "  [WARN] Cannot read file: $($file.FullName)" -ForegroundColor Yellow
+}
+
+$totalFiles = $filesToProcess.Count
+Write-Host "Found $($allFiles.Count) test files, processing $totalFiles (excluded $skippedFiles)" -ForegroundColor White
+Write-Host ""
+
+# Check if we can use parallel processing (PowerShell 7+)
+$useParallel = $PSVersionTable.PSVersion.Major -ge 7
+
+if ($useParallel) {
+    # Process files in parallel for better performance (PowerShell 7+)
+    $results = $filesToProcess | ForEach-Object -Parallel {
+        $fileInfo = $_
+        $relativePath = $fileInfo.RelativePath
+        $fullPath = $fileInfo.FullName
+        
+        # Read file content
+        try {
+            $content = [System.IO.File]::ReadAllText($fullPath)
+        }
+        catch {
+            return @{ Violations = @(); Total = 0; Exempted = 0; Error = $fullPath }
+        }
+        
+        if ([string]::IsNullOrWhiteSpace($content)) {
+            return @{ Violations = @(); Total = 0; Exempted = 0 }
+        }
+        
+        # Inline all the processing logic (can't call functions across parallel boundaries)
+        $testFunctionRegex = [regex]::new('^\s*(TEST_FUNCTION|TEST_METHOD|CTEST_FUNCTION)\s*\(\s*(\w+)\s*\)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+        $arrangeRegex = [regex]::new('//+\s*arrange\b|/\*\s*arrange\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $actRegex = [regex]::new('//+\s*act\b|/\*\s*act\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $assertRegex = [regex]::new('//+\s*assert\b|/\*\s*assert\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $noAaaRegex = [regex]::new('//\s*no-aaa|/\*\s*no-aaa', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $helperFuncStartRegex = [regex]::new('^(?:static\s+)?(?:void|int|bool|char|unsigned|signed|long|short|float|double|size_t|uint\d+_t|int\d+_t|THANDLE\s*\([^)]+\))\s*\*?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+        $funcCallRegex = [regex]::new('(?<!\w)(\w+)\s*\(', [System.Text.RegularExpressions.RegexOptions]::None)
+        
+        # Find-FunctionEnd inline
+        $FindFunctionEnd = {
+            param([string]$content, [int]$parenStart)
+            $len = $content.Length
+            $parenCount = 1
+            $pos = $parenStart + 1
+            while ($parenCount -gt 0 -and $pos -lt $len) {
+                $char = $content[$pos]
+                if ($char -eq '(') { $parenCount++ }
+                elseif ($char -eq ')') { $parenCount-- }
+                $pos++
+            }
+            if ($parenCount -ne 0) { return -1 }
+            while ($pos -lt $len) {
+                $char = $content[$pos]
+                if ($char -eq '{') { return $pos }
+                if ($char -match '\s') { $pos++; continue }
+                return -1
+            }
+            return -1
+        }
+        
+        # Get-FunctionBody inline (with string-literal awareness)
+        $GetFunctionBody = {
+            param([string]$content, [int]$startIndex)
+            $braceStart = $content.IndexOf('{', $startIndex)
+            if ($braceStart -eq -1) { return $null }
+            $braceCount = 1
+            $pos = $braceStart + 1
+            $len = $content.Length
+            while ($braceCount -gt 0 -and $pos -lt $len) {
+                $char = $content[$pos]
+                # Skip string literals
+                if ($char -eq '"') {
+                    $pos++
+                    while ($pos -lt $len) {
+                        if ($content[$pos] -eq '\' -and ($pos + 1) -lt $len) {
+                            $pos += 2
+                        } elseif ($content[$pos] -eq '"') {
+                            $pos++
+                            break
+                        } else {
+                            $pos++
+                        }
+                    }
+                    continue
+                }
+                # Skip character literals
+                if ($char -eq "'") {
+                    $pos++
+                    while ($pos -lt $len) {
+                        if ($content[$pos] -eq '\' -and ($pos + 1) -lt $len) {
+                            $pos += 2
+                        } elseif ($content[$pos] -eq "'") {
+                            $pos++
+                            break
+                        } else {
+                            $pos++
+                        }
+                    }
+                    continue
+                }
+                # Count braces
+                if ($char -eq '{') { $braceCount++ }
+                elseif ($char -eq '}') { $braceCount-- }
+                $pos++
+            }
+            if ($braceCount -eq 0) { return $content.Substring($braceStart, $pos - $braceStart) }
+            return $null
+        }
+        
+        # Build line table
+        $lineTable = [System.Collections.ArrayList]::new()
+        [void]$lineTable.Add(0)
+        $pos = 0
+        while (($pos = $content.IndexOf("`n", $pos)) -ne -1) {
+            $pos++
+            [void]$lineTable.Add($pos)
+        }
+        
+        # Get line from table
+        $GetLineFromTable = {
+            param([System.Collections.ArrayList]$lineTable, [int]$position)
+            $low = 0
+            $high = $lineTable.Count - 1
+            while ($low -le $high) {
+                $mid = [int](($low + $high) / 2)
+                if ($lineTable[$mid] -le $position) {
+                    if ($mid -eq $lineTable.Count - 1 -or $lineTable[$mid + 1] -gt $position) {
+                        return $mid + 1
+                    }
+                    $low = $mid + 1
+                } else {
+                    $high = $mid - 1
+                }
+            }
+            return 1
+        }
+        
+        $violations = @()
+        $total = 0
+        $exempted = 0
+        
+        $testMatches = $testFunctionRegex.Matches($content)
+        if ($testMatches.Count -eq 0) {
+            return @{ Violations = @(); Total = 0; Exempted = 0 }
+        }
+        
+        $helperPositions = $null
+        $helperAAACache = $null
+        
+        foreach ($testMatch in $testMatches) {
+            $total++
+            $testMacro = $testMatch.Groups[1].Value
+            $testName = $testMatch.Groups[2].Value
+            
+            $matchEnd = $testMatch.Index + $testMatch.Length
+            $lineStart = $content.LastIndexOf("`n", [Math]::Max(0, $matchEnd - 1)) + 1
+            while ($lineStart -lt $content.Length -and $content[$lineStart] -eq "`r") { $lineStart++ }
+            $lineEnd = $content.IndexOf("`n", $matchEnd)
+            if ($lineEnd -eq -1) { $lineEnd = $content.Length }
+            $testLine = $content.Substring($lineStart, $lineEnd - $lineStart)
+            
+            if ($noAaaRegex.IsMatch($testLine)) {
+                $exempted++
+                continue
+            }
+            
+            $body = & $GetFunctionBody $content $testMatch.Index
+            if (-not $body) { continue }
+            
+            $arr = $arrangeRegex.Match($body)
+            $act = $actRegex.Match($body)
+            $ast = $assertRegex.Match($body)
+            $positions = @(
+                $(if ($arr.Success) { $arr.Index } else { -1 }),
+                $(if ($act.Success) { $act.Index } else { -1 }),
+                $(if ($ast.Success) { $ast.Index } else { -1 })
+            )
+            
+            $hasAll = ($positions[0] -ge 0) -and ($positions[1] -ge 0) -and ($positions[2] -ge 0)
+            
+            if ($hasAll) {
+                if ($positions[0] -lt $positions[1] -and $positions[1] -lt $positions[2]) {
+                    continue
+                }
+                $lineNum = & $GetLineFromTable $lineTable $testMatch.Index
+                $violations += @{
+                    RelativePath = $relativePath
+                    TestName = $testName
+                    TestMacro = $testMacro
+                    Line = $lineNum
+                    Issue = "AAA comments are not in correct order (should be: arrange, act, assert)"
+                }
+                continue
+            }
+            
+            # Check helpers
+            if ($null -eq $helperPositions) {
+                $helperPositions = @{}
+                $helperAAACache = @{}
+                $helperMatches = $helperFuncStartRegex.Matches($content)
+                foreach ($hm in $helperMatches) {
+                    $fn = $hm.Groups[1].Value
+                    if ($fn -notmatch '^(TEST_FUNCTION|TEST_METHOD|CTEST_FUNCTION|if|while|for|switch|else|do|TEST_DEFINE_ENUM_TYPE|TEST_SUITE_INITIALIZE|TEST_SUITE_CLEANUP|TEST_FUNCTION_INITIALIZE|TEST_FUNCTION_CLEANUP)$') {
+                        $parenPos = $hm.Index + $hm.Length - 1
+                        $bracePos = & $FindFunctionEnd $content $parenPos
+                        if ($bracePos -ge 0) {
+                            $helperPositions[$fn] = $bracePos
+                        }
+                    }
+                }
+            }
+            
+            $callMatches = $funcCallRegex.Matches($body)
+            foreach ($call in $callMatches) {
+                $fn = $call.Groups[1].Value
+                if ($helperPositions.ContainsKey($fn)) {
+                    if (-not $helperAAACache.ContainsKey($fn)) {
+                        $helperBody = & $GetFunctionBody $content $helperPositions[$fn]
+                        if ($helperBody) {
+                            $hArr = $arrangeRegex.Match($helperBody)
+                            $hAct = $actRegex.Match($helperBody)
+                            $hAst = $assertRegex.Match($helperBody)
+                            $helperAAACache[$fn] = @(
+                                $(if ($hArr.Success) { $hArr.Index } else { -1 }),
+                                $(if ($hAct.Success) { $hAct.Index } else { -1 }),
+                                $(if ($hAst.Success) { $hAst.Index } else { -1 })
+                            )
+                        } else {
+                            $helperAAACache[$fn] = @(-1, -1, -1)
+                        }
+                    }
+                    $hPos = $helperAAACache[$fn]
+                    if ($hPos[0] -ge 0) { $positions[0] = 0 }
+                    if ($hPos[1] -ge 0) { $positions[1] = 0 }
+                    if ($hPos[2] -ge 0) { $positions[2] = 0 }
+                }
+                if ($positions[0] -ge 0 -and $positions[1] -ge 0 -and $positions[2] -ge 0) { break }
+            }
+            
+            $missing = @()
+            if ($positions[0] -lt 0) { $missing += "arrange" }
+            if ($positions[1] -lt 0) { $missing += "act" }
+            if ($positions[2] -lt 0) { $missing += "assert" }
+            
+            if ($missing.Count -gt 0) {
+                $lineNum = & $GetLineFromTable $lineTable $testMatch.Index
+                $violations += @{
+                    RelativePath = $relativePath
+                    TestName = $testName
+                    TestMacro = $testMacro
+                    Line = $lineNum
+                    Issue = "Missing AAA comment(s): $($missing -join ', ')"
+                }
+            }
+        }
+        
+        return @{ Violations = $violations; Total = $total; Exempted = $exempted }
+    } -ThrottleLimit ([Environment]::ProcessorCount)
+} else {
+    # Sequential processing for PowerShell 5.1
+    $results = @()
+    foreach ($fileInfo in $filesToProcess) {
+        $relativePath = $fileInfo.RelativePath
+        $fullPath = $fileInfo.FullName
+        
+        # Read file content
+        try {
+            $content = [System.IO.File]::ReadAllText($fullPath)
+        }
+        catch {
+            $results += @{ Violations = @(); Total = 0; Exempted = 0; Error = $fullPath }
+            continue
+        }
+        
+        if ([string]::IsNullOrWhiteSpace($content)) {
+            $results += @{ Violations = @(); Total = 0; Exempted = 0 }
+            continue
+        }
+        
+        # Process file using the shared Process-TestFile function
+        $result = Process-TestFile -content $content -relativePath $relativePath -fullPath $fullPath
+        $results += $result
+    }
+}
+
+# Aggregate results
+$totalTestFunctions = 0
+$exemptedTestFunctions = 0
+$testFunctionsWithViolations = [System.Collections.ArrayList]::new()
+
+foreach ($result in $results) {
+    if ($result.Error) {
+        Write-Host "  [WARN] Cannot read file: $($result.Error)" -ForegroundColor Yellow
         continue
     }
-    
-    if ([string]::IsNullOrWhiteSpace($content)) { continue }
-    
-    # Process file
-    $result = Process-TestFile -content $content -relativePath $relativePath -fullPath $file.FullName
-    
     $totalTestFunctions += $result.Total
     $exemptedTestFunctions += $result.Exempted
-    
     foreach ($v in $result.Violations) {
         [void]$testFunctionsWithViolations.Add([PSCustomObject]$v)
-        Write-Host "  [FAIL] $($v.RelativePath)" -ForegroundColor Red
-        Write-Host "         Line $($v.Line): $($v.TestMacro)($($v.TestName))" -ForegroundColor Yellow
-        Write-Host "         $($v.Issue)" -ForegroundColor Yellow
     }
+}
+
+# Print violations after parallel processing completes
+foreach ($v in $testFunctionsWithViolations) {
+    Write-Host "  [FAIL] $($v.RelativePath)" -ForegroundColor Red
+    Write-Host "         Line $($v.Line): $($v.TestMacro)($($v.TestName))" -ForegroundColor Yellow
+    Write-Host "         $($v.Issue)" -ForegroundColor Yellow
 }
 
 Write-Host ""
