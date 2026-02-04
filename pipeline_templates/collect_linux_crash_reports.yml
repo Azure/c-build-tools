@@ -1,6 +1,10 @@
 # This template collects Linux crash reports and core dumps after tests run
 # Run this template AFTER tests to collect any crash artifacts
 #
+# If enable_linux_crash_reports.yml was used before tests, core files will already
+# be in the crash_reports_directory via kernel.core_pattern. This template also
+# collects from /var/crash (Ubuntu apport) and searches the build directory as fallbacks.
+#
 # Usage:
 #   - template: pipeline_templates/collect_linux_crash_reports.yml@c_build_tools
 #     parameters:
@@ -26,20 +30,25 @@ steps:
 
       echo "=== Collecting Linux crash reports ==="
 
-      # Collect from Ubuntu apport system
+      # Core files from kernel.core_pattern should already be in crash_dir
+      # (if enable_linux_crash_reports.yml was used)
+      echo "Core files already in crash directory:"
+      ls -la "$crash_dir"/core.* 2>/dev/null || echo "  (none)"
+
+      # Collect from Ubuntu apport system as fallback
       if [ -d /var/crash ]; then
           echo "Checking /var/crash..."
           ls -la /var/crash/ 2>/dev/null || true
           cp -r /var/crash/* "$crash_dir/" 2>/dev/null || true
       fi
 
-      # Collect core files from build directory
+      # Search build directory for any core files not captured by core_pattern
       echo "Searching for core files in ${{ parameters.build_directory }}..."
       find "${{ parameters.build_directory }}" -maxdepth ${{ parameters.search_depth }} -name "core*" -type f \
           -exec cp {} "$crash_dir/" \; 2>/dev/null || true
 
-      # List collected files
-      echo "=== Files collected ==="
+      # List all collected files
+      echo "=== All files collected ==="
       ls -la "$crash_dir/" 2>/dev/null || echo "No crash reports found"
 
       # Create a marker file so the artifact always has content
