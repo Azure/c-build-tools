@@ -17,12 +17,13 @@ This document establishes coding standards and conventions for the Azure Messagi
 
 ### Internal Function Naming
 - **Internal functions must be declared `static`** and not exposed through public headers
-- **Prefix internal functions with the module name and `internal`**:
-  - Pattern: `<module_prefix>_internal_<action>[_<qualifier>]`
+- **Prefix internal functions with `internal_` followed by the module name**:
+  - Pattern: `internal_<module_prefix>_<action>[_<qualifier>]`
   - Examples:
-    - `static int bsdl_internal_validate_parameters(...)`
-    - `static void bs_internal_cleanup_resources(...)`
-    - `static RESULT_TYPE sf_internal_process_callback(...)`
+    - `static int internal_bsdl_validate_parameters(...)`
+    - `static void internal_bs_cleanup_resources(...)`
+    - `static void internal_bsdl_ordered_writer_close(...)`
+    - `static RESULT_TYPE internal_sf_process_callback(...)`
 - This clearly distinguishes internal implementation details from public API
 
 ### Module Prefixes
@@ -38,11 +39,11 @@ This document establishes coding standards and conventions for the Azure Messagi
 - **Reference Counting**: `*_inc_ref()`, `*_dec_ref()`
 - **Async Operations**: `*_async()` suffix for asynchronous functions
 - **Getters/Setters**: `*_get_*()`, `*_set_*()`
-- **Internal Functions**: `*_internal_*()` prefix for static, non-public functions
+- **Internal Functions**: `internal_*_*()` prefix for static, non-public functions
 
 ### Function Visibility Rules
 - **Public API functions**: Declared in header files, no `static` keyword, follow public naming conventions
-- **Internal functions**: Must be `static`, prefixed with `*_internal_`, not declared in public headers
+- **Internal functions**: Must be `static`, prefixed with `internal_*_`, not declared in public headers
 - **Helper functions**: Use appropriate internal naming if they're implementation details
 
 ## Function Structure Guidelines {#function-structure}
@@ -95,7 +96,7 @@ int my_operation_async(
 int my_operation_async(MY_HANDLE handle, const char* param, MY_ASYNC_CALLBACK callback, void* context)
 {
     int result;
-    
+
     // Parameter validation
     if (
         (handle == NULL) ||
@@ -118,7 +119,7 @@ int my_operation_async(MY_HANDLE handle, const char* param, MY_ASYNC_CALLBACK ca
             result = MU_FAILURE;  // Failed to start async operation
         }
     }
-    
+
 callback_will_come:
     return result;
 }
@@ -247,7 +248,7 @@ THANDLE(TYPE) my_function_create(uint32_t count, TYPE_HANDLE* items)
         // Actual function implementation follows validation
         result = create_actual_object(count, items);  // Must set result in success path
     }
-    
+
     return result;
 }
 ```
@@ -270,7 +271,7 @@ Goto is **permitted and encouraged** for the following patterns:
 int my_function(void)
 {
     int result;  // Uninitialized - all paths must set it
-    
+
     if (condition1_failed)
     {
         LogError("condition1 failed");
@@ -278,7 +279,7 @@ int my_function(void)
     }
     else if (condition2_failed)
     {
-        LogError("condition2 failed"); 
+        LogError("condition2 failed");
         result = MU_FAILURE;  // Error path sets result
     }
     else
@@ -295,10 +296,10 @@ int my_function(void)
             goto all_ok;
         }
     }
-    
+
     // Cleanup code here
     cleanup_resources();
-    
+
 all_ok:
     return result;
 }
@@ -309,7 +310,7 @@ all_ok:
 int my_async_function(HANDLE handle, CALLBACK callback, void* context)
 {
     int result;  // Uninitialized - all paths must set it
-    
+
     if (validation_failed)
     {
         LogError("validation failed");
@@ -317,23 +318,120 @@ int my_async_function(HANDLE handle, CALLBACK callback, void* context)
     }
     else
     {
-        if (start_async_operation() == 0)
-        {
-            result = 0;  // Success path sets result
-            goto callback_will_come;
-        }
-        else
+        if (start_async_operation() != 0)
         {
             result = MU_FAILURE;  // Async start failure sets result
         }
+        else
+        {
+            result = 0;  // Success path sets result
+            goto all_ok;
+        }
     }
-    
+
     // Synchronous error path - call callback immediately
     callback(context, ERROR_RESULT);
-    
-callbackwillcome:
+
+all_ok:
     return result;
 }
+```
+
+### Multi-Level Cleanup Placement
+When multiple operations need cleanup, place each undo at the end of the corresponding `else` block. This ensures:
+1. Cleanup is only executed on error paths
+2. Cleanup code is not duplicated across error branches
+3. Undos execute in reverse order (LIFO)
+
+```c
+int my_open_function(HANDLE handle)
+{
+    int result;
+
+    if (sm_open_begin(handle->sm) != SM_EXEC_GRANTED)
+    {
+        LogError("sm_open_begin failed");
+        result = MU_FAILURE;
+    }
+    else
+    {
+        if (resource_open(handle->resource) != 0)
+        {
+            LogError("resource_open failed");
+            result = MU_FAILURE;
+        }
+        else
+        {
+            if (start_async_operation(handle) != 0)
+            {
+                LogError("start_async_operation failed");
+                result = MU_FAILURE;
+            }
+            else
+            {
+                result = 0;
+                goto all_ok;
+            }
+            // Undo resource_open - only reached if start_async_operation failed
+            resource_close(handle->resource);
+        }
+        // Undo sm_open_begin - reached if resource_open or start_async_operation failed
+        sm_open_end(handle->sm, false);
+    }
+
+all_ok:
+    return result;
+}
+```
+
+**Key principles:**
+- Each undo goes at the end of the `else` block for the operation it undoes
+- Undos are executed in reverse order of the operations (LIFO)
+- `goto all_ok` skips ALL cleanup on success
+- Never duplicate cleanup calls across error paths
+
+### `all_ok` Label Placement
+The `all_ok` label must go after the "undo".
+
+```c
+// Incorrect - code between label and return
+all_ok:
+    free(buffer);       // Don't put code here
+    return result;
+
+// Correct - label immediately before return
+all_ok:
+    return result;
+```
+
+If there are any "undo" operations that must be performed even in the success case, they can go after the all_ok label:
+
+```c
+srw_lock_acquire();
+if (sm_exec_begin(handle->sm) != SM_EXEC_GRANTED)
+{
+    LogError("sm_exec_begin failed");
+    result = MU_FAILURE;
+}
+else
+{
+    if (do_work(handle) != 0)
+    {
+        LogError("do_work failed");
+        result = MU_FAILURE;
+    }
+    else
+    {
+        result = 0;
+        goto all_ok;
+    }
+    // Cleanup at END of else block - only reached on error
+    sm_exec_end(handle->sm);
+}
+
+all_ok:
+srw_lock_release(); // lock must always be released
+return result;
 ```
 
 ### Label Naming
@@ -355,7 +453,7 @@ callbackwillcome:
 ```c
 int long_function_name(
     VERY_LONG_TYPE_NAME* first_parameter,
-    ANOTHER_LONG_TYPE_NAME* second_parameter, 
+    ANOTHER_LONG_TYPE_NAME* second_parameter,
     uint32_t third_parameter,
     const char* fourth_parameter
     )
@@ -372,14 +470,14 @@ int my_function(void)
     }
     else
     {
-        // code  
+        // code
     }
-    
+
     while (condition)
     {
         // code
     }
-    
+
     for (uint32_t i = 0; i < count; i++)
     {
         // code
@@ -391,6 +489,61 @@ int my_function(void)
 - **No space for function calls**: `function(param)`
 
 ## If/Else Formatting Rules {#if-else-formatting}
+
+### Every `if` Must Have an `else`
+Every `if` statement must have an explicit `else` block. This ensures all code paths are intentionally handled and makes the logic clear to reviewers:
+
+```c
+// Incorrect - missing else
+if (!error)
+{
+    result = 0;
+}
+
+// Correct - explicit else
+if (error_condition)
+{
+    LogError("...");
+    result = MU_FAILURE;
+}
+else
+{
+    // Success path
+    result = 0;
+}
+```
+
+### Empty Else Blocks with "Do Nothing" Comment
+When an `if` statement handles a condition but the `else` case requires no action, add an explicit empty `else` block with a `/* do nothing */` comment:
+
+```c
+// Correct - explicit else with "do nothing" comment
+if (item == NULL)
+{
+    /* do nothing */
+}
+else
+{
+    process_item(item);
+}
+```
+
+### Error Path in `if`, Success Path in `else`
+The **error/nothing-to-do** path always goes in the `if` block; the **success/main code** path goes in the `else` block:
+
+```c
+// Correct - error in if, success in else
+if (handle == NULL)
+{
+    LogError("invalid argument");
+    result = MU_FAILURE;
+}
+else
+{
+    // Main logic here
+    result = perform_operation(handle);
+}
+```
 
 ### Multi-Condition Validation
 ```c
@@ -496,7 +649,7 @@ static int bsdl_internal_validate_address_array(uint32_t count, BSDL_ADDRESS_HAN
 {
     int result;
     uint32_t i;
-    
+
     // Implementation details not exposed to callers
     for (i = 0; i < count; i++)
     {
@@ -505,7 +658,7 @@ static int bsdl_internal_validate_address_array(uint32_t count, BSDL_ADDRESS_HAN
             break;  // Break on error
         }
     }
-    
+
     // Check if loop completed successfully
     if (i < count)
     {
@@ -515,7 +668,7 @@ static int bsdl_internal_validate_address_array(uint32_t count, BSDL_ADDRESS_HAN
     {
         result = 0;  // Loop completed successfully
     }
-    
+
     return result;
 }
 
@@ -523,7 +676,7 @@ static int bsdl_internal_validate_address_array(uint32_t count, BSDL_ADDRESS_HAN
 int bsdl_address_list_create(uint32_t count, BSDL_ADDRESS_HANDLE* addresses)
 {
     int result;
-    
+
     if (bsdl_internal_validate_address_array(count, addresses) != 0)
     {
         LogError("Address validation failed");
@@ -534,7 +687,7 @@ int bsdl_address_list_create(uint32_t count, BSDL_ADDRESS_HANDLE* addresses)
         // Create the address list
         result = 0;
     }
-    
+
     return result;
 }
 ```
@@ -544,7 +697,7 @@ int bsdl_address_list_create(uint32_t count, BSDL_ADDRESS_HANDLE* addresses)
 Headers must be included in a specific order to ensure proper compilation and avoid conflicts:
 
 1. **Standard C Library Headers** (first)
-2. **System/Platform Headers** 
+2. **System/Platform Headers**
 3. **Test Framework Headers** (for test files only)
 4. **Memory Management Headers** (gballoc_hl_redirect.h - MANDATORY)
 5. **Core Infrastructure Headers** (macro_utils, c_logging)
@@ -701,6 +854,170 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 - Use consistent callback patterns with context parameters
 - Always provide both success and error callback paths
 
+## Unit Testing Guidelines {#unit-testing}
+
+### Test Function Naming Convention
+`TEST_FUNCTION` names should generally follow the `when_X_then_Y` pattern to clearly express the test scenario:
+
+**Pattern:** `when_<condition>_then_<expected_outcome>`
+
+```c
+// Follows when/then pattern
+TEST_FUNCTION(when_handle_is_NULL_then_function_fails)
+TEST_FUNCTION(when_malloc_fails_then_create_returns_NULL)
+TEST_FUNCTION(when_all_calls_succeed_then_operation_succeeds)
+TEST_FUNCTION(when_bsdl_open_complete_indicates_OK_then_user_callback_receives_OK)
+TEST_FUNCTION(when_sm_exec_begin_fails_then_write_records_async_fails)
+TEST_FUNCTION(when_callback_context_is_NULL_then_process_terminates)
+
+// Alternative patterns also acceptable
+TEST_FUNCTION(my_function_succeeds)  // Simple happy path
+TEST_FUNCTION(my_function_fails_when_underlying_functions_fail)  // Negative tests
+```
+
+**Guidelines:**
+- Use `when_` prefix to describe the precondition or trigger condition
+- Use `then_` to describe the expected outcome or behavior
+- Be specific about what condition triggers the behavior
+- Be specific about what outcome is expected
+- Simple `<function>_succeeds` naming is acceptable for straightforward happy path tests
+
+### Test Helper Functions
+Create helper functions to reduce code duplication and improve test readability.
+
+**Naming Patterns:**
+- `setup_<object>_expectations()` - Sets up expected calls for creating an object
+- `setup_<scenario>_expectations()` - Sets up expected calls for a specific scenario
+- `create_<state>_<object>()` - Creates an object in a specific state (e.g., `create_opened_my_object`)
+
+```c
+// Helper to set up expectations for object creation
+static void setup_create_my_object_expectations(void)
+{
+    STRICT_EXPECTED_CALL(malloc(IGNORED_ARG));
+    STRICT_EXPECTED_CALL(dependency_create());
+}
+
+// Helper to create an object and verify expectations
+static MY_HANDLE create_my_object(void)
+{
+    setup_create_my_object_expectations();
+    
+    MY_HANDLE handle = my_object_create();
+    ASSERT_IS_NOT_NULL(handle);
+    ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());
+    umock_c_reset_all_calls();
+    return handle;
+}
+
+// Helper to create an object in opened state
+static MY_HANDLE create_opened_my_object(void)
+{
+    MY_HANDLE handle = create_my_object();
+    setup_open_my_object_expectations();
+    open_my_object(handle);
+    ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());
+    umock_c_reset_all_calls();
+    return handle;
+}
+```
+
+**Guidelines:**
+- Verify expected calls match actual calls in helpers with `ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls())` to catch setup bugs early
+- Include `umock_c_reset_all_calls()` at the end of helpers to provide clean mock state
+- Use descriptive names that indicate the state of the returned object
+- Combine related setup steps into single helpers to avoid repetitive patterns
+- Use helpers wherever the same setup pattern appears in multiple tests
+- Helpers should handle assertions for setup success (e.g., `ASSERT_IS_NOT_NULL`)
+
+### Test File Organization
+Tests should be organized by the function they test, not by arbitrary categories:
+
+```c
+// Incorrect - section comments for grouping
+/* Pass-through function tests */
+TEST_FUNCTION(...)
+
+/* Callback translation tests */
+TEST_FUNCTION(...)
+
+// Correct - tests grouped by function with requirement tags
+/* Tests_SRS_MODULE_42_001: [ If handle is NULL then function_a shall fail. ] */
+TEST_FUNCTION(when_handle_is_NULL_then_function_a_fails)
+{
+    ...
+}
+
+/* Tests_SRS_MODULE_42_002: [ On success function_a shall return 0. ] */
+TEST_FUNCTION(when_all_calls_succeed_then_function_a_succeeds)
+{
+    ...
+}
+
+/* Tests_SRS_MODULE_42_010: [ If handle is NULL then function_b shall fail. ] */
+TEST_FUNCTION(when_handle_is_NULL_then_function_b_fails)
+{
+    ...
+}
+```
+
+**Guidelines:**
+- Do NOT use section comments to group tests by category
+- Group tests by the function they test
+- Use `Tests_SRS_*` requirement tags as the primary organization
+- Keep all tests for a single function together in the file
+
+### Precompiled Headers for Unit Tests
+Test helper headers that are used across multiple tests should be included in the precompiled header file (`*_ut_pch.h`):
+
+```c
+// In my_module_ut_pch.h - shared test infrastructure
+#include "my_test_fake.h"          // Test fakes used throughout
+#include "common_test_helpers.h"   // Shared test utilities
+
+// In my_module_ut.c - don't duplicate PCH includes
+// The includes from PCH are already available
+#include "my_module_ut_pch.h"      // PCH must be first
+
+// Test-specific includes only
+#include "special_test_helper.h"   // Only used in this file
+```
+
+**Guidelines:**
+- Move frequently-used test helper includes to the PCH file
+- Keep test-specific includes in the test file itself
+- This improves build times and reduces include duplication
+- PCH include must be the first include in the test file
+
+### Result Variable Assignment in Tests
+When testing error paths, each error path in the implementation should set the result variable explicitly. This enables line-number tracking during debugging:
+
+```c
+// In implementation - result set on each error path
+if (first_check_fails)
+{
+    LogError("first check failed");
+    result = MU_FAILURE;  // Set here for debugging line info
+}
+else if (second_check_fails)
+{
+    LogError("second check failed");
+    result = MU_FAILURE;  // Set here for debugging line info
+}
+else
+{
+    result = 0;
+}
+
+// Incorrect implementation - result set once at declaration
+int result = MU_FAILURE;  // Don't initialize to failure
+if (first_check_fails)
+{
+    LogError("first check failed");
+    // Missing result assignment - harder to debug
+}
+```
+
 ### Requirements Traceability System
 The codebase uses a comprehensive requirements traceability system to ensure complete coverage and consistency between specifications, implementation, and testing.
 
@@ -735,7 +1052,7 @@ Requirements are traced to implementation using `Codes_SRS_` comments:
 int module_function(void* parameter)
 {
     int result;
-    
+
     /*Codes_SRS_MODULE_42_001: [ If parameter is NULL then module_function shall fail and return a non-zero value. ]*/
     if (parameter == NULL)
     {
@@ -758,37 +1075,38 @@ int module_function(void* parameter)
             result = 0;
         }
     }
-    
+
     return result;
 }
 ```
 
 #### Unit Test Tracing
-Requirements are traced to unit tests using `Tests_SRS_` comments:
+Requirements are traced to unit tests using `Tests_SRS_` comments. Test function names must follow the `when_X_then_Y` pattern:
 ```c
 // Tests_SRS_MODULE_42_001: [ If parameter is NULL then module_function shall fail and return a non-zero value. ]
-TEST_FUNCTION(module_function_with_NULL_parameter_fails)
+TEST_FUNCTION(when_parameter_is_NULL_then_module_function_fails)
 {
-    // arrange
-    // act
+    ///arrange
+
+    ///act
     int result = module_function(NULL);
-    
-    // assert
+
+    ///assert
     ASSERT_ARE_NOT_EQUAL(int, 0, result);
 }
 
 // Tests_SRS_MODULE_42_002: [ module_function shall allocate memory for the HANDLE_TYPE structure. ]
 // Tests_SRS_MODULE_42_003: [ If malloc fails then module_function shall return NULL. ]
-TEST_FUNCTION(module_function_when_malloc_fails_returns_failure)
+TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
 {
-    // arrange
+    ///arrange
     STRICT_EXPECTED_CALL(malloc(IGNORED_ARG))
         .SetReturn(NULL);
-        
-    // act
+
+    ///act
     int result = module_function(&some_parameter);
-    
-    // assert
+
+    ///assert
     ASSERT_ARE_NOT_EQUAL(int, 0, result);
     ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());
 }
