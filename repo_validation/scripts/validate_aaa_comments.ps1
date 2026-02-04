@@ -109,8 +109,9 @@ $assertRegex = [regex]::new('//+\s*assert\b|/\*\s*assert\b', [System.Text.Regula
 $noAaaRegex = [regex]::new('//\s*no-aaa|/\*\s*no-aaa', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 # Helper function start pattern - finds potential function definitions
 # Matches: optional "static", return type (common C types or THANDLE/custom types), optional pointer, function name, (
-# Excludes macro invocations by requiring lowercase in function name
-$helperFuncStartRegex = [regex]::new('^(?:static\s+)?(?:void|int|bool|char|unsigned|signed|long|short|float|double|size_t|uint\d+_t|int\d+_t|THANDLE\s*\([^)]+\))\s*\*?\s*([a-z_][a-z0-9_]*)\s*\(', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+# Function names can contain uppercase letters (e.g., test_onReadRecordSegments_failure)
+# Macro exclusion is done separately in the processing loop
+$helperFuncStartRegex = [regex]::new('^(?:static\s+)?(?:void|int|bool|char|unsigned|signed|long|short|float|double|size_t|uint\d+_t|int\d+_t|THANDLE\s*\([^)]+\))\s*\*?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', [System.Text.RegularExpressions.RegexOptions]::Multiline)
 $funcCallRegex = [regex]::new('(?<!\w)(\w+)\s*\(', [System.Text.RegularExpressions.RegexOptions]::None)
 
 # Find the end of a function signature (handles nested parentheses in types like THANDLE(...))
@@ -146,9 +147,8 @@ function Find-FunctionEnd {
     return -1
 }
 
-# Fast function body extraction using simple brace counting
-# For AAA comment detection, we don't need perfect accuracy on string literals
-# because AAA comments like "// arrange" won't appear inside string literals
+# Function body extraction with string-literal awareness
+# Skips braces inside double-quoted strings and character literals
 function Get-FunctionBody {
     param(
         [string]$content,
@@ -163,18 +163,47 @@ function Get-FunctionBody {
     $len = $content.Length
     
     while ($braceCount -gt 0 -and $pos -lt $len) {
-        $nextOpen = $content.IndexOf('{', $pos)
-        $nextClose = $content.IndexOf('}', $pos)
+        $char = $content[$pos]
         
-        if ($nextClose -eq -1) { return $null }
-        
-        if ($nextOpen -eq -1 -or $nextClose -lt $nextOpen) {
-            $braceCount--
-            $pos = $nextClose + 1
-        } else {
-            $braceCount++
-            $pos = $nextOpen + 1
+        # Skip string literals
+        if ($char -eq '"') {
+            $pos++
+            while ($pos -lt $len) {
+                if ($content[$pos] -eq '\' -and ($pos + 1) -lt $len) {
+                    $pos += 2  # Skip escaped character
+                } elseif ($content[$pos] -eq '"') {
+                    $pos++
+                    break
+                } else {
+                    $pos++
+                }
+            }
+            continue
         }
+        
+        # Skip character literals
+        if ($char -eq "'") {
+            $pos++
+            while ($pos -lt $len) {
+                if ($content[$pos] -eq '\' -and ($pos + 1) -lt $len) {
+                    $pos += 2  # Skip escaped character
+                } elseif ($content[$pos] -eq "'") {
+                    $pos++
+                    break
+                } else {
+                    $pos++
+                }
+            }
+            continue
+        }
+        
+        # Count braces
+        if ($char -eq '{') {
+            $braceCount++
+        } elseif ($char -eq '}') {
+            $braceCount--
+        }
+        $pos++
     }
     
     if ($braceCount -eq 0) {
@@ -426,7 +455,7 @@ if ($useParallel) {
         $actRegex = [regex]::new('//+\s*act\b|/\*\s*act\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
         $assertRegex = [regex]::new('//+\s*assert\b|/\*\s*assert\b', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
         $noAaaRegex = [regex]::new('//\s*no-aaa|/\*\s*no-aaa', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        $helperFuncStartRegex = [regex]::new('^(?:static\s+)?(?:void|int|bool|char|unsigned|signed|long|short|float|double|size_t|uint\d+_t|int\d+_t|THANDLE\s*\([^)]+\))\s*\*?\s*([a-z_][a-z0-9_]*)\s*\(', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+        $helperFuncStartRegex = [regex]::new('^(?:static\s+)?(?:void|int|bool|char|unsigned|signed|long|short|float|double|size_t|uint\d+_t|int\d+_t|THANDLE\s*\([^)]+\))\s*\*?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', [System.Text.RegularExpressions.RegexOptions]::Multiline)
         $funcCallRegex = [regex]::new('(?<!\w)(\w+)\s*\(', [System.Text.RegularExpressions.RegexOptions]::None)
         
         # Find-FunctionEnd inline
@@ -451,7 +480,7 @@ if ($useParallel) {
             return -1
         }
         
-        # Get-FunctionBody inline
+        # Get-FunctionBody inline (with string-literal awareness)
         $GetFunctionBody = {
             param([string]$content, [int]$startIndex)
             $braceStart = $content.IndexOf('{', $startIndex)
@@ -460,16 +489,41 @@ if ($useParallel) {
             $pos = $braceStart + 1
             $len = $content.Length
             while ($braceCount -gt 0 -and $pos -lt $len) {
-                $nextOpen = $content.IndexOf('{', $pos)
-                $nextClose = $content.IndexOf('}', $pos)
-                if ($nextClose -eq -1) { return $null }
-                if ($nextOpen -eq -1 -or $nextClose -lt $nextOpen) {
-                    $braceCount--
-                    $pos = $nextClose + 1
-                } else {
-                    $braceCount++
-                    $pos = $nextOpen + 1
+                $char = $content[$pos]
+                # Skip string literals
+                if ($char -eq '"') {
+                    $pos++
+                    while ($pos -lt $len) {
+                        if ($content[$pos] -eq '\' -and ($pos + 1) -lt $len) {
+                            $pos += 2
+                        } elseif ($content[$pos] -eq '"') {
+                            $pos++
+                            break
+                        } else {
+                            $pos++
+                        }
+                    }
+                    continue
                 }
+                # Skip character literals
+                if ($char -eq "'") {
+                    $pos++
+                    while ($pos -lt $len) {
+                        if ($content[$pos] -eq '\' -and ($pos + 1) -lt $len) {
+                            $pos += 2
+                        } elseif ($content[$pos] -eq "'") {
+                            $pos++
+                            break
+                        } else {
+                            $pos++
+                        }
+                    }
+                    continue
+                }
+                # Count braces
+                if ($char -eq '{') { $braceCount++ }
+                elseif ($char -eq '}') { $braceCount-- }
+                $pos++
             }
             if ($braceCount -eq 0) { return $content.Substring($braceStart, $pos - $braceStart) }
             return $null

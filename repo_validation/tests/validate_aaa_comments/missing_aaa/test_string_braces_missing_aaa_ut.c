@@ -21,4 +21,14 @@ TEST_FUNCTION(test_string_braces_no_aaa)
     (void)more;
 }
 
+// Test with unmatched braces in string but NO AAA comments - should FAIL
+TEST_FUNCTION(test_unmatched_braces_no_aaa)
+{
+    // This test has unmatched braces in strings but NO AAA comments
+    const char* unmatched_close = "Error: unexpected }";
+    const char* unmatched_open = "Error: unclosed {";
+    (void)unmatched_close;
+    (void)unmatched_open;
+}
+
 END_TEST_SUITE(test_string_braces_missing_aaa_ut)

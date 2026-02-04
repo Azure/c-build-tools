@@ -95,4 +95,32 @@ TEST_FUNCTION(test_with_char_literals)
     ASSERT_ARE_EQUAL(int, 2, diff);
 }
 
+// Test with unmatched closing brace in string (edge case)
+TEST_FUNCTION(test_with_unmatched_close_brace_string)
+{
+    // arrange
+    const char* message = "Error: unexpected }";
+    const char* another = "Missing opening brace: } here";
+    
+    // act
+    size_t len = strlen(message) + strlen(another);
+
+    // assert
+    ASSERT_IS_TRUE(len > 0);
+}
+
+// Test with unmatched opening brace in string (edge case)
+TEST_FUNCTION(test_with_unmatched_open_brace_string)
+{
+    // arrange
+    const char* message = "Error: unclosed {";
+    const char* another = "Function call: func(arg {";
+    
+    // act
+    size_t len = strlen(message) + strlen(another);
+
+    // assert
+    ASSERT_IS_TRUE(len > 0);
+}
+
 END_TEST_SUITE(test_string_braces_ut)
