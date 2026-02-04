@@ -1,0 +1,22 @@
+# This template enables Linux core dumps for crash debugging
+# Run this template BEFORE running tests to ensure core dumps are captured on crashes
+#
+# Usage:
+#   - template: pipeline_templates/enable_linux_core_dumps.yml@c_build_tools
+#     parameters:
+#       crash_reports_directory: $(Build.BinariesDirectory)/crash_reports
+
+parameters:
+  - name: crash_reports_directory
+    default: $(Build.BinariesDirectory)/crash_reports
+
+steps:
+  - bash: |
+      # Enable core dumps at user level
+      ulimit -c unlimited
+      echo "Core dump limit set to: $(ulimit -c)"
+
+      # Create crash reports output directory
+      mkdir -p "${{ parameters.crash_reports_directory }}"
+      echo "Crash reports directory created: ${{ parameters.crash_reports_directory }}"
+    displayName: 'Enable Linux core dumps'

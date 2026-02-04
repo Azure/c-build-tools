@@ -31,6 +31,14 @@ This folder contains pipeline yml templates for devops pipelines.
   - Finalize portion of CodeQL3000 (build steps should be between the `codeql3000_init` and `codeql3000_finalize` wrappers).
   - It runs Sarif results checker to verify that there are no errors and fails the build
   - Runs SarifBob to pretty print all the errors in the Sarif in case of failures.
+- enable_linux_core_dumps.yml
+  - Enables Linux core dumps by setting `ulimit -c unlimited`.
+  - Creates the crash reports output directory.
+  - Run this BEFORE tests to ensure core dumps are captured.
+- collect_linux_crash_reports.yml
+  - Collects crash reports from `/var/crash` (Ubuntu apport system) and core files from the build directory.
+  - Publishes collected crash reports as build artifacts.
+  - Runs with `condition: always()` to ensure collection even when tests fail.
 
 ## How to Consume
 
@@ -127,3 +135,41 @@ See [Cuzz](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/ap
            arguments: '-C "${{ parameters.test_configuration }}" -R my_test_1 -V --output-on-failure --no-tests=error -j $(NUMBER_OF_PROCESSORS)'
            workingFolder: $(Build.BinariesDirectory)\c
 ```
+
+### enable_linux_core_dumps.yml and collect_linux_crash_reports.yml
+
+These templates work together to capture Linux crash dumps in CI pipelines.
+
+Example usage in a Linux job:
+
+```yaml
+  steps:
+  # Enable core dumps before running tests
+  - template: pipeline_templates/enable_linux_core_dumps.yml@c_build_tools
+    parameters:
+      crash_reports_directory: $(Build.BinariesDirectory)/crash_reports
+
+  # Run tests
+  - task: Bash@3
+    displayName: 'Build and run tests'
+    inputs:
+      filePath: './build/linux/build_linux.sh'
+      arguments: '$(Build.Repository.LocalPath)'
+
+  # Collect and publish crash reports
+  - template: pipeline_templates/collect_linux_crash_reports.yml@c_build_tools
+    parameters:
+      crash_reports_directory: $(Build.BinariesDirectory)/crash_reports
+      build_directory: $(Build.SourcesDirectory)/cmake_linux
+      search_depth: 4
+      artifact_name: Linux_crash_reports
+```
+
+Parameters for `enable_linux_core_dumps.yml`:
+- `crash_reports_directory`: Directory to store crash reports (default: `$(Build.BinariesDirectory)/crash_reports`)
+
+Parameters for `collect_linux_crash_reports.yml`:
+- `crash_reports_directory`: Directory where crash reports are stored (default: `$(Build.BinariesDirectory)/crash_reports`)
+- `build_directory`: Directory to search for core files (default: `$(Build.SourcesDirectory)`)
+- `search_depth`: How deep to search for core files (default: 4)
+- `artifact_name`: Name for the published artifact (default: `Linux_crash_reports`)
