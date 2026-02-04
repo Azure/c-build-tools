@@ -148,6 +148,13 @@ jobs:
     inputs:
       targetType: 'inline'
       script: |
+        # Create build directory if it doesn't exist
+        $buildDir = "$(Build.BinariesDirectory)\c"
+        if (-not (Test-Path $buildDir)) {
+          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+          Write-Host "Created build directory: $buildDir"
+        }
+        
         $cmakeArgs = @(
           "$(Build.SourcesDirectory)",
           "${{ parameters.cmake_options }}",
@@ -159,7 +166,8 @@ jobs:
         ) -join " "
         
         Write-Host "Running: `"$(cmakePath)`" $cmakeArgs"
-        $process = Start-Process -FilePath "$(cmakePath)" -ArgumentList $cmakeArgs -WorkingDirectory "$(Build.BinariesDirectory)\c" -NoNewWindow -Wait -PassThru
+        Write-Host "Working directory: $buildDir"
+        $process = Start-Process -FilePath "$(cmakePath)" -ArgumentList $cmakeArgs -WorkingDirectory $buildDir -NoNewWindow -Wait -PassThru
         if ($process.ExitCode -ne 0) {
           Write-Error "CMake failed with exit code $($process.ExitCode)"
           exit $process.ExitCode
