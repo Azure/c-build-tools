@@ -206,24 +206,15 @@ jobs:
   #A total of 257 test files matched the specified pattern.
   ##[error]The active test run was aborted. Reason: Test host process crashed : AddressSanitizer: CHECK failed: asan_thread.cpp:273 "((tid())) == ((0))" (0x1, 0x0) (tid=11016)
   # [continues, with none of our code on any stack]
-  # Experimental: Test VsTest on ARM64 to gather data about what actually happens
-  # This step is allowed to fail - we want to see the actual error message
-  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), eq(parameters.ARCH_TYPE, 'ARM64'))) }}:
-    - task: VSTest@2
-      displayName: '🧪 [EXPERIMENTAL] VsTest on ARM64 - expect failure'
-      continueOnError: true
-      inputs:
-        testAssemblyVer2: |
-          $(Build.BinariesDirectory)\c\${{ parameters.build_configuration }}\**\*_ut_*.dll
-          $(Build.BinariesDirectory)\${{ parameters.build_configuration }}\**\*_ut_*.dll
-        runInParallel: false
-        runTestsInIsolation: true
-        failOnMinTestsNotRun: false
-        platform: 'ARM64'
-        configuration: '${{ parameters.build_configuration }}'
-        diagnosticsEnabled: true
-
-  # VsTest for x64/x86 builds (known to work)
+  
+  # VsTest on ARM64: KNOWN ISSUE - VsTest@2 task doesn't support VS 18 (2026)
+  # The task searches for VS versions [17.0,18.0), [16.0,17.0), [15.0,16.0) but the ARM64 image
+  # has VS 18.0 (2026) which is outside those ranges. Error: "Visual Studio 2015 is not found."
+  # This is an Azure DevOps task limitation, not an architecture issue.
+  # Tracked: Need VsTest@2 task update to support VS 18.
+  # For now, skip VsTest on ARM64 and rely on ctest for native C/C++ tests.
+  
+  # VsTest for x64/x86 builds (VS 2022 supported)
   - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), ne(parameters.ARCH_TYPE, 'ARM64'))) }}:
     - task: VSTest@2
       displayName: '🧪 VsTest - testAssemblies (no int tests)'
