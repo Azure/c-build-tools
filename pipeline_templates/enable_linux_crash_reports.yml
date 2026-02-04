@@ -2,7 +2,7 @@
 # Run this template BEFORE running tests to ensure core dumps are captured on crashes
 #
 # Usage:
-#   - template: pipeline_templates/enable_linux_core_dumps.yml@c_build_tools
+#   - template: pipeline_templates/enable_linux_crash_reports.yml@c_build_tools
 #     parameters:
 #       crash_reports_directory: $(Build.BinariesDirectory)/crash_reports
 

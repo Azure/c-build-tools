@@ -31,7 +31,7 @@ This folder contains pipeline yml templates for devops pipelines.
   - Finalize portion of CodeQL3000 (build steps should be between the `codeql3000_init` and `codeql3000_finalize` wrappers).
   - It runs Sarif results checker to verify that there are no errors and fails the build
   - Runs SarifBob to pretty print all the errors in the Sarif in case of failures.
-- enable_linux_core_dumps.yml
+- enable_linux_crash_reports.yml
   - Enables Linux core dumps by setting `ulimit -c unlimited`.
   - Creates the crash reports output directory.
   - Run this BEFORE tests to ensure core dumps are captured.
@@ -136,7 +136,7 @@ See [Cuzz](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/ap
            workingFolder: $(Build.BinariesDirectory)\c
 ```
 
-### enable_linux_core_dumps.yml and collect_linux_crash_reports.yml
+### enable_linux_crash_reports.yml and collect_linux_crash_reports.yml
 
 These templates work together to capture Linux crash dumps in CI pipelines.
 
@@ -145,7 +145,7 @@ Example usage in a Linux job:
 ```yaml
   steps:
   # Enable core dumps before running tests
-  - template: pipeline_templates/enable_linux_core_dumps.yml@c_build_tools
+  - template: pipeline_templates/enable_linux_crash_reports.yml@c_build_tools
     parameters:
       crash_reports_directory: $(Build.BinariesDirectory)/crash_reports
 
@@ -165,7 +165,7 @@ Example usage in a Linux job:
       artifact_name: Linux_crash_reports
 ```
 
-Parameters for `enable_linux_core_dumps.yml`:
+Parameters for `enable_linux_crash_reports.yml`:
 - `crash_reports_directory`: Directory to store crash reports (default: `$(Build.BinariesDirectory)/crash_reports`)
 
 Parameters for `collect_linux_crash_reports.yml`:
