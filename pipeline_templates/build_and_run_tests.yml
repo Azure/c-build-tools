@@ -151,7 +151,7 @@ jobs:
         repo_root: ${{ parameters.repo_root_override }}
 
   # Use wrapper template for CMake - handles ARM64 native tools transparently
-  - template: tasks/cmake.yml
+  - template: pipeline_templates/tasks/cmake.yml
     parameters:
       architecture: ${{ parameters.ARCH_TYPE }}
       sourceDirectory: '$(Build.SourcesDirectory)'
@@ -159,7 +159,7 @@ jobs:
       cmakeArgs: '${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}'
 
   # Use wrapper template for MSBuild - handles ARM64 native tools transparently
-  - template: tasks/msbuild.yml
+  - template: pipeline_templates/tasks/msbuild.yml
     parameters:
       architecture: ${{ parameters.ARCH_TYPE }}
       solution: '$(Build.BinariesDirectory)/c/*.sln'
@@ -181,7 +181,7 @@ jobs:
   
   # Use wrapper template for VSTest - handles ARM64 (VSTest@3) vs x64 (VSTest@2) transparently
   - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
-    - template: tasks/vstest.yml
+    - template: pipeline_templates/tasks/vstest.yml
       parameters:
         architecture: ${{ parameters.ARCH_TYPE }}
         testAssemblies: |
@@ -206,7 +206,7 @@ jobs:
 
   # Use wrapper template for CTest - handles ARM64 native tools transparently
   - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
-    - template: tasks/ctest.yml
+    - template: pipeline_templates/tasks/ctest.yml
       parameters:
         architecture: ${{ parameters.ARCH_TYPE }}
         workingDirectory: '$(Build.BinariesDirectory)/c'
@@ -235,7 +235,7 @@ jobs:
           ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
         test_steps:
         # Use wrapper template for CTest with AppVerifier
-        - template: tasks/ctest.yml
+        - template: pipeline_templates/tasks/ctest.yml
           parameters:
             architecture: ${{ parameters.ARCH_TYPE }}
             workingDirectory: '$(Build.BinariesDirectory)/c'
