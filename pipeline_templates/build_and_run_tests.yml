@@ -150,49 +150,21 @@ jobs:
       ${{ if ne(parameters.repo_root_override, '') }}:
         repo_root: ${{ parameters.repo_root_override }}
 
-  # Use discovered cmake path for consistent behavior across architectures
-  - task: PowerShell@2
-    displayName: '🏗️ CMake Generate (${{ parameters.ARCH_TYPE }})'
-    inputs:
-      targetType: 'inline'
-      script: |
-        # Create build directory if it doesn't exist
-        $buildDir = "$(Build.BinariesDirectory)\c"
-        if (-not (Test-Path $buildDir)) {
-          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
-          Write-Host "Created build directory: $buildDir"
-        }
-        
-        Write-Host "Running CMake from: $buildDir"
-        Write-Host "CMake path: $(cmakePath)"
-        Write-Host "Generator: $(cmakeGenerator)"
-        Write-Host "Architecture: $(cmakeArch)"
-        
-        Push-Location $buildDir
-        & "$(cmakePath)" "$(Build.SourcesDirectory)" ${{ parameters.cmake_options }} ${{ variables.use_vld_option }} "-DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }}" "-DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}" -G "$(cmakeGenerator)" -A $(cmakeArch)
-        $cmakeExitCode = $LASTEXITCODE
-        Pop-Location
-        
-        if ($cmakeExitCode -ne 0) {
-          Write-Error "CMake failed with exit code $cmakeExitCode"
-          exit $cmakeExitCode
-        }
-        Write-Host "CMake generation completed successfully"
+  # Use wrapper template for CMake - handles ARM64 native tools transparently
+  - template: tasks/cmake.yml
+    parameters:
+      architecture: ${{ parameters.ARCH_TYPE }}
+      sourceDirectory: '$(Build.SourcesDirectory)'
+      buildDirectory: '$(Build.BinariesDirectory)/c'
+      cmakeArgs: '${{ parameters.cmake_options }} ${{ variables.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}'
 
-  # Use discovered msbuild path for all architectures (ensures native ARM64 compilation)
-  - task: PowerShell@2
-    displayName: '🏗️ MSBuild (${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration }})'
-    inputs:
-      targetType: 'inline'
-      script: |
-        $sln = Get-ChildItem -Path "$(Build.BinariesDirectory)\c" -Filter "*.sln" | Select-Object -First 1
-        if ($null -eq $sln) {
-          Write-Error "No .sln file found in $(Build.BinariesDirectory)\c"
-          exit 1
-        }
-        Write-Host "Building $($sln.FullName) with $(msbuildPath)"
-        & "$(msbuildPath)" $sln.FullName /t:restore /t:build /p:Configuration=${{ parameters.build_configuration }} /p:Platform=$(targetPlatform) /m
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  # Use wrapper template for MSBuild - handles ARM64 native tools transparently
+  - template: tasks/msbuild.yml
+    parameters:
+      architecture: ${{ parameters.ARCH_TYPE }}
+      solution: '$(Build.BinariesDirectory)/c/*.sln'
+      configuration: '${{ parameters.build_configuration }}'
+      msbuildArgs: '/t:restore /t:build'
 
   - template : start_logman.yml
     parameters:
@@ -207,43 +179,23 @@ jobs:
   ##[error]The active test run was aborted. Reason: Test host process crashed : AddressSanitizer: CHECK failed: asan_thread.cpp:273 "((tid())) == ((0))" (0x1, 0x0) (tid=11016)
   # [continues, with none of our code on any stack]
   
-  # Experimental: Test VsTest@3 on ARM64 to see if it supports VS 18 (2026)
-  # VsTest@2 failed because it only searches for VS versions up to [17.0,18.0)
-  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), eq(parameters.ARCH_TYPE, 'ARM64'))) }}:
-    - task: VSTest@3
-      displayName: '🧪 [EXPERIMENTAL] VsTest@3 on ARM64 - testing VS 18 support'
-      continueOnError: true
-      inputs:
-        testAssemblyVer2: |
+  # Use wrapper template for VSTest - handles ARM64 (VSTest@3) vs x64 (VSTest@2) transparently
+  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
+    - template: tasks/vstest.yml
+      parameters:
+        architecture: ${{ parameters.ARCH_TYPE }}
+        testAssemblies: |
           $(Build.BinariesDirectory)\c\${{ parameters.build_configuration }}\**\*_ut_*.dll
           $(Build.BinariesDirectory)\${{ parameters.build_configuration }}\**\*_ut_*.dll
-        runInParallel: false
-        runTestsInIsolation: true
-        failOnMinTestsNotRun: false
-        platform: 'ARM64'
         configuration: '${{ parameters.build_configuration }}'
-        diagnosticsEnabled: true
-
-  # VsTest for x64/x86 builds (VS 2022 supported)
-  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), ne(parameters.ARCH_TYPE, 'ARM64'))) }}:
-    - task: VSTest@2
-      displayName: '🧪 VsTest - testAssemblies (no int tests)'
-      inputs:
-        # Some repos do not use BUILD_BINARIESDIRECTORY in cmakelists so the DLLs may be in either of the two paths below
-        testAssemblyVer2: |
-          $(Build.BinariesDirectory)\c\${{ parameters.build_configuration }}\**\*_ut_*.dll
-          $(Build.BinariesDirectory)\${{ parameters.build_configuration }}\**\*_ut_*.dll
-        runInParallel: true
-        runTestsInIsolation: true
         failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
-        codeCoverageEnabled: true # Requires runSettingsFile and collect option below
-        platform: 'x64'
-        configuration: '${{ parameters.build_configuration }}'
-        diagnosticsEnabled : true
+        codeCoverageEnabled: ${{ ne(parameters.ARCH_TYPE, 'ARM64') }}
         otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
         runSettingsFile: '${{ parameters.repo_root_override }}/pipeline_templates/scripts/tests_native.runsettings'
         resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
         testRunTitle: 'VsTest Native ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
+        # ARM64 is experimental, continue on error
+        continueOnError: ${{ eq(parameters.ARCH_TYPE, 'ARM64') }}
 
     # Publish code coverage results from vstest
     - task: PublishCodeCoverageResults@2
@@ -252,16 +204,14 @@ jobs:
         summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
         pathToSources: '$(Build.SourcesDirectory)'
 
+  # Use wrapper template for CTest - handles ARM64 native tools transparently
   - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
-    - task: PowerShell@2
-      displayName: '🧪 Run ctest'
-      inputs:
-        targetType: 'inline'
-        script: |
-          # --interactive-debug-mode 1 is needed to get Watson dumps when running tests under ctest
-          & "$(ctestPath)" -C "${{ parameters.build_configuration }}" --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        workingDirectory: $(Build.BinariesDirectory)\c
+    - template: tasks/ctest.yml
+      parameters:
+        architecture: ${{ parameters.ARCH_TYPE }}
+        workingDirectory: '$(Build.BinariesDirectory)/c'
+        configuration: '${{ parameters.build_configuration }}'
+        outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
 
   - task: PublishTestResults@2
     displayName: '📊 Publish ctest results'
@@ -284,22 +234,15 @@ jobs:
         ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
           ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
         test_steps:
-        - task: PowerShell@2
-          displayName: '🧪 Run ctest'
-          inputs:
-            targetType: 'inline'
-            script: |
-              $ctestArgs = @('-C', '${{ parameters.build_configuration }}', '--output-on-failure', '--interactive-debug-mode', '1')
-              $skipTests = '${{ parameters.appverifier_skip_tests_list }}'
-              if ($skipTests -ne '') {
-                $ctestArgs += @('-E', $skipTests)
-              } else {
-                $ctestArgs += '--no-tests=error'
-              }
-              $ctestArgs += @('--output-junit', 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml')
-              & "$(ctestPath)" @ctestArgs
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            workingDirectory: $(Build.BinariesDirectory)\c
+        # Use wrapper template for CTest with AppVerifier
+        - template: tasks/ctest.yml
+          parameters:
+            architecture: ${{ parameters.ARCH_TYPE }}
+            workingDirectory: '$(Build.BinariesDirectory)/c'
+            configuration: '${{ parameters.build_configuration }}'
+            outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+            excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
+            noTestsError: ${{ eq(parameters.appverifier_skip_tests_list, '') }}
 
     - task: PublishTestResults@2
       displayName: '📊 Publish ctest results'

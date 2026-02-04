@@ -1,0 +1,134 @@
+# Template: VSTest Wrapper
+# Wraps VSTest@2/VSTest@3 task with ARM64 support
+#
+# On x64/x86: Uses the standard VSTest@2 task with full features
+# On ARM64: Uses VSTest@3 (experimental) or falls back to vstest.console.exe directly
+#
+# Note: VSTest@2 only supports VS versions [17.0, 18.0) and fails on ARM64 with VS 18 (2026).
+#       VSTest@3 is experimental and being tested for ARM64/VS18 support.
+#
+# Prerequisites:
+#   - discover_native_tools.yml must be called first to set $(vsPath), $(targetPlatform)
+#
+# Usage:
+#   - template: tasks/vstest.yml@c_build_tools
+#     parameters:
+#       architecture: 'ARM64'
+#       testAssemblies: '$(Build.BinariesDirectory)/**/*_ut_*.dll'
+#       configuration: 'Release'
+
+parameters:
+  - name: architecture
+    type: string
+    default: 'x64'
+    values:
+      - 'x64'
+      - 'x86'
+      - 'ARM64'
+
+  - name: testAssemblies
+    type: string
+
+  - name: configuration
+    type: string
+    default: 'Debug'
+
+  - name: runInParallel
+    type: boolean
+    default: true
+
+  - name: runTestsInIsolation
+    type: boolean
+    default: true
+
+  - name: codeCoverageEnabled
+    type: boolean
+    default: false
+
+  - name: failOnMinTestsNotRun
+    type: boolean
+    default: true
+
+  - name: diagnosticsEnabled
+    type: boolean
+    default: true
+
+  - name: otherConsoleOptions
+    type: string
+    default: ''
+
+  - name: runSettingsFile
+    type: string
+    default: ''
+
+  - name: resultsFolder
+    type: string
+    default: ''
+
+  - name: testRunTitle
+    type: string
+    default: ''
+
+  - name: displayName
+    type: string
+    default: ''
+
+  - name: condition
+    type: string
+    default: 'succeeded()'
+
+  - name: continueOnError
+    type: boolean
+    default: false
+
+steps:
+  # x64/x86: Use standard VSTest@2 task (full featured)
+  - ${{ if ne(parameters.architecture, 'ARM64') }}:
+    - task: VSTest@2
+      displayName: ${{ coalesce(parameters.displayName, format('VSTest ({0})', parameters.architecture)) }}
+      condition: ${{ parameters.condition }}
+      continueOnError: ${{ parameters.continueOnError }}
+      inputs:
+        testAssemblyVer2: '${{ parameters.testAssemblies }}'
+        platform: '$(targetPlatform)'
+        configuration: '${{ parameters.configuration }}'
+        runInParallel: ${{ parameters.runInParallel }}
+        runTestsInIsolation: ${{ parameters.runTestsInIsolation }}
+        codeCoverageEnabled: ${{ parameters.codeCoverageEnabled }}
+        failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
+        diagnosticsEnabled: ${{ parameters.diagnosticsEnabled }}
+        ${{ if ne(parameters.otherConsoleOptions, '') }}:
+          otherConsoleOptions: '${{ parameters.otherConsoleOptions }}'
+        ${{ if ne(parameters.runSettingsFile, '') }}:
+          runSettingsFile: '${{ parameters.runSettingsFile }}'
+        ${{ if ne(parameters.resultsFolder, '') }}:
+          resultsFolder: '${{ parameters.resultsFolder }}'
+        ${{ if ne(parameters.testRunTitle, '') }}:
+          testRunTitle: '${{ parameters.testRunTitle }}'
+
+  # ARM64: Use VSTest@3 (experimental - VS 18 support)
+  # VSTest@2 fails on ARM64 because it only searches for VS [17.0, 18.0)
+  - ${{ if eq(parameters.architecture, 'ARM64') }}:
+    - task: VSTest@3
+      displayName: ${{ coalesce(parameters.displayName, format('VSTest ({0}) [VSTest@3]', parameters.architecture)) }}
+      condition: ${{ parameters.condition }}
+      continueOnError: ${{ parameters.continueOnError }}
+      inputs:
+        testAssemblyVer2: '${{ parameters.testAssemblies }}'
+        platform: '$(targetPlatform)'
+        configuration: '${{ parameters.configuration }}'
+        # Note: ARM64 parallel execution can be problematic
+        runInParallel: false
+        runTestsInIsolation: ${{ parameters.runTestsInIsolation }}
+        # Note: Code coverage on ARM64 may have limitations
+        codeCoverageEnabled: ${{ parameters.codeCoverageEnabled }}
+        failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
+        diagnosticsEnabled: ${{ parameters.diagnosticsEnabled }}
+        ${{ if ne(parameters.otherConsoleOptions, '') }}:
+          otherConsoleOptions: '${{ parameters.otherConsoleOptions }}'
+        ${{ if ne(parameters.runSettingsFile, '') }}:
+          runSettingsFile: '${{ parameters.runSettingsFile }}'
+        ${{ if ne(parameters.resultsFolder, '') }}:
+          resultsFolder: '${{ parameters.resultsFolder }}'
+        ${{ if ne(parameters.testRunTitle, '') }}:
+          testRunTitle: '${{ parameters.testRunTitle }}'

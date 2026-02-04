@@ -1,0 +1,109 @@
+# Template: CMake Wrapper
+# Wraps CMake@1 task with ARM64 native support
+#
+# On x64/x86: Uses the standard CMake@1 task
+# On ARM64: Uses native cmake.exe via PowerShell to avoid x86 emulation
+#
+# Prerequisites:
+#   - discover_native_tools.yml must be called first to set $(cmakePath), $(cmakeGenerator), $(cmakeArch)
+#
+# Usage:
+#   - template: tasks/cmake.yml@c_build_tools
+#     parameters:
+#       architecture: 'ARM64'
+#       sourceDirectory: '$(Build.SourcesDirectory)'
+#       buildDirectory: '$(Build.BinariesDirectory)/build'
+#       cmakeArgs: '-DCMAKE_BUILD_TYPE=Release -Drun_unittests=ON'
+
+parameters:
+  - name: architecture
+    type: string
+    default: 'x64'
+    values:
+      - 'x64'
+      - 'x86'
+      - 'ARM64'
+
+  - name: sourceDirectory
+    type: string
+    default: '$(Build.SourcesDirectory)'
+
+  - name: buildDirectory
+    type: string
+    default: '$(Build.BinariesDirectory)/build'
+
+  - name: cmakeArgs
+    type: string
+    default: ''
+
+  - name: displayName
+    type: string
+    default: ''
+
+  - name: condition
+    type: string
+    default: 'succeeded()'
+
+  - name: continueOnError
+    type: boolean
+    default: false
+
+steps:
+  # x64/x86: Use standard CMake@1 task
+  - ${{ if ne(parameters.architecture, 'ARM64') }}:
+    - task: CMake@1
+      displayName: ${{ coalesce(parameters.displayName, format('CMake Generate ({0})', parameters.architecture)) }}
+      condition: ${{ parameters.condition }}
+      continueOnError: ${{ parameters.continueOnError }}
+      inputs:
+        workingDirectory: '${{ parameters.buildDirectory }}'
+        cmakeArgs: '${{ parameters.cmakeArgs }} -G "$(cmakeGenerator)" -A $(cmakeArch)'
+
+  # ARM64: Use native cmake.exe via PowerShell
+  - ${{ if eq(parameters.architecture, 'ARM64') }}:
+    - task: PowerShell@2
+      displayName: ${{ coalesce(parameters.displayName, format('CMake Generate ({0})', parameters.architecture)) }}
+      condition: ${{ parameters.condition }}
+      continueOnError: ${{ parameters.continueOnError }}
+      inputs:
+        targetType: 'inline'
+        script: |
+          $sourceDir = "${{ parameters.sourceDirectory }}"
+          $buildDir = "${{ parameters.buildDirectory }}"
+          $cmakeArgs = "${{ parameters.cmakeArgs }}"
+          
+          # Ensure build directory exists
+          if (-not (Test-Path $buildDir)) {
+            New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+            Write-Host "Created build directory: $buildDir"
+          }
+          
+          Write-Host "============================================================"
+          Write-Host "CMake Generate (ARM64 Native)"
+          Write-Host "============================================================"
+          Write-Host "CMake:      $(cmakePath)"
+          Write-Host "Generator:  $(cmakeGenerator)"
+          Write-Host "Arch:       $(cmakeArch)"
+          Write-Host "Source:     $sourceDir"
+          Write-Host "Build:      $buildDir"
+          Write-Host "Args:       $cmakeArgs"
+          Write-Host "============================================================"
+          
+          Push-Location $buildDir
+          try {
+            $fullArgs = @($sourceDir) + ($cmakeArgs -split ' ') + @('-G', "$(cmakeGenerator)", '-A', "$(cmakeArch)")
+            # Filter out empty strings
+            $fullArgs = $fullArgs | Where-Object { $_ -ne '' }
+            
+            Write-Host "Executing: `"$(cmakePath)`" $($fullArgs -join ' ')"
+            & "$(cmakePath)" @fullArgs
+            
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "CMake failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+            }
+            Write-Host "CMake generation completed successfully"
+          }
+          finally {
+            Pop-Location
+          }
