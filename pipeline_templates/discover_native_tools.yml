@@ -1,5 +1,5 @@
 # Template: Discover Native Build Tools
-# Finds native build tools (CMake, MSBuild, CTest) for the specified architecture.
+# Finds native build tools (CMake, MSBuild, CTest, dumpbin) for the specified architecture.
 # Sets pipeline variables that can be used in subsequent steps.
 #
 # This template solves the ARM64 agent emulation problem by explicitly finding
@@ -10,6 +10,7 @@
 #   $(cmakePath)    - Path to cmake.exe
 #   $(ctestPath)    - Path to ctest.exe  
 #   $(msbuildPath)  - Path to MSBuild.exe (architecture-specific)
+#   $(dumpbinPath)  - Path to dumpbin.exe (architecture-specific)
 #   $(cmakeArch)    - CMake architecture flag (x64, Win32, ARM64)
 #   $(targetPlatform) - MSBuild platform (x64, Win32, ARM64)
 #   $(cmakeGenerator) - CMake generator string (e.g., "Visual Studio 17 2022")
@@ -22,6 +23,7 @@
 #   # Then use in subsequent steps:
 #   - script: '"$(cmakePath)" -S . -B build -A $(cmakeArch)'
 #   - script: '"$(msbuildPath)" build\solution.sln /p:Platform=$(targetPlatform)'
+#   - script: '"$(dumpbinPath)" /ALL mylib.lib'
 
 parameters:
   - name: architecture
@@ -160,6 +162,51 @@ steps:
         }
         Write-Host ""
         
+        # Find dumpbin for the correct host architecture
+        # dumpbin is in the VC tools bin directory alongside cl.exe
+        $vcToolsDir = Join-Path $vsPath "VC\Tools\MSVC"
+        $dumpbinPath = $null
+        
+        if (Test-Path $vcToolsDir) {
+            # Get the latest MSVC version
+            $msvcVersions = Get-ChildItem $vcToolsDir -Directory | Sort-Object Name -Descending
+            foreach ($msvcVersion in $msvcVersions) {
+                # Construct the architecture-specific path
+                if ($arch -eq "ARM64") {
+                    $hostTarget = "Hostarm64\arm64"
+                } elseif ($arch -eq "x86") {
+                    $hostTarget = "Hostx86\x86"
+                } else {
+                    $hostTarget = "Hostx64\x64"
+                }
+                
+                $candidatePath = Join-Path $msvcVersion.FullName "bin\$hostTarget\dumpbin.exe"
+                if (Test-Path $candidatePath) {
+                    $dumpbinPath = $candidatePath
+                    break
+                }
+                
+                # Fallback to x64 if arch-specific not found
+                $candidatePath = Join-Path $msvcVersion.FullName "bin\Hostx64\x64\dumpbin.exe"
+                if (Test-Path $candidatePath) {
+                    $dumpbinPath = $candidatePath
+                    Write-Host "##[warning]Architecture-specific dumpbin not found, falling back to x64"
+                    break
+                }
+            }
+        }
+        
+        if ($dumpbinPath -and (Test-Path $dumpbinPath)) {
+            Write-Host "dumpbin: $dumpbinPath"
+            Write-Host "##vso[task.setvariable variable=dumpbinPath]$dumpbinPath"
+            # Also set as environment variable for subprocesses (like ctest)
+            Write-Host "##vso[task.setvariable variable=DUMPBIN_PATH]$dumpbinPath"
+            [Environment]::SetEnvironmentVariable("DUMPBIN_PATH", $dumpbinPath, "Process")
+        } else {
+            Write-Host "##[warning]dumpbin not found - reals_check may fail"
+        }
+        Write-Host ""
+        
         # Set architecture variables for use in build commands
         Write-Host "##vso[task.setvariable variable=cmakeArch]$cmakeArch"
         Write-Host "##vso[task.setvariable variable=targetPlatform]$targetPlatform"
@@ -172,4 +219,7 @@ steps:
         Write-Host '  CMake:    "$(cmakePath)" -S . -B build -G "$(cmakeGenerator)" -A $(cmakeArch)'
         Write-Host '  MSBuild:  "$(msbuildPath)" solution.sln /p:Platform=$(targetPlatform)'
         Write-Host '  CTest:    "$(ctestPath)" -C Debug --output-on-failure'
+        Write-Host '  dumpbin:  "$(dumpbinPath)" /ALL mylib.lib'
+        Write-Host ""
+        Write-Host "Environment variable DUMPBIN_PATH is also set for subprocesses (e.g., ctest)"
         Write-Host ""

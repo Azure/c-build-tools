@@ -1,11 +1,15 @@
 #Copyright (c) Microsoft. All rights reserved.
 #Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-# Find dumpbin via vswhere (works for any VS version and architecture)
+# Find dumpbin - first check DUMPBIN_PATH env var (set by discover_native_tools.yml),
+# then PATH, then discover via vswhere
 function Get-DumpbinPath {
-    $dumpbin = $null
+    # Check environment variable first (set by pipeline)
+    if ($env:DUMPBIN_PATH -and (Test-Path $env:DUMPBIN_PATH)) {
+        return $env:DUMPBIN_PATH
+    }
     
-    # Try to find dumpbin in PATH first
+    # Try to find dumpbin in PATH
     $dumpbin = Get-Command "dumpbin.exe" -ErrorAction SilentlyContinue
     if ($dumpbin) {
         return $dumpbin.Path
@@ -58,7 +62,7 @@ function Get-DumpbinPath {
 # Get dumpbin path once for all checks
 $script:dumpbinPath = Get-DumpbinPath
 if (-not $script:dumpbinPath) {
-    Write-Error "Unable to find dumpbin.exe. Ensure Visual Studio is installed."
+    Write-Error "Unable to find dumpbin.exe. Ensure Visual Studio is installed or DUMPBIN_PATH is set."
     exit 2
 }
 Write-Host "Using dumpbin: $script:dumpbinPath"
