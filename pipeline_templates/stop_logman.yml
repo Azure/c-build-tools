@@ -1,4 +1,4 @@
-# stops the collection of events
+﻿# stops the collection of events
 
 parameters:
  - name: repo_root
@@ -6,7 +6,7 @@ parameters:
 
 steps:
   - task: PowerShell@2
-    displayName: 'Stop collection of events'
+    displayName: '📜 Stop collection of events'
     inputs:
       targetType: filePath
       workingDirectory: ${{ parameters.repo_root }}/pipeline_templates/scripts
@@ -15,7 +15,7 @@ steps:
     condition: always()
 
   - task: PublishPipelineArtifact@1
-    displayName: 'Publish etl files'
+    displayName: '📤 Publish etl files'
     inputs:
       targetPath: '$(Build.ArtifactStagingDirectory)\etl_logs'
       artifactName: 'etl_logs_$(System.JobName)_$(System.JobAttempt)_$(System.JobId)'

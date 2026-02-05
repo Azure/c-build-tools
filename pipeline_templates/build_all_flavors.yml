@@ -11,11 +11,10 @@ parameters:
     type: object
     default: ["ON", "OFF"]
 
-  # ARCH_TYPE_VALUES exists merely for example for future extension capabilities
-  # it provides the "walked path" of how to extend the pipeline with a completely different orthogonal parameter that can take an array of string of values
+  # ARCH_TYPE_VALUES - architectures to build. ARM64 builds are optional (non-blocking).
   - name: ARCH_TYPE_VALUES
     type: object
-    default: ["x64"]
+    default: ["x64", "ARM64"]
 
   # BUILD_CONFIGURATION_TYPE_VALUES is a list of build configurations to be used in the pipeline
   - name: BUILD_CONFIGURATION_TYPE_VALUES
@@ -28,7 +27,6 @@ parameters:
     default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_traceability:BOOL=ON -Drun_repo_validation:BOOL=ON"
 
   # If this parameter is specified the specified test suite will be run without invoking ctest
-  # This is very useful for debugging a single test suite because ctest still does not allow Watson dumps to be collected
   - name: run_test_suite_without_ctest
     type: string
     default: ""
@@ -39,9 +37,8 @@ parameters:
     type: boolean
     default: false
   # This may be overridden to pass a different value to run_ctest_with_appverifier.yml, depending on how c-build-tools is consumed
-  # The default empty value falls back to the default value in run_ctest_with_appverifier.yml
   - name: repo_root_override
-    default: ""
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
   # Used for app verifier script to find the binaries, typically this will be _exe_suffix.exe where suffix is defined by the project
   - name: binary_name_suffix
     default: "_exe.exe"
@@ -50,20 +47,21 @@ parameters:
   - name: appverifier_skip_tests_list
     type: string
     default: ""
+  # Set to false for repos that don't have *_ut_*.dll test assemblies (e.g. macro-utils-c)
+  - name: failOnMinTestsNotRun
+    type: boolean
+    default: true
 
 jobs:
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
   - ${{ each FSANITIZE_TYPE in parameters.FSANITIZE_TYPE_VALUES }}:
-    - ${{ each ARCH_TYPE in parameters.ARCH_TYPE_VALUES }}:
-      - ${{ each BUILD_CONFIGURATION_TYPE in parameters.BUILD_CONFIGURATION_TYPE_VALUES }}:
-        # - ${{ if not( and( eq( GBALLOC_LL_TYPE , 'MIMALLOC' ), eq(FSANITIZE_TYPE, 'ON'))) }}: <==this fails to compile, reasons "2 parameters passed to if". The below line is equivalent.
-        # there is no point in running mimalloc and fsanitize, so that combination is excluded from the whole build.
+    - ${{ each BUILD_CONFIGURATION_TYPE in parameters.BUILD_CONFIGURATION_TYPE_VALUES }}:
+      - ${{ each ARCH_TYPE in parameters.ARCH_TYPE_VALUES }}:
+        # there is no point in running jemalloc and fsanitize, so that combination is excluded
         - ${{ if or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')) }}:
           - template: build_and_run_tests.yml
             parameters:
-              # BUILD_SUFFIX is the concatenation of all the parameters. It exists for every single template. Because all jobs/etc in a pipeline need to have different names. So a job name will end with ${{ parameters.BUILDSUFFIX }}
               BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}
-              # passing the other parameters, each separated for easy consumption. The invoked template MUST have all these parameters listed.
               GBALLOC_LL_TYPE: ${{ GBALLOC_LL_TYPE }}
               build_configuration: ${{ BUILD_CONFIGURATION_TYPE }}
               FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
@@ -74,3 +72,7 @@ jobs:
               repo_root_override: ${{ parameters.repo_root_override }}
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
+              failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
+              # ARM64 builds are optional (non-blocking)
+              ${{ if eq(ARCH_TYPE, 'ARM64') }}:
+                is_optional: true

@@ -1,0 +1,152 @@
+# Template: CTest Wrapper
+# Wraps CTest execution with ARM64 native support
+#
+# On x64/x86: Uses discovered ctest.exe (typically from VS CMake)
+# On ARM64: Uses native ctest.exe via PowerShell to avoid x86 emulation
+#
+# Note: This is not wrapping a built-in ADO task, but provides consistent
+#       ctest invocation across architectures with proper native tool usage.
+#
+# Prerequisites:
+#   - discover_native_tools.yml must be called first to set $(ctestPath)
+#
+# Usage:
+#   - template: tasks/ctest.yml@c_build_tools
+#     parameters:
+#       architecture: 'ARM64'
+#       workingDirectory: '$(Build.BinariesDirectory)/build'
+#       configuration: 'Release'
+#       outputJunit: 'ctest_results.xml'
+
+parameters:
+  - name: architecture
+    type: string
+    default: 'x64'
+    values:
+      - 'x64'
+      - 'x86'
+      - 'ARM64'
+
+  - name: workingDirectory
+    type: string
+
+  - name: configuration
+    type: string
+    default: 'Debug'
+
+  - name: outputJunit
+    type: string
+    default: ''
+
+  - name: outputOnFailure
+    type: boolean
+    default: true
+
+  - name: interactiveDebugMode
+    type: boolean
+    default: true
+
+  - name: noTestsError
+    type: boolean
+    default: true
+
+  - name: excludeTests
+    type: string
+    default: ''
+
+  - name: includeTests
+    type: string
+    default: ''
+
+  - name: additionalArgs
+    type: string
+    default: ''
+
+  - name: displayName
+    type: string
+    default: ''
+
+  - name: condition
+    type: string
+    default: 'succeeded()'
+
+  - name: continueOnError
+    type: boolean
+    default: false
+
+steps:
+  # All architectures use the same PowerShell approach for consistency
+  # This ensures we always use the discovered native ctest.exe
+  - task: PowerShell@2
+    displayName: ${{ coalesce(parameters.displayName, format('CTest ({0})', parameters.architecture)) }}
+    condition: ${{ parameters.condition }}
+    continueOnError: ${{ parameters.continueOnError }}
+    inputs:
+      targetType: 'inline'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      script: |
+        $configuration = "${{ parameters.configuration }}"
+        $outputJunit = "${{ parameters.outputJunit }}"
+        $outputOnFailure = [bool]::Parse("${{ parameters.outputOnFailure }}")
+        $interactiveDebug = [bool]::Parse("${{ parameters.interactiveDebugMode }}")
+        $noTestsError = [bool]::Parse("${{ parameters.noTestsError }}")
+        $excludeTests = "${{ parameters.excludeTests }}"
+        $includeTests = "${{ parameters.includeTests }}"
+        $additionalArgs = "${{ parameters.additionalArgs }}"
+        
+        Write-Host "============================================================"
+        Write-Host "CTest (${{ parameters.architecture }})"
+        Write-Host "============================================================"
+        Write-Host "CTest:         $(ctestPath)"
+        Write-Host "Configuration: $configuration"
+        Write-Host "Working Dir:   ${{ parameters.workingDirectory }}"
+        Write-Host "============================================================"
+        
+        $args = @()
+        $args += "-C"
+        $args += $configuration
+        
+        if ($outputOnFailure) {
+          $args += "--output-on-failure"
+        }
+        
+        if ($interactiveDebug) {
+          # Needed to get Watson dumps when running tests under ctest
+          $args += "--interactive-debug-mode"
+          $args += "1"
+        }
+        
+        if ($noTestsError) {
+          $args += "--no-tests=error"
+        }
+        
+        if ($excludeTests) {
+          $args += "-E"
+          $args += $excludeTests
+        }
+        
+        if ($includeTests) {
+          $args += "-R"
+          $args += $includeTests
+        }
+        
+        if ($outputJunit) {
+          $args += "--output-junit"
+          $args += $outputJunit
+        }
+        
+        if ($additionalArgs) {
+          $args += ($additionalArgs -split ' ' | Where-Object { $_ -ne '' })
+        }
+        
+        Write-Host "Executing: `"$(ctestPath)`" $($args -join ' ')"
+        & "$(ctestPath)" @args
+        $exitCode = $LASTEXITCODE
+        
+        if ($exitCode -ne 0) {
+          Write-Host "##[warning]CTest exited with code $exitCode"
+          exit $exitCode
+        }
+        
+        Write-Host ""
+        Write-Host "CTest completed successfully"
