@@ -246,14 +246,19 @@ steps:
         Write-Host "============================================================"
         Write-Host ""
         
-        # Helper function to get PE architecture
+        # Helper function to get PE architecture from PE header
         function Get-PEArchitecture {
             param([string]$FilePath)
             if (-not (Test-Path $FilePath)) { return $null }
             try {
-                $bytes = [System.IO.File]::ReadAllBytes($FilePath)
-                $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
-                $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+                $stream = [System.IO.File]::OpenRead($FilePath)
+                $reader = New-Object System.IO.BinaryReader($stream)
+                $stream.Seek(0x3C, [System.IO.SeekOrigin]::Begin) | Out-Null
+                $peOffset = $reader.ReadInt32()
+                $stream.Seek($peOffset + 4, [System.IO.SeekOrigin]::Begin) | Out-Null
+                $machine = $reader.ReadUInt16()
+                $reader.Close()
+                $stream.Close()
                 switch ($machine) {
                     0x014C { return "x86" }
                     0x8664 { return "x64" }
@@ -273,12 +278,10 @@ steps:
         }
         
         $archMismatches = @()
-        $toolsToVerify = @{
-            'cmake.exe' = $cmakePath
-            'ctest.exe' = $ctestPath
-            'MSBuild.exe' = $msbuildPath
-        }
-        
+        $toolsToVerify = @{}
+        if ($cmakePath) { $toolsToVerify['cmake.exe'] = $cmakePath }
+        if ($ctestPath) { $toolsToVerify['ctest.exe'] = $ctestPath }
+        if ($msbuildPath) { $toolsToVerify['MSBuild.exe'] = $msbuildPath }
         if ($dumpbinPath) { $toolsToVerify['dumpbin.exe'] = $dumpbinPath }
         if ($vstestPath) { $toolsToVerify['vstest.console.exe'] = $vstestPath }
         

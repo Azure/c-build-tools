@@ -1,10 +1,10 @@
-# EBS Repository Pipeline Task Analysis
+# ARM64 Pipeline Task Analysis
 
 ## Summary
 
-This report analyzes all YAML pipeline files in the `d:\r_arm\ebs` repository to identify Azure DevOps tasks and their usage patterns, with a focus on tasks that would benefit from ARM64 native wrapping.
+This document analyzes Azure DevOps pipeline tasks and their usage patterns, with a focus on tasks that benefit from ARM64 native wrapping.
 
-## YAML Files Found
+## Common Pipeline Patterns
 
 ### Main Pipeline Files
 | File | Purpose |
@@ -16,52 +16,21 @@ This report analyzes all YAML pipeline files in the `d:\r_arm\ebs` repository to
 | `build/devops_gated_docs.yml` | Documentation build pipeline |
 | `build/onebranch_gated.yml` | OneBranch PR pipeline |
 | `build/onebranch_daily.yml` | OneBranch daily official build |
-| `build/inc_version_with_build_id.yml` | Version increment pipeline |
-| `CodeQL.yml` | CodeQL path exclusion configuration |
 
 ### Gated Job Templates
 | File | Purpose |
 |------|---------|
-| `build/gated_jobs/build_bs.yml` | Main build job for binaries |
+| `build/gated_jobs/build.yml` | Main build job for binaries |
 | `build/gated_jobs/run_unit_tests.yml` | Unit test execution |
-| `build/gated_jobs/run_int_tests_one_suite.yml` | Service Fabric integration tests (one at a time) |
-| `build/gated_jobs/run_non_sf_int_tests_parallel.yml` | Non-SF integration tests (parallel execution) |
-| `build/gated_jobs/run_non_sf_int_tests_one_by_one.yml` | Non-SF integration tests (sequential) |
-| `build/gated_jobs/run_perf_tests_single_machine.yml` | Single-machine performance tests |
-| `build/gated_jobs/run_perf_tests_multi_machine.yml` | Multi-machine performance tests |
+| `build/gated_jobs/run_int_tests.yml` | Integration tests |
+| `build/gated_jobs/run_perf_tests.yml` | Performance tests |
 | `build/gated_jobs/run_dot_net_tests.yml` | .NET test execution |
-| `build/gated_jobs/run_upgrade.yml` | Service Fabric upgrade testing |
-| `build/gated_jobs/run_upload_unload.yml` | SF upload/unload testing |
-| `build/gated_jobs/run_endurance.yml` | Endurance testing |
-| `build/gated_jobs/run_configure_metrics.yml` | Metrics configuration |
-| `build/gated_jobs/iwyu_include_check.yml` | Include-what-you-use check |
-| `build/gated_jobs/misc.yml` | Miscellaneous checks (VLD, backticks) |
-
-### Daily Job Templates
-| File | Purpose |
-|------|---------|
-| `build/daily_jobs/build_official_nuget.yml` | Official NuGet package build and signing |
 
 ### Shared Templates
 | File | Purpose |
 |------|---------|
 | `build/templates/setup_job.yml` | Common job setup (VS vars, git clean, etc.) |
 | `build/templates/build_native_solution.yml` | Native build steps |
-| `build/templates/dump_config.yml` | Configuration dumping |
-| `build/templates/inc_version_with_build_id.yml` | Version increment |
-| `build/templates/init_storage_emulator.yml` | Azurite storage emulator setup |
-| `build/templates/kill_storage_emulator.yml` | Azurite cleanup |
-| `build/templates/setup_sf_runtime.yml` | Service Fabric runtime setup |
-| `build/templates/create_cert.yml` | Certificate creation |
-| `build/templates/remove_cert.yml` | Certificate removal |
-| `build/templates/remove_sf_service.yml` | SF service removal |
-| `build/templates/import_python_dependencies.yml` | Python dependency setup |
-| `build/templates/run_traceability.yml` | Traceability tool execution |
-| `build/templates/setup_safe_directories.yml` | Git safe directory setup |
-| `build/templates/update_c_build_tools.yml` | Update c-build-tools dependency |
-| `build/templates/update_manifest_and_upgrade.yml` | Manifest update and SF upgrade |
-| `build/templates/upload_logs_on_fail.yml` | Log upload on failure |
-| `build/templates/validate_nuget.yml` | NuGet package validation |
 
 ---
 
@@ -128,19 +97,19 @@ This report analyzes all YAML pipeline files in the `d:\r_arm\ebs` repository to
 ---
 
 #### **MSBuild@1**
-**Used in:** `build_official_nuget.yml`
+**Used in:** Official build pipelines
 
 **Usage Pattern:**
 ```yaml
 - task: MSBuild@1
-  displayName: 'Build ebs.sln'
+  displayName: 'Build solution'
   inputs:
-    solution: '$(Build.SourcesDirectory)\build\ebs.sln'
+    solution: '$(Build.SourcesDirectory)\build\solution.sln'
     msbuildLocationMethod: 'location'
     msbuildLocation: 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
     platform: 'x64'
     configuration: 'RelWithDebInfo'
-    msbuildArguments: '/v:n /nr:false /flp1:Verbosity=d;...'
+    msbuildArguments: '/v:n /nr:false'
     clean: true
     maximumCpuCount: true
     logProjectEvents: true
@@ -168,8 +137,6 @@ This report analyzes all YAML pipeline files in the `d:\r_arm\ebs` repository to
     runTestsInIsolation: true
     codeCoverageEnabled: false
     otherConsoleOptions: '-- RunConfiguration.ExecutionThreadApartmentState=MTA'
-  env:
-    BLOCK_STORAGE_BLOB_CONNECTION_STRING: $(BLOCK_STORAGE_BLOB_CONNECTION_STRING)
 ```
 
 **Common parameters:**
@@ -252,7 +219,7 @@ Also for file execution:
   displayName: 'PowerShell Script - Run tests'
   inputs:
     targetType: filePath
-    filePath: './test_scripts/run_block_store_single_machine_perf_tests.ps1'
+    filePath: './test_scripts/run_perf_tests.ps1'
     arguments: '-instanceId $(Build.BuildId)_$(System.JobAttempt)'
 ```
 
@@ -293,11 +260,11 @@ Also for file execution:
   displayName: 'NuGet pack'
   inputs:
     command: pack
-    packagesToPack: '$(Build.BinariesDirectory)/RelWithDebInfo/.../Azure.Messaging.BlockStorageClient_NetFx.nuspec'
+    packagesToPack: '$(Build.BinariesDirectory)/RelWithDebInfo/**/MyPackage.nuspec'
     configuration: RelWithDebInfo
     packDestination: '$(Build.BinariesDirectory)/packages'
     versioningScheme: byEnvVar
-    versionEnvVar: BSNugetPackageVersion
+    versionEnvVar: NugetPackageVersion
 ```
 
 ---
@@ -428,9 +395,9 @@ Update CMake invocations:
 
 ---
 
-## Appendix: Template Reference from c-build-tools
+## Appendix: c-build-tools Templates
 
-The EBS repository uses templates from `c_build_tools`:
+Projects using c-build-tools can leverage these templates:
 - `pipeline_templates/run_ctests_with_appverifier.yml`
 - `pipeline_templates/start_logman.yml`
 - `pipeline_templates/stop_logman.yml`
@@ -441,5 +408,8 @@ The EBS repository uses templates from `c_build_tools`:
 - `pipeline_templates/run_master_check.yml`
 - `pipeline_templates/codeql3000_init.yml`
 - `pipeline_templates/codeql3000_finalize.yml`
-
-These templates may also need ARM64 updates.
+- `pipeline_templates/build_and_run_tests.yml` (ARM64-aware)
+- `pipeline_templates/tasks/cmake.yml` (ARM64 native wrapper)
+- `pipeline_templates/tasks/msbuild.yml` (ARM64 native wrapper)
+- `pipeline_templates/tasks/ctest.yml` (ARM64 native wrapper)
+- `pipeline_templates/tasks/vstest.yml` (ARM64 native wrapper)

@@ -23,7 +23,6 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
     PROPERTY VS_GLOBAL_TreatWarningsAsErrors true
 )
 
-# .NET Framework 4.8.1 required for native ARM64 support
 set_property(TARGET Azure.Messaging.SarifResultsChecker
     PROPERTY DOTNET_TARGET_FRAMEWORK_VERSION "v4.8.1"
 )

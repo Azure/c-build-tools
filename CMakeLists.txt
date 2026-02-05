@@ -79,14 +79,12 @@ endif()
 
 # Skip for Ninja which can't build the C# project
 if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
-    # .NET Framework 4.8.1 supports ARM64 natively
     if((${build_traceability_tool}) AND (${build_csharp_projects}))
         add_subdirectory(traceabilitytool)
     endif()
     add_subdirectory(reals_check)
 endif()
 
-# sarif_results_checker uses .NET Framework 4.8.1 which supports ARM64
 if((CMAKE_GENERATOR MATCHES "Visual Studio") AND (${build_sarif_results_checker}))
     add_subdirectory(sarif_results_checker)
 endif()
