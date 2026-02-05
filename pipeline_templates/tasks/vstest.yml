@@ -111,7 +111,9 @@ steps:
   # Requires discover_native_tools.yml to be called first to set $(vstestPath)
   - ${{ if eq(parameters.architecture, 'ARM64') }}:
     - powershell: |
-        $vstestPath = "$(vstestPath)"
+        $vstestPath = $env:VSTEST_PATH
+        $binDir = $env:BUILD_BINARIES_DIR
+        $tempDir = $env:AGENT_TEMP_DIR
         
         if (-not $vstestPath -or -not (Test-Path $vstestPath)) {
           Write-Error "VSTest runner not found at: $vstestPath"
@@ -120,7 +122,7 @@ steps:
         }
         Write-Host "Using vstest: $vstestPath"
         
-        $testAssemblies = Get-ChildItem -Path "$(Build.BinariesDirectory)" -Recurse -Filter "*_ut_*.dll" | Where-Object { $_.FullName -notmatch '\\ref\\' }
+        $testAssemblies = Get-ChildItem -Path $binDir -Recurse -Filter "*_ut_*.dll" | Where-Object { $_.FullName -notmatch '\\ref\\' }
         if ($testAssemblies.Count -eq 0) {
           Write-Error "No test assemblies found matching pattern"
           exit 1
@@ -138,11 +140,13 @@ steps:
           $args += "/InIsolation"
         }
         
-        if ("${{ parameters.resultsFolder }}" -ne "") {
-          $args += "/ResultsDirectory:`"${{ parameters.resultsFolder }}`""
+        $resultsFolder = "${{ parameters.resultsFolder }}"
+        if ($resultsFolder -ne "") {
+          $resultsDir = $resultsFolder
         } else {
-          $args += "/ResultsDirectory:`"$(Agent.TempDirectory)\TestResults`""
+          $resultsDir = "$tempDir\TestResults"
         }
+        $args += "/ResultsDirectory:`"$resultsDir`""
         
         if ("${{ parameters.runSettingsFile }}" -ne "") {
           $args += "/Settings:`"${{ parameters.runSettingsFile }}`""
@@ -160,7 +164,6 @@ steps:
         # Check for minimum tests run (equivalent to failOnMinTestsNotRun)
         if ("${{ parameters.failOnMinTestsNotRun }}" -eq "true") {
           # Parse trx files to check if any tests ran
-          $resultsDir = if ("${{ parameters.resultsFolder }}" -ne "") { "${{ parameters.resultsFolder }}" } else { "$(Agent.TempDirectory)\TestResults" }
           $trxFiles = Get-ChildItem -Path $resultsDir -Filter "*.trx" -ErrorAction SilentlyContinue
           if (-not $trxFiles -or $trxFiles.Count -eq 0) {
             Write-Error "failOnMinTestsNotRun: No test result files (.trx) were generated"
@@ -191,6 +194,9 @@ steps:
       condition: ${{ parameters.condition }}
       continueOnError: ${{ parameters.continueOnError }}
       env:
+        VSTEST_PATH: $(vstestPath)
+        BUILD_BINARIES_DIR: $(Build.BinariesDirectory)
+        AGENT_TEMP_DIR: $(Agent.TempDirectory)
         OTHER_CONSOLE_OPTIONS: ${{ parameters.otherConsoleOptions }}
     
     # Publish test results from the native runner
