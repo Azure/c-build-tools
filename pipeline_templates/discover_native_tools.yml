@@ -142,27 +142,6 @@ steps:
         Write-Host "##vso[task.setvariable variable=msbuildPath]$msbuildPath"
         Write-Host ""
         
-        # Verify MSBuild architecture matches what we expect
-        if (Test-Path $msbuildPath) {
-            $bytes = [System.IO.File]::ReadAllBytes($msbuildPath)
-            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
-            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
-            
-            $msbuildArch = switch ($machine) {
-                0x014C { "x86" }
-                0x8664 { "x64" }
-                0xAA64 { "ARM64" }
-                default { "Unknown" }
-            }
-            Write-Host "MSBuild binary architecture: $msbuildArch"
-            
-            if ($arch -eq "ARM64" -and $msbuildArch -ne "ARM64") {
-                Write-Host "##[warning]Expected ARM64 MSBuild but found $msbuildArch"
-                Write-Host "##[warning]This may cause cross-compilation instead of native compilation"
-            }
-        }
-        Write-Host ""
-        
         # Find dumpbin for the correct host architecture
         # dumpbin is in the VC tools bin directory alongside cl.exe
         $vcToolsDir = Join-Path $vsPath "VC\Tools\MSVC"
@@ -209,10 +188,9 @@ steps:
         Write-Host ""
         
         # Find vstest.console.exe
-        # On ARM64, look for vstest.console.arm64.exe specifically
         # Path pattern: <vsPath>\Common7\IDE\CommonExtensions\<Microsoft|Platform>\TestPlatform
         $vstestPath = $null
-        $vstestExeName = if ($arch -eq "ARM64") { "vstest.console.arm64.exe" } else { "vstest.console.exe" }
+        $vstestExeName = "vstest.console.exe"
         
         # Check known locations under Common7\IDE\CommonExtensions
         $commonExtensions = Join-Path $vsPath "Common7\IDE\CommonExtensions"
@@ -257,6 +235,77 @@ steps:
         # Set architecture variables for use in build commands
         Write-Host "##vso[task.setvariable variable=cmakeArch]$cmakeArch"
         Write-Host "##vso[task.setvariable variable=targetPlatform]$targetPlatform"
+        Write-Host ""
+        
+        # ============================================================
+        # ARCHITECTURE VERIFICATION
+        # Verify all detected executables match the expected architecture
+        # ============================================================
+        Write-Host "============================================================"
+        Write-Host "VERIFYING TOOL ARCHITECTURES"
+        Write-Host "============================================================"
+        Write-Host ""
+        
+        # Helper function to get PE architecture
+        function Get-PEArchitecture {
+            param([string]$FilePath)
+            if (-not (Test-Path $FilePath)) { return $null }
+            try {
+                $bytes = [System.IO.File]::ReadAllBytes($FilePath)
+                $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+                $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+                switch ($machine) {
+                    0x014C { return "x86" }
+                    0x8664 { return "x64" }
+                    0xAA64 { return "ARM64" }
+                    default { return "Unknown (0x$($machine.ToString('X4')))" }
+                }
+            } catch {
+                return "Error reading PE header"
+            }
+        }
+        
+        # Expected architecture based on target
+        $expectedArch = switch ($arch) {
+            'x64'   { 'x64' }
+            'x86'   { 'x86' }
+            'ARM64' { 'ARM64' }
+        }
+        
+        $archMismatches = @()
+        $toolsToVerify = @{
+            'cmake.exe' = $cmakePath
+            'ctest.exe' = $ctestPath
+            'MSBuild.exe' = $msbuildPath
+        }
+        
+        if ($dumpbinPath) { $toolsToVerify['dumpbin.exe'] = $dumpbinPath }
+        if ($vstestPath) { $toolsToVerify['vstest.console.exe'] = $vstestPath }
+        
+        foreach ($tool in $toolsToVerify.GetEnumerator()) {
+            $toolArch = Get-PEArchitecture -FilePath $tool.Value
+            $status = if ($toolArch -eq $expectedArch -or ($expectedArch -eq 'x86' -and $toolArch -eq 'x64')) { "OK" } else { "MISMATCH" }
+            
+            Write-Host "$($tool.Key): $toolArch (expected: $expectedArch) [$status]"
+            Write-Host "  Path: $($tool.Value)"
+            
+            if ($status -eq "MISMATCH" -and $expectedArch -eq "ARM64") {
+                $archMismatches += "$($tool.Key) is $toolArch, expected $expectedArch"
+            }
+        }
+        Write-Host ""
+        
+        if ($archMismatches.Count -gt 0) {
+            Write-Host "##[warning]Architecture mismatches detected for ARM64 build:"
+            foreach ($mismatch in $archMismatches) {
+                Write-Host "##[warning]  - $mismatch"
+            }
+            Write-Host "##[warning]Some tools may run under emulation, which can affect performance."
+            Write-Host ""
+        } else {
+            Write-Host "All tools verified to have correct architecture."
+            Write-Host ""
+        }
         
         Write-Host "============================================================"
         Write-Host "TOOL DISCOVERY COMPLETE"

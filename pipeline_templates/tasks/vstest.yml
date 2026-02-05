@@ -111,9 +111,7 @@ steps:
   # Requires discover_native_tools.yml to be called first to set $(vstestPath)
   - ${{ if eq(parameters.architecture, 'ARM64') }}:
     - powershell: |
-        $vstestPath = $env:VSTEST_PATH
-        $binDir = $env:BUILD_BINARIES_DIR
-        $tempDir = $env:AGENT_TEMP_DIR
+        $vstestPath = "$(vstestPath)"
         
         if (-not $vstestPath -or -not (Test-Path $vstestPath)) {
           Write-Error "VSTest runner not found at: $vstestPath"
@@ -122,7 +120,7 @@ steps:
         }
         Write-Host "Using vstest: $vstestPath"
         
-        $testAssemblies = Get-ChildItem -Path $binDir -Recurse -Filter "*_ut_*.dll" | Where-Object { $_.FullName -notmatch '\\ref\\' }
+        $testAssemblies = Get-ChildItem -Path "$(Build.BinariesDirectory)" -Recurse -Filter "*_ut_*.dll" | Where-Object { $_.FullName -notmatch '\\ref\\' }
         if ($testAssemblies.Count -eq 0) {
           Write-Error "No test assemblies found matching pattern"
           exit 1
@@ -140,21 +138,18 @@ steps:
           $args += "/InIsolation"
         }
         
-        $resultsFolder = "${{ parameters.resultsFolder }}"
-        if ($resultsFolder -ne "") {
-          $resultsDir = $resultsFolder
+        if ("${{ parameters.resultsFolder }}" -ne "") {
+          $args += "/ResultsDirectory:`"${{ parameters.resultsFolder }}`""
         } else {
-          $resultsDir = "$tempDir\TestResults"
+          $args += "/ResultsDirectory:`"$(Agent.TempDirectory)\TestResults`""
         }
-        $args += "/ResultsDirectory:`"$resultsDir`""
         
         if ("${{ parameters.runSettingsFile }}" -ne "") {
           $args += "/Settings:`"${{ parameters.runSettingsFile }}`""
         }
         
-        $otherOptions = $env:OTHER_CONSOLE_OPTIONS
-        if ($otherOptions -ne "") {
-          $args += $otherOptions
+        if ("${{ parameters.otherConsoleOptions }}" -ne "") {
+          $args += "${{ parameters.otherConsoleOptions }}"
         }
         
         Write-Host "Running: $vstestPath $($args -join ' ')"
@@ -164,6 +159,7 @@ steps:
         # Check for minimum tests run (equivalent to failOnMinTestsNotRun)
         if ("${{ parameters.failOnMinTestsNotRun }}" -eq "true") {
           # Parse trx files to check if any tests ran
+          $resultsDir = if ("${{ parameters.resultsFolder }}" -ne "") { "${{ parameters.resultsFolder }}" } else { "$(Agent.TempDirectory)\TestResults" }
           $trxFiles = Get-ChildItem -Path $resultsDir -Filter "*.trx" -ErrorAction SilentlyContinue
           if (-not $trxFiles -or $trxFiles.Count -eq 0) {
             Write-Error "failOnMinTestsNotRun: No test result files (.trx) were generated"
@@ -187,17 +183,12 @@ steps:
         }
         
         if ($exitCode -ne 0) {
-          Write-Error "vstest.console.arm64.exe failed with exit code $exitCode"
+          Write-Error "vstest.console.exe failed with exit code $exitCode"
           exit $exitCode
         }
       displayName: ${{ coalesce(parameters.displayName, 'VSTest (ARM64 Native)') }}
       condition: ${{ parameters.condition }}
       continueOnError: ${{ parameters.continueOnError }}
-      env:
-        VSTEST_PATH: $(vstestPath)
-        BUILD_BINARIES_DIR: $(Build.BinariesDirectory)
-        AGENT_TEMP_DIR: $(Agent.TempDirectory)
-        OTHER_CONSOLE_OPTIONS: ${{ parameters.otherConsoleOptions }}
     
     # Publish test results from the native runner
     - task: PublishTestResults@2
