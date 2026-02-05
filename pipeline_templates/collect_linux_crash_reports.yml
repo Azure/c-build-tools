@@ -64,5 +64,5 @@ steps:
       pathtoPublish: '${{ parameters.crash_reports_directory }}'
       artifactName: '${{ parameters.artifact_name }}'
       parallel: true
-    condition: always()
+    condition: or(failed(), canceled())
     continueOnError: true

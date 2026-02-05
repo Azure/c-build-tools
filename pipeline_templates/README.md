@@ -32,15 +32,14 @@ This folder contains pipeline yml templates for devops pipelines.
   - It runs Sarif results checker to verify that there are no errors and fails the build
   - Runs SarifBob to pretty print all the errors in the Sarif in case of failures.
 - enable_linux_crash_reports.yml
-  - Sets `kernel.core_pattern` to write core files to the crash reports directory and removes core file size limits.
+  - Sets `kernel.core_pattern` to write core files to the crash reports directory.
   - Creates the crash reports output directory.
   - Run this BEFORE tests to ensure core dumps are captured.
 - collect_linux_crash_reports.yml
   - Collects crash reports from the crash reports directory, `/var/crash` (Ubuntu apport system), and core files from the build directory.
-  - Publishes collected crash reports as build artifacts.
-  - Runs with `condition: always()` to ensure collection even when tests fail.
+  - Publishes collected crash reports as build artifacts on failure (uses `condition: or(failed(), canceled())`).
 - disable_linux_crash_reports.yml
-  - Restores default `kernel.core_pattern` and removes core dump limit overrides from `/etc/security/limits.conf`.
+  - Restores default `kernel.core_pattern`.
   - Run this AFTER collecting crash reports to clean up system-level changes.
 
 ## How to Consume
