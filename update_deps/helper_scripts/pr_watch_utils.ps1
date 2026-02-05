@@ -19,7 +19,8 @@ watch loop that can be used by both Azure DevOps and GitHub PR watching scripts.
 #
 # Maps platform-specific statuses to a common set of values for consistent display.
 #
-enum PrCheckStatus {
+enum PrCheckStatus
+{
     Pending     # Queued, waiting to start
     Running     # Currently executing
     Succeeded   # Completed successfully
@@ -35,50 +36,59 @@ enum PrCheckStatus {
 #
 # Maps normalized status to symbol and color for consistent display.
 #
-function get-status-display {
+function global:get-status-display
+{
     param(
         [PrCheckStatus] $status
     )
     $result = $null
 
-    switch($status) {
-        ([PrCheckStatus]::Succeeded) {
+    switch($status)
+    {
+        ([PrCheckStatus]::Succeeded)
+        {
             $result = @{
                 Symbol = [char]0x2713  # checkmark ✓
                 Color = "Green"
             }
         }
-        ([PrCheckStatus]::Failed) {
+        ([PrCheckStatus]::Failed)
+        {
             $result = @{
                 Symbol = [char]0x2717  # X mark ✗
                 Color = "Red"
             }
         }
-        ([PrCheckStatus]::Running) {
+        ([PrCheckStatus]::Running)
+        {
             $result = @{
                 Symbol = "*"
                 Color = "Yellow"
             }
         }
-        ([PrCheckStatus]::Pending) {
+        ([PrCheckStatus]::Pending)
+        {
             $result = @{
                 Symbol = "-"
                 Color = "Gray"
             }
         }
-        ([PrCheckStatus]::Skipped) {
+        ([PrCheckStatus]::Skipped)
+        {
             $result = @{
                 Symbol = "-"
                 Color = "DarkGray"
             }
         }
-        ([PrCheckStatus]::Cancelled) {
+        ([PrCheckStatus]::Cancelled)
+        {
             $result = @{
                 Symbol = "x"
                 Color = "Gray"
             }
         }
-        default {
+        default
+        {
             $result = @{
                 Symbol = "?"
                 Color = "DarkYellow"
@@ -93,13 +103,15 @@ function get-status-display {
 #
 # Azure DevOps Status Mapping
 #
-function convert-azure-status-to-normalized {
+function global:convert-azure-status-to-normalized
+{
     param(
         [string] $azure_status
     )
     $result = $null
 
-    switch($azure_status.ToLower()) {
+    switch($azure_status.ToLower())
+    {
         "approved"   { $result = [PrCheckStatus]::Succeeded }
         "succeeded"  { $result = [PrCheckStatus]::Succeeded }
         "rejected"   { $result = [PrCheckStatus]::Failed }
@@ -122,13 +134,15 @@ function convert-azure-status-to-normalized {
 #
 # GitHub Status Mapping (uses bucket field from gh pr checks)
 #
-function convert-github-bucket-to-normalized {
+function global:convert-github-bucket-to-normalized
+{
     param(
         [string] $bucket
     )
     $result = $null
 
-    switch($bucket.ToLower()) {
+    switch($bucket.ToLower())
+    {
         "pass"     { $result = [PrCheckStatus]::Succeeded }
         "fail"     { $result = [PrCheckStatus]::Failed }
         "pending"  { $result = [PrCheckStatus]::Running }
@@ -144,54 +158,67 @@ function convert-github-bucket-to-normalized {
 #
 # Format elapsed time duration
 #
-function format-elapsed-time {
+function global:format-elapsed-time
+{
     param(
         [string] $start_time,
         [string] $finish_time = $null
     )
     $result = ""
 
-    if(-not $start_time) {
-        $result = ""
+    if(-not $start_time)
+    {
+        # no start time provided
     }
-    else {
+    else
+    {
         $start_parsed = Get-Date -Date $start_time -ErrorAction SilentlyContinue
-        if(-not $start_parsed) {
-            $result = ""
+        if(-not $start_parsed)
+        {
+            # parse error
         }
-        else {
+        else
+        {
             $start = $start_parsed.ToUniversalTime()
             $duration = $null
 
-            if($finish_time) {
+            if($finish_time)
+            {
                 $finish_parsed = Get-Date -Date $finish_time -ErrorAction SilentlyContinue
-                if($finish_parsed) {
+                if($finish_parsed)
+                {
                     $finish = $finish_parsed.ToUniversalTime()
                     $duration = $finish - $start
                 }
-                else {
+                else
+                {
                     # finish time parse error
                 }
             }
-            else {
+            else
+            {
                 # No finish time, calculate from now
                 $duration = (Get-Date).ToUniversalTime() - $start
             }
 
-            if($duration -and $duration.TotalSeconds -ge 0) {
-                if($duration.TotalHours -ge 1) {
+            if($duration -and $duration.TotalSeconds -ge 0)
+            {
+                if($duration.TotalHours -ge 1)
+                {
                     $result = "{0}h{1}m" -f [int]$duration.TotalHours, $duration.Minutes
                 }
-                elseif($duration.TotalMinutes -ge 1) {
+                elseif($duration.TotalMinutes -ge 1)
+                {
                     $result = "{0}m{1}s" -f [int]$duration.TotalMinutes, $duration.Seconds
                 }
-                else {
+                else
+                {
                     $result = "{0}s" -f [int]$duration.TotalSeconds
                 }
             }
-            else {
+            else
+            {
                 # negative or null duration
-                $result = ""
             }
         }
     }
@@ -203,20 +230,24 @@ function format-elapsed-time {
 #
 # Truncate string to fit width
 #
-function truncate-string {
+function global:truncate-string
+{
     param(
         [string] $text,
         [int] $max_width
     )
     $result = $null
 
-    if(-not $text) {
+    if(-not $text)
+    {
         $result = ""
     }
-    elseif($text.Length -le $max_width) {
+    elseif($text.Length -le $max_width)
+    {
         $result = $text
     }
-    else {
+    else
+    {
         $result = $text.Substring(0, $max_width - 3) + "..."
     }
 
@@ -239,7 +270,8 @@ function truncate-string {
 #
 # Display normalized check items in a table
 #
-function show-pr-check-table {
+function global:show-pr-check-table
+{
     param(
         [array] $checks,
         [int] $name_width = 70,
@@ -252,7 +284,8 @@ function show-pr-check-table {
     Write-Host $header -ForegroundColor White
 
     # Display each check
-    foreach($check in $checks) {
+    foreach($check in $checks)
+    {
         $check_name = truncate-string -text $check.Name -max_width $name_width
         $elapsed = format-elapsed-time -start_time $check.StartTime -finish_time $check.FinishTime
         $url = truncate-string -text $check.Url -max_width $url_width
@@ -270,7 +303,8 @@ function show-pr-check-table {
 #
 # Count checks by status
 #
-function get-check-status-counts {
+function global:get-check-status-counts
+{
     param(
         [array] $checks
     )
@@ -306,16 +340,19 @@ function get-check-status-counts {
 # For Azure DevOps: checks have IsBlocking property, only blocking checks matter
 # For GitHub: all checks matter (IsBlocking = $null means treat as blocking)
 #
-function Test-ChecksComplete {
+function global:Test-ChecksComplete
+{
     param(
         [array] $checks
     )
     $result = $null
 
-    if(-not $checks -or $checks.Count -eq 0) {
+    if(-not $checks -or $checks.Count -eq 0)
+    {
         $result = @{ Complete = $false; Success = $false; Message = "No checks found" }
     }
-    else {
+    else
+    {
         # Filter to blocking checks (if IsBlocking exists, use it; otherwise all are blocking)
         $blocking_checks = $checks | Where-Object {
             $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
@@ -326,24 +363,29 @@ function Test-ChecksComplete {
             $_.Status -eq [PrCheckStatus]::Running -or $_.Status -eq [PrCheckStatus]::Pending
         }
 
-        if($in_progress.Count -gt 0) {
+        if($in_progress.Count -gt 0)
+        {
             $in_progress_names = ($in_progress | ForEach-Object { $_.Name }) -join ", "
             $result = @{ Complete = $false; Success = $false; Message = "Waiting for: $in_progress_names" }
         }
-        else {
+        else
+        {
             # All checks have reached terminal state - check if any failed
             $failed = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed }
             $cancelled = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Cancelled }
             $succeeded = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Succeeded }
 
-            if($failed.Count -gt 0) {
+            if($failed.Count -gt 0)
+            {
                 $failed_names = ($failed | ForEach-Object { $_.Name }) -join ", "
                 $result = @{ Complete = $true; Success = $false; Message = "Failed: $failed_names" }
             }
-            elseif($cancelled.Count -gt 0 -and $succeeded.Count -eq 0) {
+            elseif($cancelled.Count -gt 0 -and $succeeded.Count -eq 0)
+            {
                 $result = @{ Complete = $true; Success = $false; Message = "Checks were cancelled" }
             }
-            else {
+            else
+            {
                 $result = @{ Complete = $true; Success = $true; Message = "All checks passed" }
             }
         }
@@ -356,7 +398,8 @@ function Test-ChecksComplete {
 #
 # Display summary status header
 #
-function show-status-summary {
+function global:show-status-summary
+{
     param(
         [hashtable] $counts,
         [string] $pr_url = $null,
@@ -364,22 +407,27 @@ function show-status-summary {
     )
 
     Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit." -ForegroundColor Gray
-    if($pr_url) {
+    if($pr_url)
+    {
         Write-Host "PR: $pr_url" -ForegroundColor Cyan
     }
-    else {
+    else
+    {
         # no PR URL
     }
     Write-Host ""
 
     # Summary status
-    if($counts.Failed -gt 0) {
+    if($counts.Failed -gt 0)
+    {
         Write-Host "Some checks were not successful" -ForegroundColor Red
     }
-    elseif($counts.InProgress -gt 0) {
+    elseif($counts.InProgress -gt 0)
+    {
         Write-Host "Some checks are still pending" -ForegroundColor Yellow
     }
-    else {
+    else
+    {
         Write-Host "All checks were successful" -ForegroundColor Green
     }
 
@@ -401,7 +449,8 @@ function show-status-summary {
 #   timeout       - Minutes before timeout
 #   OnIteration   - Optional callback after each status display
 #
-function watch-pr-status {
+function global:watch-pr-status
+{
     param(
         [scriptblock] $FetchData,
         [scriptblock] $ShowStatus,
@@ -418,41 +467,50 @@ function watch-pr-status {
     Write-Host "Watching PR checks..." -ForegroundColor Cyan
     Write-Host "Poll interval: ${poll_interval}s, Timeout: ${timeout}m`n"
 
-    while($fn_result -eq $null) {
+    while($fn_result -eq $null)
+    {
         # Check timeout
-        if((Get-Date) -gt $timeout_time) {
+        if((Get-Date) -gt $timeout_time)
+        {
             Write-Host "`nTimeout reached after $timeout minutes" -ForegroundColor Red
             $fn_result = @{ Success = $false; Message = "Timeout" }
         }
-        else {
+        else
+        {
             # Pre-fetch all data before clearing screen
             $display_data = & $FetchData
-            if(-not $display_data) {
+            if(-not $display_data)
+            {
                 Write-Host "Failed to get checks status, retrying..." -ForegroundColor Yellow
                 Start-Sleep -Seconds $poll_interval
                 # continue loop with fn_result still null
             }
-            else {
+            else
+            {
                 # Clear screen and show status
                 Clear-Host
-                & $ShowStatus -displayData $display_data
+                & $ShowStatus $display_data
 
                 # Run callback if provided
-                if($OnIteration) {
+                if($OnIteration)
+                {
                     Write-Host ""
                     & $OnIteration
                 }
-                else {
+                else
+                {
                     # no callback
                 }
 
                 # Check if complete
-                $completion_result = & $TestComplete -displayData $display_data
-                if($completion_result.Complete) {
+                $completion_result = & $TestComplete $display_data
+                if($completion_result.Complete)
+                {
                     Write-Host ""
                     $fn_result = $completion_result
                 }
-                else {
+                else
+                {
                     Start-Sleep -Seconds $poll_interval
                 }
             }
@@ -461,4 +519,3 @@ function watch-pr-status {
 
     return $fn_result
 }
-

@@ -74,7 +74,8 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 
 
 # update dependencies for given repo
-function update-repo {
+function update-repo
+{
     param(
         [string] $repo_name,
         [string] $new_branch_name
@@ -87,18 +88,27 @@ function update-repo {
     Set-Location $global:work_dir
 
     [string]$git_output = (update-local-repo $repo_name $new_branch_name)
-    if($git_output.Contains("nothing to commit")) {
+    if($git_output.Contains("nothing to commit"))
+    {
         Write-Host "Nothing to commit, skipping repo $repo_name"
         set-repo-status -repo_name $repo_name -status $script:STATUS_SKIPPED -message "No changes"
-    } else {
+    }
+    else
+    {
         $repo_type = get-repo-type $repo_name
-        if($repo_type -eq "github") {
-            update-repo-github $repo_name $new_branch_name
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED
-        } elseif ($repo_type -eq "azure") {
-            update-repo-azure $repo_name $new_branch_name
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED
-        } else {
+        $pr_url = $null
+        if($repo_type -eq "github")
+        {
+            $pr_url = update-repo-github $repo_name $new_branch_name
+            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+        }
+        elseif ($repo_type -eq "azure")
+        {
+            $pr_url = update-repo-azure $repo_name $new_branch_name
+            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+        }
+        else
+        {
             fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
         }
     }
@@ -106,7 +116,8 @@ function update-repo {
 }
 
 # iterate over all repos and update them
-function propagate-updates {
+function propagate-updates
+{
     # Save original directory to restore at exit
     Push-Location
 
@@ -128,37 +139,47 @@ function propagate-updates {
     $repo_order = $null
     $repo_urls = $null
 
-    if ($useCachedRepoOrder) {
+    if ($useCachedRepoOrder)
+    {
         $cached_data = get-cached-repo-order -root_list $root_list
     }
-    else {
+    else
+    {
         # will build fresh
     }
 
-    if ($cached_data) {
+    if ($cached_data)
+    {
         $repo_order = $cached_data.repo_order
         $repo_urls = $cached_data.repo_urls
         Write-Host "Using cached repo order"
         Set-Content -Path .\order.json -Value ($repo_order | ConvertTo-Json)
         # Clone repos that aren't already present using cached URLs
         Write-Host "Cloning repositories..."
-        foreach ($repo_name in $repo_order) {
-            if (-not (Test-Path -Path $repo_name)) {
+        foreach ($repo_name in $repo_order)
+        {
+            if (-not (Test-Path -Path $repo_name))
+            {
                 $repo_url = $repo_urls.$repo_name
-                if ($repo_url) {
+                if ($repo_url)
+                {
                     Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
                     git clone $repo_url
                 }
-                else {
+                else
+                {
                     Write-Host "Warning: No URL cached for $repo_name, skipping" -ForegroundColor Yellow
                 }
             }
-            else {
+            else
+            {
                 # already present
             }
         }
         Write-Host "Done cloning repositories"
-    } else {
+    }
+    else
+    {
         Write-Host "Building dependency graph..."
         .$helper_scripts\build_graph.ps1 -root_list $root_list
         if($LASTEXITCODE -ne 0)
@@ -166,17 +187,20 @@ function propagate-updates {
             Pop-Location
             fail-with-status "Could not build dependency graph for $root_list."
         }
-        else {
+        else
+        {
             # graph built successfully
         }
         Write-Host "Done building dependency graph"
         # build_graph.ps1 sets the cache, so read from it
         $cached_data = get-cached-repo-order -root_list $root_list
-        if (-not $cached_data) {
+        if (-not $cached_data)
+        {
             Pop-Location
             fail-with-status "Failed to get cached repo order after building graph."
         }
-        else {
+        else
+        {
             # cache retrieved
         }
         $repo_order = $cached_data.repo_order
@@ -187,20 +211,24 @@ function propagate-updates {
     initialize-repo-status -repos $repo_order
 
     Write-Host "Updating repositories in the following order: "
-    for($i = 0; $i -lt $repo_order.Length; $i++){
+    for($i = 0; $i -lt $repo_order.Length; $i++)
+    {
         Write-Host "$($i+1). $($repo_order[$i])"
     }
 
-    foreach ($repo in $repo_order) {
+    foreach ($repo in $repo_order)
+    {
         update-repo $repo $new_branch_name
     }
 
     # Show final status and check if all succeeded
     $success = show-propagation-status -Final
-    if ($success) {
+    if ($success)
+    {
         play-success-animation
     }
-    else {
+    else
+    {
         Write-Host "Done updating repos (with some failures)" -ForegroundColor Yellow
     }
 

@@ -9,7 +9,8 @@
 . "$PSScriptRoot\watch_azure_pr.ps1"
 
 # get Azure DevOps organization and project from git remote URL
-function get-azure-org-project {
+function get-azure-org-project
+{
     param(
         [string] $repo_name
     )
@@ -21,7 +22,8 @@ function get-azure-org-project {
 
     # Parse URL like https://msazure@dev.azure.com/msazure/One/_git/repo-name
     # or https://dev.azure.com/msazure/One/_git/repo-name
-    if($repo_url -match "dev\.azure\.com/([^/]+)/([^/]+)/_git") {
+    if($repo_url -match "dev\.azure\.com/([^/]+)/([^/]+)/_git")
+    {
         $org = $matches[1]
         $project = $matches[2]
         $result = @{
@@ -31,7 +33,8 @@ function get-azure-org-project {
     }
     # Parse URL like https://msazure.visualstudio.com/DefaultCollection/One/_git/repo-name
     # or https://msazure.visualstudio.com/One/_git/repo-name
-    elseif($repo_url -match "([^/]+)\.visualstudio\.com/(?:DefaultCollection/)?([^/]+)/_git") {
+    elseif($repo_url -match "([^/]+)\.visualstudio\.com/(?:DefaultCollection/)?([^/]+)/_git")
+    {
         $org = $matches[1]
         $project = $matches[2]
         $result = @{
@@ -39,7 +42,8 @@ function get-azure-org-project {
             Project = $project
         }
     }
-    else {
+    else
+    {
         fail-with-status "Failed to parse Azure DevOps organization and project from remote URL: $repo_url"
     }
 
@@ -48,7 +52,8 @@ function get-azure-org-project {
 
 
 # create PR to update dependencies for Azure repo using Azure CLI
-function create-pr-azure {
+function create-pr-azure
+{
     param(
         [string] $repo_name,
         [string] $new_branch_name
@@ -71,10 +76,12 @@ function create-pr-azure {
         --project $project `
         --output json
 
-    if($LASTEXITCODE -ne 0) {
+    if($LASTEXITCODE -ne 0)
+    {
         fail-with-status "Failed to create PR for repo $repo_name"
     }
-    else {
+    else
+    {
         Write-Host "PR created successfully" -ForegroundColor Green
         $result = $pr_output | ConvertFrom-Json
     }
@@ -84,7 +91,8 @@ function create-pr-azure {
 
 
 # link work item to PR for Azure repo using Azure CLI
-function link-work-item-to-pr-azure {
+function link-work-item-to-pr-azure
+{
     param(
         [int] $pr_id,
         [string] $org,
@@ -93,20 +101,24 @@ function link-work-item-to-pr-azure {
 
     Write-Host "Linking work item to PR (PR ID: $pr_id)"
 
-    if(!$azure_work_item){
+    if(!$azure_work_item)
+    {
         fail-with-status "Updating Azure repos requires providing a work item id. Provide work item id as: -azure_work_item [id]"
     }
-    else {
+    else
+    {
         $output = az repos pr work-item add `
             --id $pr_id `
             --work-items $azure_work_item `
             --organization $org `
             --output json
 
-        if($LASTEXITCODE -ne 0) {
+        if($LASTEXITCODE -ne 0)
+        {
             fail-with-status "Failed to link work item to PR. Work item: $azure_work_item, PR ID: $pr_id"
         }
-        else {
+        else
+        {
             Write-Host "Work item linked successfully" -ForegroundColor Green
         }
     }
@@ -114,7 +126,8 @@ function link-work-item-to-pr-azure {
 
 
 # approve PR for Azure repo using Azure CLI
-function approve-pr-azure {
+function approve-pr-azure
+{
     param(
         [int] $pr_id,
         [string] $org
@@ -128,17 +141,20 @@ function approve-pr-azure {
         --organization $org `
         --output json
 
-    if($LASTEXITCODE -ne 0) {
+    if($LASTEXITCODE -ne 0)
+    {
         fail-with-status "Failed to approve PR ID: $pr_id"
     }
-    else {
+    else
+    {
         Write-Host "PR approved successfully" -ForegroundColor Green
     }
 }
 
 
 # set PR for Azure repo to merge automatically once build completes using Azure CLI
-function set-autocomplete-azure {
+function set-autocomplete-azure
+{
     param(
         [int] $pr_id,
         [string] $org
@@ -154,17 +170,20 @@ function set-autocomplete-azure {
         --organization $org `
         --output json
 
-    if($LASTEXITCODE -ne 0) {
+    if($LASTEXITCODE -ne 0)
+    {
         fail-with-status "Failed to set autocomplete for PR ID: $pr_id"
     }
-    else {
+    else
+    {
         Write-Host "Autocomplete enabled successfully" -ForegroundColor Green
     }
 }
 
 
 # wait until build completes for Azure repo using Azure CLI
-function wait-until-complete-azure {
+function wait-until-complete-azure
+{
     param(
         [int] $pr_id,
         [string] $org,
@@ -176,63 +195,80 @@ function wait-until-complete-azure {
     Write-Host "`nWatching PR policies..."
     $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
 
-    if(!$success) {
+    if(!$success)
+    {
         # Check if PR completed despite policy failures (e.g., manually merged)
         $pr_output = az repos pr show --id $pr_id --organization $org --output json
-        if($LASTEXITCODE -eq 0) {
+        if($LASTEXITCODE -eq 0)
+        {
             $pr_info = $pr_output | ConvertFrom-Json
-            if($pr_info.status -eq "completed") {
+            if($pr_info.status -eq "completed")
+            {
                 Write-Host "PR completed successfully" -ForegroundColor Green
                 $done = $true
             }
-            else {
+            else
+            {
                 # PR not completed, fall through to fail
             }
         }
-        else {
+        else
+        {
             # couldn't get PR status, fall through to fail
         }
-        if(!$done) {
+        if(!$done)
+        {
             fail-with-status "PR $pr_id failed to complete. Check policy status above."
         }
-        else {
+        else
+        {
             # already done
         }
     }
-    else {
+    else
+    {
         # Verify PR is completed
         $pr_output = az repos pr show --id $pr_id --organization $org --output json
-        if($LASTEXITCODE -ne 0) {
+        if($LASTEXITCODE -ne 0)
+        {
             fail-with-status "Failed to get PR status for ID: $pr_id"
         }
-        else {
+        else
+        {
             $pr_info = $pr_output | ConvertFrom-Json
-            if($pr_info.status -ne "completed") {
+            if($pr_info.status -ne "completed")
+            {
                 # PR policies passed but PR not yet merged - wait a bit for autocomplete
                 Write-Host "Waiting for PR to auto-complete..."
                 $max_wait = 60
                 $waited = 0
-                while($waited -lt $max_wait -and !$done) {
+                while($waited -lt $max_wait -and !$done)
+                {
                     Start-Sleep -Seconds 10
                     $waited += 10
                     $pr_output = az repos pr show --id $pr_id --organization $org --output json
                     $pr_info = $pr_output | ConvertFrom-Json
-                    if($pr_info.status -eq "completed") {
+                    if($pr_info.status -eq "completed")
+                    {
                         Write-Host "PR completed successfully" -ForegroundColor Green
                         $done = $true
                     }
-                    else {
+                    else
+                    {
                         # keep waiting
                     }
                 }
-                if(!$done) {
+                if(!$done)
+                {
                     Write-Host "Warning: PR policies passed but PR status is: $($pr_info.status)" -ForegroundColor Yellow
                 }
-                else {
+                else
+                {
                     # already logged success
                 }
             }
-            else {
+            else
+            {
                 Write-Host "PR completed successfully" -ForegroundColor Green
             }
         }
@@ -241,11 +277,14 @@ function wait-until-complete-azure {
 
 
 # update dependencies for Azure repo using Azure CLI
-function update-repo-azure {
+# Returns the PR URL for status tracking
+function update-repo-azure
+{
     param(
         [string] $repo_name,
         [string] $new_branch_name
     )
+    $result = $null
 
     $azure_info = get-azure-org-project $repo_name
     $org = $azure_info.Organization
@@ -254,6 +293,19 @@ function update-repo-azure {
     $pr_info = create-pr-azure $repo_name $new_branch_name
     $pr_id = $pr_info.pullRequestId
 
+    # Build PR URL from the response
+    if($pr_info.repository -and $pr_info.repository.webUrl)
+    {
+        $result = "$($pr_info.repository.webUrl)/pullrequest/$pr_id"
+    }
+    else
+    {
+        # fallback - no URL available
+    }
+
+    # Update status with PR URL immediately so it shows even if later steps fail
+    set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $result
+
     link-work-item-to-pr-azure $pr_id $org $project
 
     approve-pr-azure $pr_id $org
@@ -261,4 +313,6 @@ function update-repo-azure {
     set-autocomplete-azure $pr_id $org
 
     wait-until-complete-azure $pr_id $org $repo_name
+
+    return $result
 }

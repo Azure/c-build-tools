@@ -5,13 +5,15 @@
 
 # create a global variable $ignore_pattern
 # $ignore pattern is used in the shell command for 'git submodule foreach' to ignore repos
-function create-ignore-pattern {
+function create-ignore-pattern
+{
     $path_to_ignores = Join-Path $PSScriptRoot "..\ignores.json"
     # get list of repos to ignore from ignores.json
     $repos_to_ignore = (Get-Content -Path $path_to_ignores) | ConvertFrom-Json
     $ignore_list = New-Object -TypeName "System.Collections.ArrayList"
     # prepend "deps/" to the name of each repo
-    foreach($repo_to_ignore in $repos_to_ignore) {
+    foreach($repo_to_ignore in $repos_to_ignore)
+    {
         [void]$ignore_list.Add("deps/"+$repo_to_ignore)
     }
     # join repo names to get pattern of the form "deps/{repo1}|deps/repo{2}|..."
@@ -21,15 +23,18 @@ function create-ignore-pattern {
 # Initialize the ignore pattern when script is sourced
 create-ignore-pattern
 
-function refresh-submodules {
+function refresh-submodules
+{
     $submodules = git submodule | Out-String
     Get-ChildItem "deps\" | ForEach-Object {
         # There can be folders in deps\ that are not listed in .gitmodules.
         # Only delete dep that is listed in .gitmodules
-        if($submodules.Contains($_.Name)) {
+        if($submodules.Contains($_.Name))
+        {
             Remove-Item $_.FullName -Recurse -Force
         }
-        else {
+        else
+        {
             # not a submodule, leave it
         }
     }
@@ -37,7 +42,8 @@ function refresh-submodules {
 
 # update the submodules of the given repo and push changes
 # returns commit output for caller to check
-function update-local-repo {
+function update-local-repo
+{
     param (
         [string] $repo_name,
         [string] $new_branch_name
@@ -49,10 +55,12 @@ function update-local-repo {
     git pull
     # Sometimes git fails to detect updates in submodules
     # Fix is to delete the submodule and reinitializes it
-    if (Test-Path "deps\") {
+    if (Test-Path "deps\")
+    {
         refresh-submodules
     }
-    else {
+    else
+    {
         # no deps folder
     }
     git submodule update --init
@@ -65,10 +73,12 @@ function update-local-repo {
     $result = git commit -m "Update dependencies" 2>&1
     $commit_result = $LASTEXITCODE
     # Only push if commit succeeded (there were changes)
-    if($commit_result -eq 0) {
+    if($commit_result -eq 0)
+    {
         git push -f origin $new_branch_name
     }
-    else {
+    else
+    {
         # nothing to push
     }
     Pop-Location
@@ -78,7 +88,8 @@ function update-local-repo {
 
 # determine whether given repo is an azure repo or a github repo
 # Exits on failure
-function get-repo-type {
+function get-repo-type
+{
     param (
         [string] $repo_name
     )
@@ -88,13 +99,16 @@ function get-repo-type {
     $repo_url = git config --get remote.origin.url
     Pop-Location
     Write-Host $repo_url -NoNewline
-    if($repo_url.Contains("github")) {
+    if($repo_url.Contains("github"))
+    {
         $result = "github"
     }
-    elseif ($repo_url.Contains("azure") -or $repo_url.Contains("visualstudio.com")) {
+    elseif ($repo_url.Contains("azure") -or $repo_url.Contains("visualstudio.com"))
+    {
         $result = "azure"
     }
-    else {
+    else
+    {
         Write-Error "Unknown repo type for URL: $repo_url"
         exit -1
     }

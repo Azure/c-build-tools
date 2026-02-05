@@ -16,46 +16,64 @@ $script:STATUS_SKIPPED = "skipped"
 $script:STATUS_FAILED = "failed"
 
 # Initialize status for all repos
-function initialize-repo-status {
+function initialize-repo-status
+{
     param(
         [string[]] $repos
     )
     $global:repo_order_list = $repos
     $global:repo_status = @{}
-    foreach($repo in $repos) {
+    foreach($repo in $repos)
+    {
         $global:repo_status[$repo] = @{
             Status = $script:STATUS_PENDING
             Message = ""
+            PrUrl = ""
         }
     }
 }
 
 # Update status for a repo
-function set-repo-status {
+function set-repo-status
+{
     param(
         [string] $repo_name,
         [string] $status,
-        [string] $message = ""
+        [string] $message = "",
+        [string] $pr_url = ""
     )
-    if($global:repo_status.ContainsKey($repo_name)) {
+    if($global:repo_status.ContainsKey($repo_name))
+    {
         $global:repo_status[$repo_name].Status = $status
         $global:repo_status[$repo_name].Message = $message
+        if($pr_url)
+        {
+            $global:repo_status[$repo_name].PrUrl = $pr_url
+        }
+        else
+        {
+            # keep existing pr_url if not provided
+        }
     }
-    else {
+    else
+    {
         # unknown repo, ignore
     }
 }
 
 # Fail with status - marks current repo as failed, shows final status, and exits
 # Exits on failure (always)
-function fail-with-status {
+function fail-with-status
+{
     param(
         [string] $message
     )
-    if ($global:current_repo -and $global:repo_status.ContainsKey($global:current_repo)) {
+    if ($global:current_repo -and $global:repo_status.ContainsKey($global:current_repo))
+    {
         set-repo-status -repo_name $global:current_repo -status $script:STATUS_FAILED -message $message
     }
-    else {
+    else
+    {
         # no current repo to mark as failed
     }
     show-propagation-status -Final
@@ -63,75 +81,144 @@ function fail-with-status {
     exit -1
 }
 
-# Display propagation status
-function show-propagation-status {
+# Get status display info (symbol, color, text)
+function get-repo-status-display
+{
+    param(
+        [string] $status
+    )
+    $result = $null
+
+    switch($status)
+    {
+        $script:STATUS_UPDATED
+        {
+            $result = @{
+                Symbol = [char]0x2713  # checkmark
+                Color = "Green"
+                Text = "UPDATED"
+            }
+        }
+        $script:STATUS_SKIPPED
+        {
+            $result = @{
+                Symbol = "-"
+                Color = "Gray"
+                Text = "SKIPPED"
+            }
+        }
+        $script:STATUS_IN_PROGRESS
+        {
+            $result = @{
+                Symbol = "*"
+                Color = "Yellow"
+                Text = "IN PROGRESS"
+            }
+        }
+        $script:STATUS_PENDING
+        {
+            $result = @{
+                Symbol = "."
+                Color = "DarkGray"
+                Text = "PENDING"
+            }
+        }
+        $script:STATUS_FAILED
+        {
+            $result = @{
+                Symbol = [char]0x2717  # X mark
+                Color = "Red"
+                Text = "FAILED"
+            }
+        }
+        default
+        {
+            $result = @{
+                Symbol = "?"
+                Color = "Gray"
+                Text = $status
+            }
+        }
+    }
+
+    return $result
+}
+
+
+# Display propagation status as a formatted table
+function show-propagation-status
+{
     param(
         [switch] $Final
     )
+    $result = $false
 
-    if($Final) {
+    # Calculate dynamic column widths
+    $index_width = ($global:repo_order_list.Count).ToString().Length + 1  # +1 for the dot
+    $repo_width = ($global:repo_order_list | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
+    $status_width = 11  # "IN PROGRESS" is the longest status text
+
+    # Build table rows with display info
+    $rows = @()
+    $index = 1
+    foreach($repo in $global:repo_order_list)
+    {
+        $info = $global:repo_status[$repo]
+        $display = get-repo-status-display -status $info.Status
+        $rows += @{
+            Index = $index
+            Repo = $repo
+            Status = $info.Status
+            StatusText = $display.Text
+            Symbol = $display.Symbol
+            Color = $display.Color
+            Message = $info.Message
+            PrUrl = $info.PrUrl
+        }
+        $index++
+    }
+
+    # Print header
+    if($Final)
+    {
         Write-Host ""
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "     PROPAGATION STATUS SUMMARY" -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
     }
-    else {
+    else
+    {
         Write-Host ""
         Write-Host "--- Propagation Status ---" -ForegroundColor Cyan
     }
 
-    $index = 1
-    foreach($repo in $global:repo_order_list) {
-        $info = $global:repo_status[$repo]
-        $status = $info.Status
-        $message = $info.Message
+    # Print table header
+    $header = "   {0,-$index_width} {1,-$repo_width} {2,-$status_width} {3}" -f "#", "REPOSITORY", "STATUS", "PR"
+    Write-Host $header -ForegroundColor White
 
-        # Choose symbol and color based on status
-        switch($status) {
-            $script:STATUS_UPDATED {
-                $symbol = [char]0x2713  # checkmark
-                $color = "Green"
-                $status_text = "UPDATED"
-            }
-            $script:STATUS_SKIPPED {
-                $symbol = "-"
-                $color = "Gray"
-                $status_text = "SKIPPED"
-            }
-            $script:STATUS_IN_PROGRESS {
-                $symbol = "*"
-                $color = "Yellow"
-                $status_text = "IN PROGRESS"
-            }
-            $script:STATUS_PENDING {
-                $symbol = "."
-                $color = "DarkGray"
-                $status_text = "PENDING"
-            }
-            $script:STATUS_FAILED {
-                $symbol = [char]0x2717  # X mark
-                $color = "Red"
-                $status_text = "FAILED"
-            }
-            default {
-                $symbol = "?"
-                $color = "Gray"
-                $status_text = $status
-            }
+    # Print each row
+    foreach($row in $rows)
+    {
+        $index_str = "{0}." -f $row.Index
+        $status_display = $row.StatusText
+        if($row.Message)
+        {
+            $status_display = "{0} ({1})" -f $row.StatusText, $row.Message
+        }
+        else
+        {
+            # no message to append
         }
 
-        $line = "{0}  {1}. {2} [{3}]" -f $symbol, $index, $repo, $status_text
-        if($message) {
-            $line += " - $message"
-        }
-        else {
-            # no message
-        }
-        Write-Host $line -ForegroundColor $color
-        $index++
+        # Build the line with fixed-width columns
+        $symbol = $row.Symbol
+        $line = "{0}  {1,-$index_width} {2,-$repo_width} {3,-$status_width} {4}" -f $symbol, $index_str, $row.Repo, $row.StatusText, $row.PrUrl
+
+        Write-Host $line -ForegroundColor $row.Color
     }
 
-    if($Final) {
+    if($Final)
+    {
         Write-Host "========================================" -ForegroundColor Cyan
 
         # Summary counts
@@ -147,10 +234,23 @@ function show-propagation-status {
         Write-Host ", $failed failed" -ForegroundColor Red -NoNewline
         Write-Host ", $pending pending" -ForegroundColor DarkGray
         Write-Host ""
+
+        # Return success if no failures
+        if($failed -eq 0)
+        {
+            $result = $true
+        }
+        else
+        {
+            # there were failures
+        }
     }
-    else {
-        # not final - no summary
+    else
+    {
+        # not final - no summary, result stays false
     }
 
     Write-Host ""
+
+    return $result
 }

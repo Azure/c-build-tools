@@ -19,23 +19,28 @@ PS> check-gh-cli-exists
 
 # Helper function to ensure winget is available
 # Exits on failure
-function ensure-winget-available {
+function ensure-winget-available
+{
     $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
-    if (!$wingetCmd) {
+    if (!$wingetCmd)
+    {
         Write-Error "winget is required but not available. Please ensure Windows Package Manager is installed."
         Write-Error "Download from: https://aka.ms/getwinget"
         exit -1
     }
-    else {
+    else
+    {
         # winget available
     }
 }
 
 # verify GitHub CLI is installed and authenticated
 # Exits on failure
-function check-gh-cli-exists {
+function check-gh-cli-exists
+{
     $gh = Get-Command gh -ErrorAction SilentlyContinue
-    if (!$gh) {
+    if (!$gh)
+    {
         ensure-winget-available
         Write-Host "GitHub CLI is not installed. Installing via winget..."
         winget install --id GitHub.cli -e --source winget
@@ -44,33 +49,40 @@ function check-gh-cli-exists {
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
         $gh = Get-Command gh -ErrorAction SilentlyContinue
 
-        if (!$gh) {
+        if (!$gh)
+        {
             Write-Error "Failed to install GitHub CLI. Please install manually: winget install --id GitHub.cli -e --source winget"
             Write-Error "Or download from: https://cli.github.com/"
             exit -1
         }
-        else {
+        else
+        {
             Write-Host "GitHub CLI installed successfully." -ForegroundColor Green
         }
     }
-    else {
+    else
+    {
         # gh already available
     }
 
     # Check if user is logged in to GitHub
     $auth_status = gh auth status 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    if ($LASTEXITCODE -ne 0)
+    {
         Write-Host "Not logged in to GitHub CLI. Initiating login..."
         gh auth login
-        if ($LASTEXITCODE -ne 0) {
+        if ($LASTEXITCODE -ne 0)
+        {
             Write-Error "GitHub authentication failed. Please run 'gh auth login' manually."
             exit -1
         }
-        else {
+        else
+        {
             Write-Host "GitHub authentication successful." -ForegroundColor Green
         }
     }
-    else {
+    else
+    {
         # already logged in
     }
 }

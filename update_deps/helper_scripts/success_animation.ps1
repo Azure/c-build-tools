@@ -3,7 +3,8 @@
 
 # Fun animation showing dependencies propagating through a tree
 
-function play-success-animation {
+function play-success-animation
+{
     param(
         [int] $speed = 80  # milliseconds between frames
     )
@@ -381,16 +382,20 @@ function play-success-animation {
     )
 
     # Play animation
-    foreach ($frame in $tree_frames) {
+    foreach ($frame in $tree_frames)
+    {
         [Console]::SetCursorPosition(0, 0)
 
         # Color the output
         $lines = $frame -split "`n"
-        foreach ($line in $lines) {
+        foreach ($line in $lines)
+        {
             $colored_line = $line
             # Write character by character for coloring
-            foreach ($char in $colored_line.ToCharArray()) {
-                switch ($char) {
+            foreach ($char in $colored_line.ToCharArray())
+            {
+                switch ($char)
+                {
                     '●' { Write-Host $char -NoNewline -ForegroundColor Green }
                     '◉' { Write-Host $char -NoNewline -ForegroundColor Yellow }
                     '○' { Write-Host $char -NoNewline -ForegroundColor DarkGray }
@@ -417,9 +422,12 @@ function play-success-animation {
         @{X=45; Y=10}, @{X=25; Y=12}, @{X=55; Y=12}
     )
 
-    for ($i = 0; $i -lt 6; $i++) {
-        foreach ($pos in $positions) {
-            if ((Get-Random -Maximum 3) -eq 0) {
+    for ($i = 0; $i -lt 6; $i++)
+    {
+        foreach ($pos in $positions)
+        {
+            if ((Get-Random -Maximum 3) -eq 0)
+            {
                 [Console]::SetCursorPosition($pos.X, $pos.Y)
                 $sparkle = $sparkle_chars[(Get-Random -Maximum $sparkle_chars.Count)]
                 Write-Host $sparkle -NoNewline -ForegroundColor Yellow
@@ -428,7 +436,8 @@ function play-success-animation {
         Start-Sleep -Milliseconds 150
 
         # Clear sparkles
-        foreach ($pos in $positions) {
+        foreach ($pos in $positions)
+        {
             [Console]::SetCursorPosition($pos.X, $pos.Y)
             Write-Host " " -NoNewline
         }

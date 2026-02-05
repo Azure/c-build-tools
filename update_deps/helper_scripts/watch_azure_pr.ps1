@@ -44,7 +44,8 @@ param(
 
 
 # Get policy status for Azure PR
-function get-azure-pr-policies {
+function global:get-azure-pr-policies
+{
     param(
         [int] $pr_id,
         [string] $org
@@ -57,30 +58,36 @@ function get-azure-pr-policies {
         --query "[].{Policy:configuration.type.displayName, Status:status, BuildId:context.buildId, ProjectId:configuration.settings.scope[0].repositoryId, IsBlocking:configuration.isBlocking}" `
         --output json 2>$null
 
-    if($LASTEXITCODE -ne 0 -or !$policy_output) {
-        $result = $null
+    if($LASTEXITCODE -ne 0 -or !$policy_output)
+    {
+        # error or no output
     }
-    else {
+    else
+    {
         # Get the project info from the PR for build timeline lookups and URLs
         $pr_info = az repos pr show --id $pr_id --org $org --query "{ProjectId:repository.project.id, ProjectName:repository.project.name, OrgUrl:repository.project.url, RepoName:repository.name}" -o json 2>$null
         $project_id = $null
         $project_name = $null
         $base_url = $null
         $repo_name = $null
-        if($pr_info) {
+        if($pr_info)
+        {
             $pr_data = $pr_info | ConvertFrom-Json
             $project_id = $pr_data.ProjectId
             $project_name = $pr_data.ProjectName
             $repo_name = $pr_data.RepoName
             # Extract base URL from project URL (e.g., https://msazure.visualstudio.com/_apis/projects/... -> https://msazure.visualstudio.com)
-            if($pr_data.OrgUrl -match '^(https://[^/]+)') {
+            if($pr_data.OrgUrl -match '^(https://[^/]+)')
+            {
                 $base_url = $matches[1]
             }
-            else {
+            else
+            {
                 # no match
             }
         }
-        else {
+        else
+        {
             # no pr_info
         }
 
@@ -88,23 +95,28 @@ function get-azure-pr-policies {
 
         # Build PR URL
         $pr_url = $null
-        if($base_url -and $project_name -and $repo_name) {
+        if($base_url -and $project_name -and $repo_name)
+        {
             $pr_url = "$base_url/$project_name/_git/$repo_name/pullrequest/$pr_id"
         }
-        else {
+        else
+        {
             # can't build PR URL
         }
 
         # Attach project info to policies with builds
-        foreach($policy in $policies) {
+        foreach($policy in $policies)
+        {
             # Always attach PR URL for reference
             $policy | Add-Member -NotePropertyName "PrUrl" -NotePropertyValue $pr_url -Force
-            if($policy.BuildId -and $project_id) {
+            if($policy.BuildId -and $project_id)
+            {
                 $policy | Add-Member -NotePropertyName "ProjectId" -NotePropertyValue $project_id -Force
                 $policy | Add-Member -NotePropertyName "ProjectName" -NotePropertyValue $project_name -Force
                 $policy | Add-Member -NotePropertyName "BaseUrl" -NotePropertyValue $base_url -Force
             }
-            else {
+            else
+            {
                 # no build info to attach
             }
         }
@@ -117,7 +129,8 @@ function get-azure-pr-policies {
 
 
 # Get build job details from timeline
-function get-build-job-details {
+function global:get-build-job-details
+{
     param(
         [int] $build_id,
         [string] $project_id,
@@ -133,10 +146,12 @@ function get-build-job-details {
         --api-version 7.1 `
         -o json 2>$null
 
-    if($LASTEXITCODE -ne 0 -or !$timeline) {
-        $result = $null
+    if($LASTEXITCODE -ne 0 -or !$timeline)
+    {
+        # error or no output
     }
-    else {
+    else
+    {
         $records = ($timeline | ConvertFrom-Json).records
         $jobs = $records | Where-Object { $_.type -eq "Job" }
 
@@ -156,7 +171,8 @@ function get-build-job-details {
 
 
 # Pre-fetch all data needed for display (policies + build jobs) and normalize
-function get-policy-display-data {
+function global:get-policy-display-data
+{
     param(
         [int] $pr_id,
         [string] $org,
@@ -166,48 +182,61 @@ function get-policy-display-data {
 
     # Fetch policies
     $policies = get-azure-pr-policies -pr_id $pr_id -org $org
-    if(-not $policies) {
-        $result = $null
+    if(-not $policies)
+    {
+        # no policies
     }
-    else {
+    else
+    {
         # Pre-fetch build job details for all builds (running, queued, or completed)
         $build_jobs = @{}
         $build_access_denied = @{}
-        if($ShowBuildDetails) {
-            foreach($policy in $policies) {
-                if($policy.BuildId -and $policy.ProjectId) {
+        if($ShowBuildDetails)
+        {
+            foreach($policy in $policies)
+            {
+                if($policy.BuildId -and $policy.ProjectId)
+                {
                     $jobs = get-build-job-details -build_id $policy.BuildId -project_id $policy.ProjectId -org $org
-                    if($jobs) {
+                    if($jobs)
+                    {
                         $build_jobs[$policy.BuildId] = $jobs
                     }
-                    elseif($policy.BuildId) {
+                    elseif($policy.BuildId)
+                    {
                         $build_access_denied[$policy.BuildId] = $true
                     }
-                    else {
+                    else
+                    {
                         # no build id
                     }
                 }
-                else {
+                else
+                {
                     # no build or project id
                 }
             }
         }
-        else {
+        else
+        {
             # not showing build details
         }
 
         # Get PR URL from first policy (all have the same PR URL)
         $pr_url = $null
-        if($policies -and $policies.Count -gt 0 -and $policies[0].PrUrl) {
+        if($policies -and $policies.Count -gt 0 -and $policies[0].PrUrl)
+        {
             $pr_url = $policies[0].PrUrl
         }
-        else {
+        else
+        {
             # no PR URL available
         }
 
         # Build normalized check items
         $normalized_checks = @()
-        foreach($policy in $policies) {
+        foreach($policy in $policies)
+        {
             $policy_name = $policy.Policy
             $policy_status = $policy.Status
             $build_id = $policy.BuildId
@@ -218,16 +247,27 @@ function get-policy-display-data {
 
             # Build URL for the check
             $check_url = ""
-            if($build_id -and $policy.ProjectName) {
+            if($build_id -and $policy.ProjectName)
+            {
                 $check_url = "$($policy.BaseUrl)/$($policy.ProjectName)/_build/results?buildId=$build_id"
             }
-            else {
+            else
+            {
                 # no build id or project info
             }
 
-            if($has_jobs) {
-                foreach($job in $build_jobs[$build_id]) {
-                    $job_status = if($job.Result) { $job.Result } else { $job.State }
+            if($has_jobs)
+            {
+                foreach($job in $build_jobs[$build_id])
+                {
+                    if($job.Result)
+                    {
+                        $job_status = $job.Result
+                    }
+                    else
+                    {
+                        $job_status = $job.State
+                    }
                     $normalized_checks += [PSCustomObject]@{
                         Name = "$policy_name ($($job.Name))"
                         Status = (convert-azure-status-to-normalized -azure_status $job_status)
@@ -238,7 +278,8 @@ function get-policy-display-data {
                     }
                 }
             }
-            elseif($access_denied) {
+            elseif($access_denied)
+            {
                 $normalized_checks += [PSCustomObject]@{
                     Name = "$policy_name (job details require pipeline read permission)"
                     Status = (convert-azure-status-to-normalized -azure_status $policy_status)
@@ -248,7 +289,8 @@ function get-policy-display-data {
                     IsBlocking = $policy.IsBlocking
                 }
             }
-            else {
+            else
+            {
                 $normalized_checks += [PSCustomObject]@{
                     Name = $policy_name
                     Status = (convert-azure-status-to-normalized -azure_status $policy_status)
@@ -275,7 +317,8 @@ function get-policy-display-data {
 
 
 # Display policy status with colors and symbols (uses pre-fetched data)
-function show-policy-status {
+function show-policy-status
+{
     param(
         [hashtable] $displayData,
         [int] $poll_interval
@@ -284,18 +327,22 @@ function show-policy-status {
     $checks = $displayData.Checks
     $counts = $displayData.Counts
 
-    if(-not $checks -or $checks.Count -eq 0) {
+    if(-not $checks -or $checks.Count -eq 0)
+    {
         Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit." -ForegroundColor Gray
-        if($displayData.PrUrl) {
+        if($displayData.PrUrl)
+        {
             Write-Host "PR: $($displayData.PrUrl)" -ForegroundColor Cyan
         }
-        else {
+        else
+        {
             # no PR URL
         }
         Write-Host ""
         Write-Host "No policies found" -ForegroundColor Gray
     }
-    else {
+    else
+    {
         show-status-summary -counts $counts -pr_url $displayData.PrUrl -poll_interval $poll_interval
         show-pr-check-table -checks $checks
     }
@@ -303,7 +350,8 @@ function show-policy-status {
 
 
 # Watch PR policies until complete or timeout
-function watch-azure-pr-policies {
+function watch-azure-pr-policies
+{
     param(
         [int] $pr_id,
         [string] $org,
@@ -314,15 +362,36 @@ function watch-azure-pr-policies {
     )
     $fn_result = $null
 
-    # Define the fetch data callback
+    # Define the fetch data callback - inline the data fetching logic
     $fetch_data = {
         get-policy-display-data -pr_id $pr_id -org $org -ShowBuildDetails:$ShowBuildDetails
     }.GetNewClosure()
 
-    # Define the show status callback
+    # Define the show status callback - inline the display logic
     $show_status = {
         param($displayData)
-        show-policy-status -displayData $displayData -poll_interval $poll_interval
+        $checks = $displayData.Checks
+        $counts = $displayData.Counts
+
+        if(-not $checks -or $checks.Count -eq 0)
+        {
+            Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit." -ForegroundColor Gray
+            if($displayData.PrUrl)
+            {
+                Write-Host "PR: $($displayData.PrUrl)" -ForegroundColor Cyan
+            }
+            else
+            {
+                # no PR URL
+            }
+            Write-Host ""
+            Write-Host "No policies found" -ForegroundColor Gray
+        }
+        else
+        {
+            show-status-summary -counts $counts -pr_url $displayData.PrUrl -poll_interval $poll_interval
+            show-pr-check-table -checks $checks
+        }
     }.GetNewClosure()
 
     # Define the test complete callback
@@ -340,10 +409,12 @@ function watch-azure-pr-policies {
         -timeout $timeout `
         -OnIteration $OnIteration
 
-    if($watch_result.Success) {
+    if($watch_result.Success)
+    {
         $fn_result = $true
     }
-    else {
+    else
+    {
         $fn_result = $false
     }
 
@@ -352,7 +423,8 @@ function watch-azure-pr-policies {
 
 
 # Simple one-time display of policy status (for use by other scripts)
-function show-azure-pr-policy-status {
+function show-azure-pr-policy-status
+{
     param(
         [int] $pr_id,
         [string] $org,
@@ -360,21 +432,27 @@ function show-azure-pr-policy-status {
     )
 
     $displayData = get-policy-display-data -pr_id $pr_id -org $org -ShowBuildDetails:$ShowBuildDetails
-    if($displayData) {
+    if($displayData)
+    {
         show-policy-status -displayData $displayData -poll_interval 30
     }
-    else {
+    else
+    {
         # no display data
     }
 }
 
 
 # If running directly (not dot-sourced), watch the PR
-if($MyInvocation.InvocationName -ne '.') {
+if($MyInvocation.InvocationName -ne '.')
+{
     $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval $poll_interval -timeout $timeout -ShowBuildDetails
-    if($success) {
+    if($success)
+    {
         exit 0
-    } else {
+    }
+    else
+    {
         exit 1
     }
 }
