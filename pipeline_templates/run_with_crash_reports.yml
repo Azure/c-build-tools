@@ -97,7 +97,7 @@ steps:
       pathtoPublish: '${{ parameters.crash_reports_directory }}'
       artifactName: '${{ parameters.artifact_name }}'
       parallel: true
-    condition: or(failed(), canceled())
+    condition: failed()
     continueOnError: true
 
   # 5. Restore default core dump settings (runs always)

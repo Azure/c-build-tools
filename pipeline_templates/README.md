@@ -41,7 +41,7 @@ This folder contains pipeline yml templates for devops pipelines.
   - Run this BEFORE tests to ensure core dumps are captured.
 - collect_linux_crash_reports.yml
   - Collects crash reports from the crash reports directory, `/var/crash` (Ubuntu apport system), and core files from the build directory.
-  - Publishes collected crash reports as build artifacts on failure (uses `condition: or(failed(), canceled())`).
+  - Publishes collected crash reports as build artifacts on failure (uses `condition: failed()`).
 - disable_linux_crash_reports.yml
   - Restores default `kernel.core_pattern`.
   - Run this AFTER collecting crash reports to clean up system-level changes.
