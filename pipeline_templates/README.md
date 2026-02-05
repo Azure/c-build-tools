@@ -31,6 +31,10 @@ This folder contains pipeline yml templates for devops pipelines.
   - Finalize portion of CodeQL3000 (build steps should be between the `codeql3000_init` and `codeql3000_finalize` wrappers).
   - It runs Sarif results checker to verify that there are no errors and fails the build
   - Runs SarifBob to pretty print all the errors in the Sarif in case of failures.
+- run_with_crash_reports.yml
+  - Wraps user-provided test steps with Linux crash report collection (enable, collect, publish, disable).
+  - Follows the same pattern as `run_ctests_with_appverifier.yml`: accepts a `stepList` and sandwiches steps between enable/disable.
+  - Test step display names get the suffix `[crash reports enabled]`.
 - enable_linux_crash_reports.yml
   - Sets `kernel.core_pattern` to write core files to the crash reports directory.
   - Creates the crash reports output directory.
@@ -138,9 +142,44 @@ See [Cuzz](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/ap
            workingFolder: $(Build.BinariesDirectory)\c
 ```
 
-### Linux crash report templates
+### run_with_crash_reports.yml
 
-Three templates work together to capture Linux crash dumps in CI pipelines:
+This template wraps user-provided steps with Linux crash report collection. It follows the same pattern as `run_ctests_with_appverifier.yml`:
+1. Enable crash reports (`kernel.core_pattern` + directory setup)
+2. Run any steps in the specified steps list (name will say "[crash reports enabled]")
+3. Collect core files from the crash reports directory and build directory
+4. Publish crash reports as artifacts (only on failure/cancel)
+5. Restore default `kernel.core_pattern`
+
+**Important**: `ulimit -c unlimited` must be run in the **same shell/step** that executes the tests. The template only sets `core_pattern`; `ulimit` controls whether core files are written.
+
+Example usage:
+
+```yaml
+  steps:
+  - template: pipeline_templates/run_with_crash_reports.yml@c_build_tools
+    parameters:
+      build_directory: $(Build.Repository.LocalPath)/cmake_linux
+      test_steps:
+        - task: Bash@3
+          displayName: 'Build and run tests'
+          inputs:
+            targetType: filePath
+            filePath: './build/linux/build_linux.sh'
+            arguments: '$(Build.Repository.LocalPath)'
+            workingDirectory: '$(Build.Repository.LocalPath)'
+```
+
+Parameters:
+- `crash_reports_directory`: Directory to store crash reports (default: `$(Build.ArtifactStagingDirectory)/crash_reports`)
+- `build_directory`: Directory to search for core files (default: `$(Build.SourcesDirectory)`)
+- `search_depth`: How deep to search for core files (default: 4)
+- `artifact_name`: Name for the published artifact (default: `Linux_crash_reports`)
+- `test_steps`: A `stepList` of steps to run between enable and collect/disable
+
+### Linux crash report templates (standalone)
+
+Three standalone templates work together to capture Linux crash dumps in CI pipelines for consumers who need custom flows:
 - `enable_linux_crash_reports.yml` - sets `kernel.core_pattern` to write core files to the crash reports directory
 - `collect_linux_crash_reports.yml` - collects core files and publishes as artifacts
 - `disable_linux_crash_reports.yml` - restores default core dump settings
