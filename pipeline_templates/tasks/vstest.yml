@@ -134,22 +134,22 @@ steps:
         $args += "/Platform:ARM64"
         $args += "/Logger:trx"
         
-        if ("${{ parameters.runTestsInIsolation }}" -eq "true") {
+        if ('${{ parameters.runTestsInIsolation }}' -eq 'true') {
           $args += "/InIsolation"
         }
         
-        if ("${{ parameters.resultsFolder }}" -ne "") {
+        if ('${{ parameters.resultsFolder }}' -ne '') {
           $args += "/ResultsDirectory:`"${{ parameters.resultsFolder }}`""
         } else {
           $args += "/ResultsDirectory:`"$(Agent.TempDirectory)\TestResults`""
         }
         
-        if ("${{ parameters.runSettingsFile }}" -ne "") {
+        if ('${{ parameters.runSettingsFile }}' -ne '') {
           $args += "/Settings:`"${{ parameters.runSettingsFile }}`""
         }
         
-        if ("${{ parameters.otherConsoleOptions }}" -ne "") {
-          $args += "${{ parameters.otherConsoleOptions }}"
+        if ('${{ parameters.otherConsoleOptions }}' -ne '') {
+          $args += '${{ parameters.otherConsoleOptions }}'
         }
         
         Write-Host "Running: $vstestPath $($args -join ' ')"
@@ -157,9 +157,9 @@ steps:
         $exitCode = $LASTEXITCODE
         
         # Check for minimum tests run (equivalent to failOnMinTestsNotRun)
-        if ("${{ parameters.failOnMinTestsNotRun }}" -eq "true") {
+        if ('${{ parameters.failOnMinTestsNotRun }}' -eq 'true') {
           # Parse trx files to check if any tests ran
-          $resultsDir = if ("${{ parameters.resultsFolder }}" -ne "") { "${{ parameters.resultsFolder }}" } else { "$(Agent.TempDirectory)\TestResults" }
+          $resultsDir = if ('${{ parameters.resultsFolder }}' -ne '') { '${{ parameters.resultsFolder }}' } else { "$(Agent.TempDirectory)\TestResults" }
           $trxFiles = Get-ChildItem -Path $resultsDir -Filter "*.trx" -ErrorAction SilentlyContinue
           if (-not $trxFiles -or $trxFiles.Count -eq 0) {
             Write-Error "failOnMinTestsNotRun: No test result files (.trx) were generated"
