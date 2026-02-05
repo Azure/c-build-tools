@@ -239,9 +239,8 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 - **GitHub Repos**: Use GitHub CLI (`gh`) for repository operations (creating PRs, managing issues, etc.)
 
 ### Commenting on PR Threads
-- Prepend `[MrBot]` to any comments made on PR threads to indicate they are from the AI assistant (e.g., `[MrBot] This change looks good!`)
-- Always add a comment when resolving pull request issues or making changes in response to feedback.
-- Short comments such as `[MrBot] removed` or `[MrBot] renamed` are best if the change is simple.
+- Prefix PR comments with `[MrBot]`
+- Keep comments brief (e.g., `[MrBot] removed`, `[MrBot] fixed`)
 
 ## PowerShell Terminal Commands
 
