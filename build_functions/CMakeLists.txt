@@ -28,10 +28,12 @@ endfunction()
 if (MSVC)
     detect_architecture("_M_AMD64" x86_64)
     detect_architecture("_M_IX86" x86)
+    detect_architecture("_M_ARM64" ARM64)
     detect_architecture("_M_ARM" ARM)
 else()
     detect_architecture("__x86_64__" x86_64)
     detect_architecture("__i386__" x86)
+    detect_architecture("__aarch64__" ARM64)
     detect_architecture("__arm__" ARM)
 endif()
 if (NOT DEFINED ARCHITECTURE OR ARCHITECTURE STREQUAL "")
@@ -186,8 +188,14 @@ macro(set_default_build_options)
 
         #add always used flags for the linker:
         # /CETCOMPAT (CET Shadow Stack compatible) https://learn.microsoft.com/en-us/cpp/build/reference/cetcompat. Also mitigates: warning BA2025: 'latency_test_server.exe' does not enable the Control-flow Enforcement Technology (CET) Shadow Stack mitigation. To resolve this issue, pass /CETCOMPAT on the linker command lines.
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
-        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
+        # Note: CETCOMPAT is only supported on x64, not ARM64
+        if (${ARCHITECTURE} STREQUAL "ARM64")
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX")
+            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX")
+        else()
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
+            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4075 /WX /CETCOMPAT")
+        endif()
 
         #Disable incremental linking globally for Debug and RelWithDebInfo
         #This is required for Address Sanitizer to work (https://learn.microsoft.com/en-us/cpp/sanitizers/asan-known-issues?view=msvc-170#incompatible-options)
@@ -210,11 +218,23 @@ macro(set_default_build_options)
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${use_vld}))
-        include_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include")
-        if (${ARCHITECTURE} STREQUAL "x86_64")
-            link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win64")
+        # VLD 2.5.14+ installs to Program Files, VLD 2.5.10 and earlier to Program Files (x86)
+        # Check both locations to support transition period - remove old path check once all repos use VLD 2.5.14+
+        if (EXISTS "$ENV{ProgramFiles}/Visual Leak Detector/include")
+            set(VLD_ROOT "$ENV{ProgramFiles}/Visual Leak Detector")
+        elseif (EXISTS "$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/include")
+            set(VLD_ROOT "$ENV{ProgramFiles\(x86\)}/Visual Leak Detector")
         else()
-            link_directories("$ENV{ProgramFiles\(x86\)}/Visual Leak Detector/lib/Win32")
+            message(FATAL_ERROR "VLD not found in Program Files or Program Files (x86)")
+        endif()
+        message(STATUS "Using VLD from: ${VLD_ROOT}")
+        include_directories("${VLD_ROOT}/include")
+        if (${ARCHITECTURE} STREQUAL "ARM64")
+            link_directories("${VLD_ROOT}/lib/ARM64")
+        elseif (${ARCHITECTURE} STREQUAL "x86_64")
+            link_directories("${VLD_ROOT}/lib/Win64")
+        else()
+            link_directories("${VLD_ROOT}/lib/Win32")
         endif()
     endif()
 
@@ -423,13 +443,20 @@ macro(use_vcpkg vcpkgPath)
             else()
                 set(VCPKG_TARGET_TRIPLET "x64-windows-static-cbt")
             endif()
+        elseif (${ARCHITECTURE} STREQUAL "ARM64")
+            if(${fsanitize_address})
+                set(VCPKG_TARGET_TRIPLET "arm64-windows-static-cbt-asan")
+            else()
+                set(VCPKG_TARGET_TRIPLET "arm64-windows-static-cbt")
+            endif()
         else()
-        if(${fsanitize_address})
-            set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt-asan")
-        else()
-            set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt")
+            # x86 fallback
+            if(${fsanitize_address})
+                set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt-asan")
+            else()
+                set(VCPKG_TARGET_TRIPLET "x86-windows-static-cbt")
+            endif()
         endif()
-    endif()
         include(deps/vcpkg/scripts/buildsystems/vcpkg.cmake)
     endif()
 
@@ -497,4 +524,37 @@ function(add_vld_if_defined DIR)
 
         add_vld_if_defined_impl(${DIR})
     endif()
+endfunction()
+
+# Configure a C# target for native ARM64/x64 code generation
+# This function sets the necessary MSBuild properties for C# projects to produce
+# native binaries instead of IL/AnyCPU binaries.
+#
+# Usage:
+#   add_executable(my_csharp_exe Program.cs)
+#   configure_csharp_native_platform(my_csharp_exe)
+#
+# This sets:
+#   - RuntimeIdentifier: win-x64 or win-arm64 (lowercase required)
+#   - RuntimeIdentifiers: includes base 'win' for NuGet package compatibility
+#   - PlatformTarget: x64 or ARM64 for native code generation
+#
+# Note: NuGet RIDs must be lowercase (win-arm64, not win-ARM64)
+function(configure_csharp_native_platform target_name)
+    # Get lowercase platform name for NuGet RID
+    string(TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFORM_NAME_LOWER)
+    
+    # Set RuntimeIdentifier (lowercase required by NuGet)
+    set_property(TARGET ${target_name}
+        PROPERTY VS_GLOBAL_RuntimeIdentifier "win-${PLATFORM_NAME_LOWER}")
+    
+    # Set RuntimeIdentifiers (includes base 'win' for packages that don't have arch-specific builds)
+    set_property(TARGET ${target_name}
+        PROPERTY VS_GLOBAL_RuntimeIdentifiers "win;win-${PLATFORM_NAME_LOWER}")
+    
+    # Set PlatformTarget for native code generation (preserves case)
+    set_property(TARGET ${target_name}
+        PROPERTY VS_GLOBAL_PlatformTarget "${CMAKE_VS_PLATFORM_NAME}")
+    
+    message(STATUS "Configured ${target_name} for native ${CMAKE_VS_PLATFORM_NAME} (RID: win-${PLATFORM_NAME_LOWER})")
 endfunction()
