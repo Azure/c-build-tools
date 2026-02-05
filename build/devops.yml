@@ -10,6 +10,8 @@ jobs:
     cmake_options: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_e2e_tests:BOOL=ON"
     repo_root_override: $(Build.SourcesDirectory)
     FSANITIZE_TYPE_VALUES: ["OFF"]
+    # c-build-tools doesn't have VSTest-compatible tests, disable minimum test check
+    failOnMinTestsNotRun: false
 
 # srs_extension tests (run once, not per build configuration)
 - job: srs_extension_tests
