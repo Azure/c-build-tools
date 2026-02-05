@@ -1,25 +1,14 @@
-# This template wraps user-provided steps with Linux crash report collection.
-# It follows the same pattern as run_ctests_with_appverifier.yml: accept a
-# stepList parameter, sandwich the user's steps between enable/collect/publish/disable
-# steps, and modify display names to show [crash reports enabled].
-#
-# IMPORTANT: The consuming pipeline must also run `ulimit -c unlimited` in the same
-# shell/step that executes the tests. ulimit is per-process and does NOT persist
-# across pipeline steps. This template only sets kernel.core_pattern (which tells
-# the kernel *where* to write core files); ulimit controls *whether* core files
-# are written at all.
+# This template wraps a test script with Linux crash report collection.
+# It enables core dumps, runs the test script with ulimit -c unlimited,
+# collects any crash dumps, and publishes them as artifacts on failure.
 #
 # Usage:
 #   - template: pipeline_templates/run_with_crash_reports.yml@c_build_tools
 #     parameters:
-#       test_steps:
-#         - task: Bash@3
-#           displayName: 'Build and run tests'
-#           inputs:
-#             targetType: filePath
-#             filePath: './build/linux/build_linux.sh'
-#             arguments: '$(Build.Repository.LocalPath)'
-#             workingDirectory: '$(Build.Repository.LocalPath)'
+#       test_script: |
+#         ./build/linux/build_linux.sh $(Build.Repository.LocalPath)
+#       test_displayName: 'Build and run tests'
+#       test_workingDirectory: '$(Build.Repository.LocalPath)'
 
 parameters:
   - name: crash_reports_directory
@@ -30,9 +19,14 @@ parameters:
     default: 4
   - name: artifact_name
     default: Linux_crash_reports
-  - name: test_steps
-    type: stepList
-    default: []
+  - name: test_script
+    type: string
+  - name: test_displayName
+    type: string
+    default: 'Run tests'
+  - name: test_workingDirectory
+    type: string
+    default: $(Build.SourcesDirectory)
 
 steps:
   # 1. Enable crash reports
@@ -48,15 +42,14 @@ steps:
       echo "Core pattern set to: $(cat /proc/sys/kernel/core_pattern)"
     displayName: 'Enable Linux crash reports'
 
-  # 2. Run user's test steps with display name suffix
-  # see https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops#iterative-insertion
-  - ${{ each step in parameters.test_steps }}:
-    - ${{ each pair in step }}:
-        ${{ if ne(pair.key, 'displayName') }}:
-          ${{ pair.key }}: ${{ pair.value }}
-      displayName: '${{ step.displayName }} [crash reports enabled]'
+  # 2. Run test script with ulimit -c unlimited
+  - bash: |
+      ulimit -c unlimited
+      ${{ parameters.test_script }}
+    workingDirectory: ${{ parameters.test_workingDirectory }}
+    displayName: '${{ parameters.test_displayName }} [crash reports enabled]'
 
-  # 3. Collect crash reports (runs always, even on failure/cancel)
+  # 3. Collect crash reports (runs always, even on failure)
   - bash: |
       crash_dir="${{ parameters.crash_reports_directory }}"
       mkdir -p "$crash_dir"
@@ -90,14 +83,14 @@ steps:
     displayName: 'Collect Linux crash reports'
     condition: always()
 
-  # 4. Publish crash reports (only on failure/cancel)
+  # 4. Publish crash reports (only on failure)
   - task: PublishBuildArtifacts@1
     displayName: 'Publish crash reports'
     inputs:
       pathtoPublish: '${{ parameters.crash_reports_directory }}'
       artifactName: '${{ parameters.artifact_name }}'
       parallel: true
-    condition: failed()
+    condition: or(failed(), canceled())
     continueOnError: true
 
   # 5. Restore default core dump settings (runs always)

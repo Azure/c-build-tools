@@ -32,8 +32,8 @@ This folder contains pipeline yml templates for devops pipelines.
   - It runs Sarif results checker to verify that there are no errors and fails the build
   - Runs SarifBob to pretty print all the errors in the Sarif in case of failures.
 - run_with_crash_reports.yml
-  - Wraps user-provided test steps with Linux crash report collection (enable, collect, publish, disable).
-  - Follows the same pattern as `run_ctests_with_appverifier.yml`: accepts a `stepList` and sandwiches steps between enable/disable.
+  - Wraps a test script with Linux crash report collection (enable, run with ulimit, collect, publish, disable).
+  - Automatically injects `ulimit -c unlimited` before running the test script.
   - Test step display names get the suffix `[crash reports enabled]`.
 - enable_linux_crash_reports.yml
   - Sets `kernel.core_pattern` to write core files to the crash reports directory.
@@ -144,14 +144,14 @@ See [Cuzz](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/ap
 
 ### run_with_crash_reports.yml
 
-This template wraps user-provided steps with Linux crash report collection. It follows the same pattern as `run_ctests_with_appverifier.yml`:
+This template wraps a test script with Linux crash report collection:
 1. Enable crash reports (`kernel.core_pattern` + directory setup)
-2. Run any steps in the specified steps list (name will say "[crash reports enabled]")
+2. Run the test script with `ulimit -c unlimited` automatically injected (name will say "[crash reports enabled]")
 3. Collect core files from the crash reports directory and build directory
 4. Publish crash reports as artifacts (only on failure/cancel)
 5. Restore default `kernel.core_pattern`
 
-**Important**: `ulimit -c unlimited` must be run in the **same shell/step** that executes the tests. The template only sets `core_pattern`; `ulimit` controls whether core files are written.
+The template automatically injects `ulimit -c unlimited` before your test script, so you don't need to manage it yourself.
 
 Example usage:
 
@@ -160,14 +160,10 @@ Example usage:
   - template: pipeline_templates/run_with_crash_reports.yml@c_build_tools
     parameters:
       build_directory: $(Build.Repository.LocalPath)/cmake_linux
-      test_steps:
-        - task: Bash@3
-          displayName: 'Build and run tests'
-          inputs:
-            targetType: filePath
-            filePath: './build/linux/build_linux.sh'
-            arguments: '$(Build.Repository.LocalPath)'
-            workingDirectory: '$(Build.Repository.LocalPath)'
+      test_script: |
+        ./build/linux/build_linux.sh $(Build.Repository.LocalPath)
+      test_displayName: 'Build and run tests'
+      test_workingDirectory: '$(Build.Repository.LocalPath)'
 ```
 
 Parameters:
@@ -175,7 +171,9 @@ Parameters:
 - `build_directory`: Directory to search for core files (default: `$(Build.SourcesDirectory)`)
 - `search_depth`: How deep to search for core files (default: 4)
 - `artifact_name`: Name for the published artifact (default: `Linux_crash_reports`)
-- `test_steps`: A `stepList` of steps to run between enable and collect/disable
+- `test_script`: The test script to run (required, string)
+- `test_displayName`: Display name for the test step (default: `Run tests`)
+- `test_workingDirectory`: Working directory for the test script (default: `$(Build.SourcesDirectory)`)
 
 ### Linux crash report templates (standalone)
 
