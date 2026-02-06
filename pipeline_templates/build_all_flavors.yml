@@ -58,7 +58,8 @@ jobs:
     - ${{ each BUILD_CONFIGURATION_TYPE in parameters.BUILD_CONFIGURATION_TYPE_VALUES }}:
       - ${{ each ARCH_TYPE in parameters.ARCH_TYPE_VALUES }}:
         # there is no point in running jemalloc and fsanitize, so that combination is excluded
-        - ${{ if or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')) }}:
+        # jemalloc does not support ARM64 on Windows (project archived, no _M_ARM64 support), so that combination is excluded
+        - ${{ if and( or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')), or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(ARCH_TYPE, 'ARM64'))) }}:
           - template: build_and_run_tests.yml
             parameters:
               BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}
