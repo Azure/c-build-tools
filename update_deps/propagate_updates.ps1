@@ -61,6 +61,7 @@ param(
 
 # Source helper scripts
 $helper_scripts = "$PSScriptRoot\helper_scripts"
+. "$helper_scripts\check_powershell_version.ps1"
 . "$helper_scripts\check_script_update.ps1"
 . "$helper_scripts\install_az_cli.ps1"
 . "$helper_scripts\install_gh_cli.ps1"
@@ -121,6 +122,9 @@ function propagate-updates
 {
     # Save original directory to restore at exit
     Push-Location
+
+    # Check PowerShell version first
+    check-powershell-version
 
     # Check for script updates before starting
     check-for-script-updates -script_root $PSScriptRoot
