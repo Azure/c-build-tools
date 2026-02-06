@@ -38,7 +38,7 @@ function update-repo-github
     set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $fn_result
 
     # Small wait to ensure PR is fully created before triggering pipeline
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 30
     $null = gh pr comment --body "/AzurePipelines run"
     Write-Host "Waiting for checks to start"
     Start-Sleep -Seconds 120

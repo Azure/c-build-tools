@@ -61,6 +61,7 @@ param(
 
 # Source helper scripts
 $helper_scripts = "$PSScriptRoot\helper_scripts"
+. "$helper_scripts\check_script_update.ps1"
 . "$helper_scripts\install_az_cli.ps1"
 . "$helper_scripts\install_gh_cli.ps1"
 . "$helper_scripts\repo_order_cache.ps1"
@@ -120,6 +121,9 @@ function propagate-updates
 {
     # Save original directory to restore at exit
     Push-Location
+
+    # Check for script updates before starting
+    check-for-script-updates -script_root $PSScriptRoot
 
     check-az-cli-exists -pat_token $azure_token
     check-gh-cli-exists
