@@ -55,14 +55,30 @@ function update-repo-github
     }
 
     Write-Host "Merging PR"
-    $null = gh pr merge --squash --delete-branch
-    if($LASTEXITCODE -ne 0)
+    $merge_success = $false
+    $max_retries = 3
+    $retry_delay = 30
+
+    for ($i = 1; $i -le $max_retries; $i++)
     {
-        fail-with-status "Failed to merge PR for repo $repo_name"
+        $null = gh pr merge --squash --delete-branch 2>&1
+        if ($LASTEXITCODE -eq 0)
+        {
+            $merge_success = $true
+            Write-Host "PR merged successfully" -ForegroundColor Green
+            break
+        }
+
+        if ($i -lt $max_retries)
+        {
+            Write-Host "Merge attempt $i failed, retrying in $retry_delay seconds..." -ForegroundColor Yellow
+            Start-Sleep -Seconds $retry_delay
+        }
     }
-    else
+
+    if (-not $merge_success)
     {
-        Write-Host "PR merged successfully" -ForegroundColor Green
+        fail-with-status "Failed to merge PR for repo $repo_name after $max_retries attempts"
     }
     # Wait for merge to complete
     Start-Sleep -Seconds 10

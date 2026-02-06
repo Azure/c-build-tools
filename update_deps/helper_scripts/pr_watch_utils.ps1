@@ -114,6 +114,7 @@ function global:convert-azure-status-to-normalized
     {
         "approved"   { $result = [PrCheckStatus]::Succeeded }
         "succeeded"  { $result = [PrCheckStatus]::Succeeded }
+        "partiallysucceeded" { $result = [PrCheckStatus]::Succeeded }
         "rejected"   { $result = [PrCheckStatus]::Failed }
         "failed"     { $result = [PrCheckStatus]::Failed }
         "running"    { $result = [PrCheckStatus]::Running }
