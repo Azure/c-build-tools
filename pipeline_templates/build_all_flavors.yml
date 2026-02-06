@@ -14,7 +14,8 @@ parameters:
   # ARCH_TYPE_VALUES - architectures to build. ARM64 builds are optional (non-blocking).
   - name: ARCH_TYPE_VALUES
     type: object
-    default: ["x64", "ARM64"]
+    # TODO: Add "ARM64" back to the default once all repos build on ARM64
+    default: ["x64"]
 
   # BUILD_CONFIGURATION_TYPE_VALUES is a list of build configurations to be used in the pipeline
   - name: BUILD_CONFIGURATION_TYPE_VALUES
