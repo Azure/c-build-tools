@@ -23,6 +23,7 @@ function initialize-repo-status
     )
     $global:repo_order_list = $repos
     $global:repo_status = @{}
+    $global:current_repo = ""
     foreach($repo in $repos)
     {
         $global:repo_status[$repo] = @{
@@ -222,10 +223,10 @@ function show-propagation-status
         Write-Host "========================================" -ForegroundColor Cyan
 
         # Summary counts
-        $updated = ($global:repo_status.Values | Where-Object { $_.Status -eq $script:STATUS_UPDATED }).Count
-        $skipped = ($global:repo_status.Values | Where-Object { $_.Status -eq $script:STATUS_SKIPPED }).Count
-        $failed = ($global:repo_status.Values | Where-Object { $_.Status -eq $script:STATUS_FAILED }).Count
-        $pending = ($global:repo_status.Values | Where-Object { $_.Status -eq $script:STATUS_PENDING }).Count
+        $updated = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_UPDATED }).Count
+        $skipped = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_SKIPPED }).Count
+        $failed = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_FAILED }).Count
+        $pending = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_PENDING }).Count
 
         Write-Host ""
         Write-Host "Summary: " -NoNewline
