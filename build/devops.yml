@@ -56,7 +56,6 @@ jobs:
     parameters:
       build_directory: $(Build.Repository.LocalPath)/cmake_linux
       test_script: |
-        chmod +x ./build/linux/build_linux.sh
         ./build/linux/build_linux.sh $(Build.Repository.LocalPath)
       test_displayName: 'Build and run tests'
       test_workingDirectory: '$(Build.Repository.LocalPath)'
