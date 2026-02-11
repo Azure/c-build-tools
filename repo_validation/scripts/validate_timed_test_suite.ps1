@@ -10,7 +10,7 @@
     versions of TEST_SUITE_INITIALIZE and TEST_SUITE_CLEANUP macros. The timed macros
     (TIMED_TEST_SUITE_INITIALIZE / TIMED_TEST_SUITE_CLEANUP) wrap the vanilla versions
     with a process watchdog that crashes the process and produces a dump on timeout,
-    preventing integration tests from hanging CI pipelines indefinitely.
+    allowing dumps to be collected if the test hangs.
 
     The script automatically excludes dependency directories to avoid modifying third-party code.
 
@@ -233,8 +233,8 @@ if ($filesWithViolations.Count -gt 0 -and -not $Fix) {
 
     Write-Host ""
     Write-Host "Integration tests should use TIMED_TEST_SUITE_INITIALIZE and" -ForegroundColor Cyan
-    Write-Host "TIMED_TEST_SUITE_CLEANUP from c_pal/timed_test_suite.h to prevent" -ForegroundColor Cyan
-    Write-Host "tests from hanging CI pipelines indefinitely." -ForegroundColor Cyan
+    Write-Host "TIMED_TEST_SUITE_CLEANUP from c_pal/timed_test_suite.h to allow" -ForegroundColor Cyan
+    Write-Host "dumps to be collected if the test hangs." -ForegroundColor Cyan
     Write-Host ""
     Write-Host "To fix these files automatically, run with -Fix parameter." -ForegroundColor Cyan
     Write-Host ""

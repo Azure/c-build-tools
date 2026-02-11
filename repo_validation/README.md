@@ -596,7 +596,7 @@ Test functions with violations: 2
 
 **Rationale:** The timed macros (from `c_pal/timed_test_suite.h`) wrap the vanilla versions with a process watchdog that:
 - Crashes the process and produces a dump on timeout
-- Prevents integration tests from hanging CI pipelines indefinitely
+- Allows dumps to be collected if the test hangs
 - Provides diagnostic information when tests take too long
 
 **Exclusions:**
