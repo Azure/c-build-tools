@@ -588,6 +588,45 @@ Test functions with violations: 2
 [VALIDATION FAILED]
 ```
 
+### Timed Test Suite Validation
+
+**Script:** `scripts/validate_timed_test_suite.ps1`
+
+**Purpose:** Ensures that integration test files (`*_int.c`) use `TIMED_TEST_SUITE_INITIALIZE` and `TIMED_TEST_SUITE_CLEANUP` macros instead of the vanilla `TEST_SUITE_INITIALIZE` / `TEST_SUITE_CLEANUP`.
+
+**Rationale:** The timed macros (from `c_pal/timed_test_suite.h`) wrap the vanilla versions with a process watchdog that:
+- Crashes the process and produces a dump on timeout
+- Prevents integration tests from hanging CI pipelines indefinitely
+- Provides diagnostic information when tests take too long
+
+**Exclusions:**
+- Default exclusions (if not customized): `deps`, `cmake`
+- Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
+
+**File Types Checked:** Integration test files matching pattern `*_int.c`
+
+**Detection:** The script scans for `TEST_SUITE_INITIALIZE(` or `TEST_SUITE_CLEANUP(` that are NOT preceded by `TIMED_`:
+- `TEST_SUITE_INITIALIZE(suite_init)` - violation
+- `TIMED_TEST_SUITE_INITIALIZE(suite_init, TIMED_TEST_DEFAULT_TIMEOUT_MS)` - correct
+- Reports the line number and content of each violation
+
+**Exemption Pattern:** Files can be exempted by adding `// no-timed-test-suite` on any matching line:
+```c
+TEST_SUITE_INITIALIZE(suite_init) // no-timed-test-suite
+```
+
+**Fix Mode:** When run with `-Fix` parameter, the script automatically:
+- Replaces `TEST_SUITE_INITIALIZE(name` with `TIMED_TEST_SUITE_INITIALIZE(name, TIMED_TEST_DEFAULT_TIMEOUT_MS` (inserts timeout as 2nd arg)
+- Replaces `TEST_SUITE_CLEANUP(` with `TIMED_TEST_SUITE_CLEANUP(`
+- Adds `#include "c_pal/timed_test_suite.h"` after the last existing `#include` line if not already present
+- Preserves file encoding (uses UTF-8 without BOM)
+- **Does not modify any files in excluded directories**
+
+**Manual Fix Options:**
+- Replace `TEST_SUITE_INITIALIZE(name)` with `TIMED_TEST_SUITE_INITIALIZE(name, TIMED_TEST_DEFAULT_TIMEOUT_MS)`
+- Replace `TEST_SUITE_CLEANUP(name)` with `TIMED_TEST_SUITE_CLEANUP(name)`
+- Add `#include "c_pal/timed_test_suite.h"` to the include section
+
 ## Adding New Validations
 
 To add a new validation script:
@@ -732,6 +771,7 @@ cmake --build build --target test_validate_srs_consistency
 cmake --build build --target test_validate_requirements_naming
 cmake --build build --target test_validate_enable_mocks
 cmake --build build --target test_validate_aaa_comments
+cmake --build build --target test_validate_timed_test_suite
 
 # Or use CTest to run all tests
 cd build && ctest -C Debug
@@ -803,6 +843,16 @@ tests/
         ├── test_missing_assert_ut.c
         ├── test_wrong_order_ut.c
         └── test_no_aaa_ut.c
+├── validate_timed_test_suite/       # Timed test suite validation tests
+    ├── CMakeLists.txt
+    ├── has_violations/               # Files with non-timed macros
+    │   ├── sample_module_int.c
+    │   ├── multi_arg_int.c
+    │   └── multi_arg_int_expected.c
+    └── no_violations/                # Files already using timed macros
+        ├── timed_module_int.c
+        ├── exempted_module_int.c
+        └── no_init_int.c
 ```
 
 ### Test Types
