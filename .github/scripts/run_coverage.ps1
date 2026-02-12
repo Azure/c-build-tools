@@ -145,12 +145,14 @@ Write-Host "`n=== Parsing coverage report ===" -ForegroundColor Cyan
 
 $allClasses = $xml.coverage.packages.package.classes.class
 
-# Apply source filter
+# Apply source filter (normalize path separators so forward-slash patterns match backslash paths in XML)
 if ($SourceFilter -and $SourceFilter.Count -gt 0) {
     $filtered = @()
     foreach ($cls in $allClasses) {
+        $normalizedFilename = $cls.filename -replace '\\', '/'
         foreach ($pat in $SourceFilter) {
-            if ($cls.filename -like $pat) {
+            $normalizedPat = $pat -replace '\\', '/'
+            if ($normalizedFilename -like $normalizedPat) {
                 $filtered += $cls
                 break
             }
