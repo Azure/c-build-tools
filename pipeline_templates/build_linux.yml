@@ -1,0 +1,117 @@
+parameters:
+  - name: cmake_options
+    type: string
+    default: '-Drun_valgrind:BOOL=ON -Drun_unittests:BOOL=ON -Drun_int_tests:BOOL=ON'
+  - name: ctest_exclude_regex
+    type: string
+    default: ''
+
+jobs:
+- job: linuxubuntu
+  displayName: 'Build Linux Ubuntu'
+  variables:
+    Codeql.Enabled: false
+    crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
+  pool:
+    name: Azure-MsgStore-Linux2204BuildMachinePool
+    demands:
+      - linux
+  workspace:
+    clean: all
+  steps:
+  - bash: |
+      pushd $(Build.Repository.LocalPath)
+      git submodule update --init
+      git submodule foreach --recursive "git clean -xdff"
+      git clean -xdff
+      popd
+    workingDirectory: '$(Build.Repository.LocalPath)'
+    displayName: 'git submodule update and clean'
+
+  # Enable crash reports
+  - bash: |
+      mkdir -p "$(crash_reports_directory)"
+      echo "Crash reports directory created: $(crash_reports_directory)"
+      sudo sysctl -w kernel.core_pattern="$(crash_reports_directory)/core.%e.%p.%t"
+      echo "Core pattern set to: $(cat /proc/sys/kernel/core_pattern)"
+    displayName: 'Enable Linux crash reports'
+
+  # Build and run tests with crash reports enabled
+  - bash: |
+      ulimit -c unlimited
+      set -e
+      build_root="$(Build.Repository.LocalPath)"
+      build_folder="$build_root/cmake_linux"
+      CORES=$(grep -c ^processor /proc/cpuinfo 2>/dev/null || sysctl -n hw.ncpu)
+      rm -rf "$build_folder"
+      mkdir -p "$build_folder"
+      cd "$build_folder"
+      cmake ${{ parameters.cmake_options }} "$build_root"
+      make --jobs=$CORES
+      EXCLUDE_REGEX="${{ parameters.ctest_exclude_regex }}"
+      if [ -n "$EXCLUDE_REGEX" ]; then
+        ctest -j $CORES --output-on-failure -E "$EXCLUDE_REGEX"
+      else
+        ctest -j $CORES --output-on-failure
+      fi
+    workingDirectory: '$(Build.Repository.LocalPath)'
+    displayName: 'Build and run tests [crash reports enabled]'
+
+  # Collect crash reports (runs always, even on failure)
+  - bash: |
+      crash_dir="$(crash_reports_directory)"
+      mkdir -p "$crash_dir"
+
+      echo "=== Collecting Linux crash reports ==="
+
+      echo "Core files already in crash directory:"
+      ls -la "$crash_dir"/core.* 2>/dev/null || echo "  (none)"
+
+      if [ -d /var/crash ]; then
+          echo "Checking /var/crash..."
+          ls -la /var/crash/ 2>/dev/null || true
+          cp -r /var/crash/* "$crash_dir/" 2>/dev/null || true
+      fi
+
+      echo "Searching for core files in $(Build.Repository.LocalPath)/cmake_linux..."
+      find "$(Build.Repository.LocalPath)/cmake_linux" -maxdepth 4 -name "core*" -type f \
+          -exec cp {} "$crash_dir/" \; 2>/dev/null || true
+
+      echo "=== All files collected ==="
+      ls -la "$crash_dir/" 2>/dev/null || echo "No crash reports found"
+
+      echo "Crash report collection completed at $(date)" > "$crash_dir/collection_info.txt"
+      echo "Build directory searched: $(Build.Repository.LocalPath)/cmake_linux" >> "$crash_dir/collection_info.txt"
+      echo "Search depth: 4" >> "$crash_dir/collection_info.txt"
+    displayName: 'Collect Linux crash reports'
+    condition: always()
+
+  # Publish crash reports (only on failure)
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish crash reports'
+    inputs:
+      pathtoPublish: '$(crash_reports_directory)'
+      artifactName: 'Linux_crash_reports'
+      parallel: true
+    condition: failed()
+    continueOnError: true
+
+  # Restore default core dump settings (runs always)
+  - bash: |
+      if [ -f /usr/share/apport/apport ]; then
+          sudo sysctl -w kernel.core_pattern="|/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -- %E"
+      else
+          sudo sysctl -w kernel.core_pattern="core"
+      fi
+      echo "Core pattern restored to: $(cat /proc/sys/kernel/core_pattern)"
+    displayName: 'Disable Linux crash reports'
+    condition: always()
+    continueOnError: true
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Linux Artifacts'
+    inputs:
+      pathtoPublish: $(Build.BinariesDirectory)
+      artifactName: Linux_artifacts
+      parallel: true
+    condition: failed()

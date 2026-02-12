@@ -31,6 +31,20 @@ This folder contains pipeline yml templates for devops pipelines.
   - Finalize portion of CodeQL3000 (build steps should be between the `codeql3000_init` and `codeql3000_finalize` wrappers).
   - It runs Sarif results checker to verify that there are no errors and fails the build
   - Runs SarifBob to pretty print all the errors in the Sarif in case of failures.
+- run_with_crash_reports.yml
+  - Wraps a test script with Linux crash report collection (enable, run with ulimit, collect, publish, disable).
+  - Automatically injects `ulimit -c unlimited` before running the test script.
+  - Test step display names get the suffix `[crash reports enabled]`.
+- enable_linux_crash_reports.yml
+  - Sets `kernel.core_pattern` to write core files to the crash reports directory.
+  - Creates the crash reports output directory.
+  - Run this BEFORE tests to ensure core dumps are captured.
+- collect_linux_crash_reports.yml
+  - Collects crash reports from the crash reports directory, `/var/crash` (Ubuntu apport system), and core files from the build directory.
+  - Publishes collected crash reports as build artifacts on failure (uses `condition: failed()`).
+- disable_linux_crash_reports.yml
+  - Restores default `kernel.core_pattern`.
+  - Run this AFTER collecting crash reports to clean up system-level changes.
 
 ## How to Consume
 
@@ -127,3 +141,86 @@ See [Cuzz](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/ap
            arguments: '-C "${{ parameters.test_configuration }}" -R my_test_1 -V --output-on-failure --no-tests=error -j $(NUMBER_OF_PROCESSORS)'
            workingFolder: $(Build.BinariesDirectory)\c
 ```
+
+### run_with_crash_reports.yml
+
+This template wraps a test script with Linux crash report collection:
+1. Enable crash reports (`kernel.core_pattern` + directory setup)
+2. Run the test script with `ulimit -c unlimited` automatically injected (name will say "[crash reports enabled]")
+3. Collect core files from the crash reports directory and build directory
+4. Publish crash reports as artifacts (only on failure/cancel)
+5. Restore default `kernel.core_pattern`
+
+The template automatically injects `ulimit -c unlimited` before your test script, so you don't need to manage it yourself.
+
+Example usage:
+
+```yaml
+  steps:
+  - template: pipeline_templates/run_with_crash_reports.yml@c_build_tools
+    parameters:
+      build_directory: $(Build.Repository.LocalPath)/cmake_linux
+      test_script: |
+        ./build/linux/build_linux.sh $(Build.Repository.LocalPath)
+      test_displayName: 'Build and run tests'
+      test_workingDirectory: '$(Build.Repository.LocalPath)'
+```
+
+Parameters:
+- `crash_reports_directory`: Directory to store crash reports (default: `$(Build.ArtifactStagingDirectory)/crash_reports`)
+- `build_directory`: Directory to search for core files (default: `$(Build.SourcesDirectory)`)
+- `search_depth`: How deep to search for core files (default: 4)
+- `artifact_name`: Name for the published artifact (default: `Linux_crash_reports`)
+- `test_script`: The test script to run (required, string)
+- `test_displayName`: Display name for the test step (default: `Run tests`)
+- `test_workingDirectory`: Working directory for the test script (default: `$(Build.SourcesDirectory)`)
+
+### Linux crash report templates (standalone)
+
+Three standalone templates work together to capture Linux crash dumps in CI pipelines for consumers who need custom flows:
+- `enable_linux_crash_reports.yml` - sets `kernel.core_pattern` to write core files to the crash reports directory
+- `collect_linux_crash_reports.yml` - collects core files and publishes as artifacts
+- `disable_linux_crash_reports.yml` - restores default core dump settings
+
+The enable template sets `kernel.core_pattern` (a system-level kernel setting) so core dumps are written to a known directory. The disable template restores the default `core_pattern` afterward.
+
+**Important**: `ulimit -c unlimited` must be run in the **same shell/step** that executes the tests. `ulimit` is per-process and does not persist across pipeline steps. The enable template only sets `core_pattern` (which tells the kernel *where* to write core files); `ulimit` controls *whether* core files are written at all.
+
+Example usage in a Linux job:
+
+```yaml
+  steps:
+  # Enable core dumps before running tests
+  - template: pipeline_templates/enable_linux_crash_reports.yml@c_build_tools
+    parameters:
+      crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
+
+  # Run tests (ulimit -c unlimited must be in the same shell that runs tests)
+  - bash: |
+      ulimit -c unlimited
+      ctest -j $(nproc) --output-on-failure
+    displayName: 'Run tests'
+    workingDirectory: $(Build.SourcesDirectory)/cmake_linux
+
+  # Collect and publish crash reports
+  - template: pipeline_templates/collect_linux_crash_reports.yml@c_build_tools
+    parameters:
+      crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
+      build_directory: $(Build.SourcesDirectory)/cmake_linux
+      search_depth: 4
+      artifact_name: Linux_crash_reports
+
+  # Restore default core dump settings
+  - template: pipeline_templates/disable_linux_crash_reports.yml@c_build_tools
+```
+
+Parameters for `enable_linux_crash_reports.yml`:
+- `crash_reports_directory`: Directory to store crash reports (default: `$(Build.ArtifactStagingDirectory)/crash_reports`)
+
+Parameters for `collect_linux_crash_reports.yml`:
+- `crash_reports_directory`: Directory where crash reports are stored (default: `$(Build.ArtifactStagingDirectory)/crash_reports`)
+- `build_directory`: Directory to search for core files (default: `$(Build.SourcesDirectory)`)
+- `search_depth`: How deep to search for core files (default: 4)
+- `artifact_name`: Name for the published artifact (default: `Linux_crash_reports`)
+
+`disable_linux_crash_reports.yml` has no parameters.

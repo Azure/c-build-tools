@@ -1,0 +1,144 @@
+# Template: MSBuild Wrapper
+# Wraps MSBuild@1 task with ARM64 native support
+#
+# On x64/x86: Uses the standard MSBuild@1 task
+# On ARM64: Uses native MSBuild.exe via PowerShell to avoid x86 emulation
+#
+# Prerequisites:
+#   - discover_native_tools.yml must be called first to set $(msbuildPath), $(targetPlatform)
+#
+# Usage:
+#   - template: tasks/msbuild.yml@c_build_tools
+#     parameters:
+#       architecture: 'ARM64'
+#       solution: '$(Build.BinariesDirectory)/build/*.sln'
+#       configuration: 'Release'
+#       msbuildArgs: '/t:restore /t:build'
+
+parameters:
+  - name: architecture
+    type: string
+    default: 'x64'
+    values:
+      - 'x64'
+      - 'x86'
+      - 'ARM64'
+
+  - name: solution
+    type: string
+
+  - name: configuration
+    type: string
+    default: 'Debug'
+
+  - name: msbuildArgs
+    type: string
+    default: ''
+
+  - name: maximumCpuCount
+    type: boolean
+    default: true
+
+  - name: restoreNuGetPackages
+    type: boolean
+    default: false
+
+  - name: displayName
+    type: string
+    default: ''
+
+  - name: condition
+    type: string
+    default: 'succeeded()'
+
+  - name: continueOnError
+    type: boolean
+    default: false
+
+steps:
+  # x64/x86: Use standard MSBuild@1 task
+  - ${{ if ne(parameters.architecture, 'ARM64') }}:
+    - task: MSBuild@1
+      displayName: ${{ coalesce(parameters.displayName, format('MSBuild ({0} {1})', parameters.architecture, parameters.configuration)) }}
+      condition: ${{ parameters.condition }}
+      continueOnError: ${{ parameters.continueOnError }}
+      inputs:
+        solution: '${{ parameters.solution }}'
+        platform: '$(targetPlatform)'
+        configuration: '${{ parameters.configuration }}'
+        msbuildArguments: '${{ parameters.msbuildArgs }}'
+        maximumCpuCount: ${{ parameters.maximumCpuCount }}
+        restoreNugetPackages: ${{ parameters.restoreNuGetPackages }}
+
+  # ARM64: Use native MSBuild.exe via PowerShell
+  - ${{ if eq(parameters.architecture, 'ARM64') }}:
+    - task: PowerShell@2
+      displayName: ${{ coalesce(parameters.displayName, format('MSBuild ({0} {1})', parameters.architecture, parameters.configuration)) }}
+      condition: ${{ parameters.condition }}
+      continueOnError: ${{ parameters.continueOnError }}
+      inputs:
+        targetType: 'inline'
+        script: |
+          $solutionPattern = "${{ parameters.solution }}"
+          $configuration = "${{ parameters.configuration }}"
+          $msbuildArgs = "${{ parameters.msbuildArgs }}"
+          $maxCpuCount = [bool]::Parse("${{ parameters.maximumCpuCount }}")
+          $restoreNuget = [bool]::Parse("${{ parameters.restoreNuGetPackages }}")
+          
+          Write-Host "============================================================"
+          Write-Host "MSBuild (ARM64 Native)"
+          Write-Host "============================================================"
+          Write-Host "MSBuild:       $(msbuildPath)"
+          Write-Host "Platform:      $(targetPlatform)"
+          Write-Host "Configuration: $configuration"
+          Write-Host "Solution:      $solutionPattern"
+          Write-Host "Args:          $msbuildArgs"
+          Write-Host "============================================================"
+          
+          # Find solution file(s)
+          $solutions = Get-ChildItem -Path $solutionPattern -ErrorAction SilentlyContinue
+          if ($null -eq $solutions -or $solutions.Count -eq 0) {
+            # Try to resolve as a glob pattern
+            $parentDir = Split-Path -Parent $solutionPattern
+            $pattern = Split-Path -Leaf $solutionPattern
+            if ($parentDir -and (Test-Path $parentDir)) {
+              $solutions = Get-ChildItem -Path $parentDir -Filter $pattern -ErrorAction SilentlyContinue
+            }
+          }
+          
+          if ($null -eq $solutions -or $solutions.Count -eq 0) {
+            Write-Error "No solution files found matching: $solutionPattern"
+            exit 1
+          }
+          
+          foreach ($sln in $solutions) {
+            Write-Host ""
+            Write-Host "Building: $($sln.FullName)"
+            
+            $args = @($sln.FullName)
+            $args += "/p:Configuration=$configuration"
+            $args += "/p:Platform=$(targetPlatform)"
+            
+            if ($maxCpuCount) {
+              $args += "/m"
+            }
+            
+            if ($restoreNuget) {
+              $args += "/restore"
+            }
+            
+            if ($msbuildArgs) {
+              $args += ($msbuildArgs -split ' ' | Where-Object { $_ -ne '' })
+            }
+            
+            Write-Host "Executing: `"$(msbuildPath)`" $($args -join ' ')"
+            & "$(msbuildPath)" @args
+            
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "MSBuild failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+            }
+          }
+          
+          Write-Host ""
+          Write-Host "MSBuild completed successfully"
