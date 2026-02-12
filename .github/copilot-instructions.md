@@ -222,10 +222,22 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 - Focus on what changed, not how it changed
 - Example: `Fix null pointer crash in block_storage_append_async`
 
+### Target Branch
+- **Default branch**: Always create PRs targeting `master` (not `main`)
+
+### Pull Request Titles
+- **AI-Generated PRs**: When creating a pull request, prepend `[MrBot]` to the title (e.g., `[MrBot] Fix null pointer crash in storage module`)
+
 ### Pull Request Descriptions
 - Keep PR descriptions brief and to the point
 - Summarize the change in 1-2 sentences
 - Include relevant work item or issue references if applicable
+
+### Starting Builds on GitHub PRs
+- **Trigger builds**: After creating a PR, add a comment with `/azp run <pipeline-name>` to start the CI build
+  - For **c-build-tools** repo: `/azp run Azure-C-Build-Tools-Gate`
+  - For other repos: Check the repo's pipeline configuration or ask a team member for the correct pipeline name
+- Builds do not start automatically; the comment is required
 
 ### Repository-Specific Tooling
 - **Azure DevOps Repos**: Use the ADO MCP (Model Context Protocol) tools when available for repository operations (creating branches, PRs, managing work items)

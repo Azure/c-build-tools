@@ -6,5 +6,6 @@ steps:
 
 - task: NuGetToolInstaller@1
   displayName: 'Use NuGet 6.2'
+  continueOnError: true
   inputs:
     versionSpec: 6.2.*
