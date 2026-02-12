@@ -620,11 +620,11 @@ switch (result)
     default:
         LogError("unknown result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
         break;
-    case RESULT_OK:
-        // handle OK
-        break;
     case RESULT_ERROR:
         // handle error
+        break;
+    case RESULT_OK:
+        // handle OK
         break;
 }
 
