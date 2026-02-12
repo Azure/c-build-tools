@@ -55,7 +55,7 @@ Use the ADO MCP tools to approve. Follow these steps:
 5. **Submit the approval vote**:
    - No MCP tool supports setting reviewer votes directly, so use `Bash` with `az rest`:
      ```bash
-     pwsh -NoLogo -NoProfile -NonInteractive -InputFormat None -ExecutionPolicy Bypass -Command "az rest --method PUT --url 'https://dev.azure.com/{org}/{project}/_apis/git/repositories/{repoId}/pullrequests/{prId}/reviewers/{reviewerId}?api-version=7.0' --body '{\"vote\": 10}' --headers 'Content-Type=application/json' --resource '499b84ac-1321-427f-aa17-267ca6975798'"
+     az rest --method PUT --url "https://dev.azure.com/{org}/{project}/_apis/git/repositories/{repoId}/pullrequests/{prId}/reviewers/{reviewerId}?api-version=7.0" --body "{\"vote\": 10}" --headers "Content-Type=application/json" --resource "499b84ac-1321-427f-aa17-267ca6975798"
      ```
    - **IMPORTANT**: The `--resource '499b84ac-1321-427f-aa17-267ca6975798'` parameter is required for Azure DevOps authentication with `az rest`. Without it, the command fails to acquire an access token.
 
