@@ -36,26 +36,6 @@ jobs:
   parameters:
     repo_root: $(Build.SourcesDirectory)
 
-- job: linuxubuntu
-  displayName: 'Build Linux Ubuntu 22.04'
-  pool:
-    name: Azure-MsgStore-Linux2204BuildMachinePool
-    demands:
-    - linux
-  steps:
-  - bash: |
-     pushd $(Build.Repository.LocalPath)
-     git submodule update --init
-     git submodule foreach --recursive "git clean -xdff"
-     git clean -xdff
-     popd
-    workingDirectory: '$(Build.Repository.LocalPath)'
-    displayName: 'git submodule update and clean'
-
-  - task: Bash@3
-    displayName: 'Build and run tests'
-    inputs:
-      targetType: filePath
-      filePath: './build/linux/build_linux.sh'
-      arguments: '$(Build.Repository.LocalPath)'
-      workingDirectory: '$(Build.Repository.LocalPath)'
+- template: /pipeline_templates/build_linux.yml
+  parameters:
+    cmake_options: '-Drun_valgrind:BOOL=ON -Drun_helgrind:BOOL=ON -Drun_drd:BOOL=ON -Drun_int_tests:bool=ON -Drun_perf_tests:bool=ON -Drun_e2e_tests:BOOL=ON'
