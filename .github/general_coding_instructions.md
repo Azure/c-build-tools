@@ -609,6 +609,97 @@ else
 
 ## Additional Conventions {#additional-conventions}
 
+### Switch Statement Structure
+- **Always place `default:` case LAST** in switch statements, after all named cases
+- This provides consistent structure and makes it clear which cases are explicitly handled
+
+```c
+// CORRECT - default at end
+switch (result)
+{
+    case RESULT_OK:
+        // handle OK
+        break;
+    case RESULT_ERROR:
+        // handle error
+        break;
+    default:
+        LogError("unknown result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+        break;
+}
+
+// INCORRECT - default in middle or first
+switch (result)
+{
+    default:
+        LogError("unknown result");
+        break;
+    case RESULT_OK:
+        // ...
+}
+```
+
+### Error-First Pattern in If/Else
+When checking operation results, check for the error case FIRST, then handle success in else:
+
+```c
+// CORRECT - error first
+if (result != RESULT_OK)
+{
+    LogError("operation failed with result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+    // error handling
+}
+else
+{
+    // success path
+}
+
+// AVOID - success first (less common pattern)
+if (result == RESULT_OK)
+{
+    // success path
+}
+else
+{
+    LogError("operation failed");
+}
+```
+
+### Format Specifiers for Enums and Booleans
+Use macro-utils format specifiers for consistent logging of enum values and booleans:
+
+```c
+// For enum values - use PRI_MU_ENUM with MU_ENUM_VALUE
+LogInfo("state=%" PRI_MU_ENUM, MU_ENUM_VALUE(MY_STATE, state));
+LogError("operation failed with result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+
+// For boolean values - use PRI_BOOL with MU_BOOL_VALUE  
+LogInfo("enabled=%" PRI_BOOL, MU_BOOL_VALUE(is_enabled));
+
+// INCORRECT - avoid manual string conversion
+LogInfo("state=%d", (int)state);                          // Don't cast enums to int
+LogInfo("enabled=%s", is_enabled ? "true" : "false");     // Don't use ternary
+```
+
+### Code Comments - No Transient References
+Code comments should not reference transient information like PR numbers, bug IDs, or reviewer names. This information becomes stale and meaningless over time.
+
+```c
+// INCORRECT - references transient info
+// Added per PR #14462634 review feedback
+// Fix for bug 12345
+// Per John's suggestion
+
+// CORRECT - describe the technical reason
+// Handle edge case where count can be zero
+// Prevent integer overflow in size calculation
+```
+
+**Exception**: TODO comments MAY reference ADO work items when tracking deferred work:
+```c
+// TODO: Task 12345 - Implement retry logic for transient failures
+```
+
 ### Mockable Function Declarations {#mockable-functions}
 For functions that need to be mocked in unit tests, use `MOCKABLE_FUNCTION` or `MOCKABLE_FUNCTION_WITH_RETURNS` in header files:
 
