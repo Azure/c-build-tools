@@ -130,6 +130,11 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
   - **Purpose**: Ensures all SRS requirements have corresponding Codes_SRS implementations and Tests_SRS test coverage
   - **Exclusion Strategy**: Use multiple `-e` flags to exclude directories that shouldn't be scanned (deps, .github, build artifacts)
   - **Quality Gate**: Build fails if requirements are duplicated, missing implementation, or missing tests
+  - **Traceability Rule**: When working with SRS specifications (adding, modifying, splitting, or removing), always update all three locations:
+    1. **Requirements document** (`.md` file in `devdoc/`): The spec definition with `SRS_XX_YYY` tag
+    2. **Source code** (`.c` file): The implementation with `/*Codes_SRS_XX_YYY: [...] */` comment
+    3. **Unit tests** (`_ut.c` file): The test with `// Tests_SRS_XX_YYY: [...]` comment
+  - Run the traceability tool after any spec changes to verify all three locations are synchronized
 
 ## Dependency Management
 
