@@ -1084,6 +1084,35 @@ Test helper headers that are used across multiple tests should be included in th
 - This improves build times and reduces include duplication
 - PCH include must be the first include in the test file
 
+### Registering New Modules in reals_ut
+When adding a new module that has "reals" (non-mocked implementations in `tests/reals/`), the module must also be registered in the repository's `reals_ut` test. This test verifies that all real-to-mock mappings compile and link correctly.
+
+**Three files to update:**
+
+1. **`tests/reals_ut/<repo>_reals_ut_pch.h`** — Add the module header inside the `ENABLE_MOCKS` section and the real header after `DISABLE_MOCKS`:
+```c
+#include "umock_c/umock_c_ENABLE_MOCKS.h"
+// ... existing includes ...
+#include "module/new_module.h"  // <-- add new module
+#include "umock_c/umock_c_DISABLE_MOCKS.h"
+
+// ... existing real includes ...
+#include "../tests/reals/real_new_module.h"  // <-- add new module real
+```
+
+2. **`tests/reals_ut/<repo>_reals_ut.c`** — Add the `REGISTER_*_GLOBAL_MOCK_HOOK()` call inside `check_all_<repo>_reals`:
+```c
+TEST_FUNCTION(check_all_repo_reals)
+{
+    // ... existing registrations ...
+    REGISTER_NEW_MODULE_GLOBAL_MOCK_HOOK();  // <-- add new module
+}
+```
+
+3. **`tests/reals/CMakeLists.txt`** — Add the reals source files to the reals target.
+
+The reals_ut test ensures that every `REGISTER_*_GLOBAL_MOCK_HOOK()` macro expands correctly and all `real_*` function symbols resolve. Missing this registration means the reals are untested and could have linking issues that only surface when another module tries to use them.
+
 ### Result Variable Assignment in Tests
 When testing error paths, each error path in the implementation should set the result variable explicitly. This enables line-number tracking during debugging:
 
@@ -1142,8 +1171,19 @@ Requirements in `.md` files use backticks for better readability:
 ```
 
 #### Code Implementation Tracing
-Requirements are traced to implementation using `Codes_SRS_` comments:
+Requirements are traced to implementation using `Codes_SRS_` comments. **Codes_ tags must ALWAYS be inline** — placed on the line immediately before the implementing code. Never place multiple Codes_ tags as a leading comment block before a function signature.
+
 ```c
+// WRONG: Leading Codes_ tags as a block before the function
+/*Codes_SRS_MODULE_42_001: [ If parameter is NULL then module_function shall fail. ]*/
+/*Codes_SRS_MODULE_42_002: [ module_function shall allocate memory. ]*/
+/*Codes_SRS_MODULE_42_003: [ If malloc fails then module_function shall return NULL. ]*/
+int module_function(void* parameter)
+{
+    ...
+}
+
+// CORRECT: Each Codes_ tag inline, immediately before the code it documents
 int module_function(void* parameter)
 {
     int result;
@@ -1235,5 +1275,17 @@ TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
 - Include error conditions and edge cases
 - Group related requirements logically
 - Update all three locations (spec, code, tests) when modifying requirements
+
+### Struct Arguments Require IGNORED_STRUCT_ARG
+`IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
+
+```c
+// WRONG: IGNORED_ARG is int, UUID_T is a struct
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_ARG));
+// Compiler error: cannot convert from 'int' to 'UUID_T'
+
+// CORRECT: Use IGNORED_STRUCT_ARG for struct parameters
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_STRUCT_ARG(UUID_T)));
+```
 
 These guidelines ensure consistency with the existing Azure C library ecosystem and maintain the high quality and reliability standards of the Azure Messaging Block Storage project.
