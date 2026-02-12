@@ -62,6 +62,71 @@ function set-repo-status
     }
 }
 
+# Close/abandon a PR for the given repo
+# Uses get-repo-type and get-azure-org-project to avoid duplicating URL parsing logic
+function close-pr
+{
+    param(
+        [string] $repo_name,
+        [string] $pr_url
+    )
+
+    try
+    {
+        # Ensure we're in the work directory so repo-relative functions work
+        Push-Location $global:work_dir
+
+        $repo_type = get-repo-type $repo_name
+        if ($repo_type -eq "github")
+        {
+            Write-Host "Closing GitHub PR: $pr_url" -ForegroundColor Yellow
+            gh pr close $pr_url
+            if ($LASTEXITCODE -eq 0)
+            {
+                Write-Host "GitHub PR closed successfully" -ForegroundColor Green
+            }
+            else
+            {
+                Write-Host "Warning: Failed to close GitHub PR: $pr_url" -ForegroundColor Yellow
+            }
+        }
+        elseif ($repo_type -eq "azure")
+        {
+            Write-Host "Abandoning Azure PR: $pr_url" -ForegroundColor Yellow
+            # Extract PR ID from URL like .../pullrequest/12345
+            if ($pr_url -match "/pullrequest/(\d+)")
+            {
+                $pr_id = $matches[1]
+                $azure_info = get-azure-org-project $repo_name
+                $org = $azure_info.Organization
+                az repos pr update --id $pr_id --status abandoned --organization $org --output json | Out-Null
+                if ($LASTEXITCODE -eq 0)
+                {
+                    Write-Host "Azure PR abandoned successfully" -ForegroundColor Green
+                }
+                else
+                {
+                    Write-Host "Warning: Failed to abandon Azure PR ID: $pr_id" -ForegroundColor Yellow
+                }
+            }
+            else
+            {
+                Write-Host "Warning: Could not parse PR ID from URL: $pr_url" -ForegroundColor Yellow
+            }
+        }
+        else
+        {
+            Write-Host "Warning: Unknown repo type for $repo_name, cannot close PR" -ForegroundColor Yellow
+        }
+
+        Pop-Location
+    }
+    catch
+    {
+        Write-Host "Warning: Error closing PR: $_" -ForegroundColor Yellow
+    }
+}
+
 # Fail with status - marks current repo as failed, shows final status, and exits
 # Exits on failure (always)
 function fail-with-status
@@ -72,6 +137,24 @@ function fail-with-status
     if ($global:current_repo -and $global:repo_status.ContainsKey($global:current_repo))
     {
         set-repo-status -repo_name $global:current_repo -status $script:STATUS_FAILED -message $message
+
+        # Close/abandon the failed PR if the flag is set and a PR URL exists
+        if ($global:close_failed_pr)
+        {
+            $pr_url = $global:repo_status[$global:current_repo].PrUrl
+            if ($pr_url)
+            {
+                close-pr -repo_name $global:current_repo -pr_url $pr_url
+            }
+            else
+            {
+                # no PR URL to close
+            }
+        }
+        else
+        {
+            # close_failed_pr not set, leaving PR open
+        }
     }
     else
     {
