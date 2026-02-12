@@ -11,6 +11,9 @@ Propagates dependency updates for git repositories.
 Given a root repo, this script builds the dependency graph and propagates updates from the
 lowest level up to the root repo by making PRs to each repo in bottom-up level-order.
 
+By default, if a PR fails (e.g., checks fail), it is automatically closed/abandoned before
+exiting. Use -NoCloseFailedPr to leave failed PRs open instead.
+
 Authentication for Azure DevOps uses WAM (Web Account Manager) by default on Windows, which
 provides SSO using your Windows login. If WAM is not available or fails, you can provide a
 PAT token as a fallback. GitHub authentication is handled via 'gh auth login'.
@@ -27,6 +30,12 @@ Work item id that is linked to PRs made to Azure repos.
 
 (Optional) Personal Access Token for Azure DevOps authentication. If not provided, WAM
 authentication will be used. PAT must have Code (Read & Write) and Work Items (Read) permissions.
+
+.PARAMETER NoCloseFailedPr
+
+(Optional) When set, disables the default behavior of automatically closing/abandoning the
+PR that caused a failure. By default, failed PRs are closed (GitHub via 'gh pr close',
+Azure via 'az repos pr update --status abandoned').
 
 .INPUTS
 
@@ -55,6 +64,7 @@ param(
     [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
     [Parameter(Mandatory=$true)][Int32]$azure_work_item, # Work item id to link to Azure PRs
     [switch]$useCachedRepoOrder, # use cached repo order if root_list matches
+    [switch]$NoCloseFailedPr, # keep the PR open if it fails (default: close/abandon failed PRs)
     [Parameter(Mandatory=$true)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
 
@@ -122,6 +132,9 @@ function propagate-updates
 {
     # Save original directory to restore at exit
     Push-Location
+
+    # Close failed PRs by default unless -NoCloseFailedPr is specified
+    $global:close_failed_pr = -not $NoCloseFailedPr.IsPresent
 
     # Check PowerShell version first
     check-powershell-version

@@ -274,11 +274,63 @@ function global:truncate-string
 function global:show-pr-check-table
 {
     param(
-        [array] $checks,
-        [int] $name_width = 70,
-        [int] $elapsed_width = 12,
-        [int] $url_width = 80
+        [array] $checks
     )
+
+    # Calculate actual content widths
+    $max_name_width = ($checks | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum
+    $max_url_width = ($checks | ForEach-Object { if($_.Url) { $_.Url.Length } else { 0 } } | Measure-Object -Maximum).Maximum
+    $elapsed_width = 12  # Fixed width for elapsed time column
+    $prefix_width = 3    # Symbol + 2 spaces
+
+    # Ensure minimum widths
+    $max_name_width = [Math]::Max($max_name_width, 4)  # "NAME"
+    $max_url_width = [Math]::Max($max_url_width, 3)    # "URL"
+
+    # Get terminal width
+    $terminal_width = 120  # Default fallback
+    try
+    {
+        $terminal_width = $Host.UI.RawUI.WindowSize.Width
+    }
+    catch
+    {
+        # Use default if can't get window size
+    }
+
+    # Calculate available space: terminal - prefix - elapsed - spaces between columns
+    $available_width = $terminal_width - $prefix_width - $elapsed_width - 2  # 2 spaces between name/elapsed and elapsed/url
+
+    # Determine final column widths
+    $name_width = $max_name_width
+    $url_width = $max_url_width
+
+    $total_needed = $name_width + $url_width
+    if($total_needed -gt $available_width)
+    {
+        # Need to truncate - prioritize name over url
+        $min_name_width = [Math]::Min($max_name_width, 50)
+        $min_url_width = 20
+
+        # First try to fit by truncating URL
+        if($max_name_width + $min_url_width -le $available_width)
+        {
+            $name_width = $max_name_width
+            $url_width = $available_width - $name_width
+        }
+        # Then truncate name if needed
+        elseif($min_name_width + $min_url_width -le $available_width)
+        {
+            $url_width = $min_url_width
+            $name_width = $available_width - $url_width
+        }
+        else
+        {
+            # Very narrow terminal - split proportionally
+            $name_width = [Math]::Max($min_name_width, [int]($available_width * 0.6))
+            $url_width = [Math]::Max($min_url_width, $available_width - $name_width)
+        }
+    }
 
     # Table header
     $header = "   {0,-$name_width} {1,-$elapsed_width} {2}" -f "NAME", "ELAPSED", "URL"
