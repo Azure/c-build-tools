@@ -610,11 +610,25 @@ else
 ## Additional Conventions {#additional-conventions}
 
 ### Switch Statement Structure
-- **Always place `default:` case LAST** in switch statements, after all named cases
-- This provides consistent structure and makes it clear which cases are explicitly handled
+- **Always place `default:` case FIRST** in switch statements, before all named cases
+- This is consistent with the "error case first" convention used for `if` statements — handle the unexpected/error path first
 
 ```c
-// CORRECT - default at end
+// CORRECT - default first (error case first)
+switch (result)
+{
+    default:
+        LogError("unknown result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+        break;
+    case RESULT_OK:
+        // handle OK
+        break;
+    case RESULT_ERROR:
+        // handle error
+        break;
+}
+
+// INCORRECT - default at end
 switch (result)
 {
     case RESULT_OK:
@@ -624,18 +638,8 @@ switch (result)
         // handle error
         break;
     default:
-        LogError("unknown result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
-        break;
-}
-
-// INCORRECT - default in middle or first
-switch (result)
-{
-    default:
         LogError("unknown result");
         break;
-    case RESULT_OK:
-        // ...
 }
 ```
 
