@@ -1409,20 +1409,4 @@ TEST_FUNCTION(real_my_module_create_frees_on_failure)
 }
 ```
 
-## Boolean Logging Format {#boolean-logging}
-
-When logging boolean values, use the `PRI_BOOL` format specifier with `%` prefix and `MU_BOOL_VALUE()` macro:
-
-```c
-// Correct:
-LogError("Flag is %" PRI_BOOL, MU_BOOL_VALUE(my_bool_flag));
-LogInfo("Operation succeeded: %" PRI_BOOL, MU_BOOL_VALUE(success));
-
-// Incorrect - missing % prefix:
-LogError("Flag is " PRI_BOOL, MU_BOOL_VALUE(my_bool_flag));
-
-// Incorrect - using %d instead of PRI_BOOL:
-LogError("Flag is %d", my_bool_flag);
-```
-
 These guidelines ensure consistency with the existing Azure C library ecosystem and maintain the high quality and reliability standards of the Azure Messaging Block Storage project.
