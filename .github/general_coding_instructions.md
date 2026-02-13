@@ -1142,6 +1142,18 @@ if (first_check_fails)
 }
 ```
 
+### Struct Arguments Require IGNORED_STRUCT_ARG
+`IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
+
+```c
+// WRONG: IGNORED_ARG is int, UUID_T is a struct
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_ARG));
+// Compiler error: cannot convert from 'int' to 'UUID_T'
+
+// CORRECT: Use IGNORED_STRUCT_ARG for struct parameters
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_STRUCT_ARG(UUID_T)));
+```
+
 ### Requirements Traceability System
 The codebase uses a comprehensive requirements traceability system to ensure complete coverage and consistency between specifications, implementation, and testing.
 
@@ -1275,18 +1287,6 @@ TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
 - Include error conditions and edge cases
 - Group related requirements logically
 - Update all three locations (spec, code, tests) when modifying requirements
-
-### Struct Arguments Require IGNORED_STRUCT_ARG
-`IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
-
-```c
-// WRONG: IGNORED_ARG is int, UUID_T is a struct
-STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_ARG));
-// Compiler error: cannot convert from 'int' to 'UUID_T'
-
-// CORRECT: Use IGNORED_STRUCT_ARG for struct parameters
-STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_STRUCT_ARG(UUID_T)));
-```
 
 ## Internal Callback Functions in Requirements {#internal-callback-requirements}
 
