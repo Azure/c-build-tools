@@ -1288,4 +1288,141 @@ STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_ARG));
 STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_STRUCT_ARG(UUID_T)));
 ```
 
+## Internal Callback Functions in Requirements {#internal-callback-requirements}
+
+When creating internal/static callback functions that are passed to other modules (dispose functions, completion handlers, notification handlers), they must be properly documented in the requirements specification:
+
+**Requirements:**
+1. **Named with `internal_` prefix**: e.g., `internal_sp_record_item_dispose`, `internal_bsdl_on_complete`
+2. **Documented in the requirements spec** with their own section and function signature
+3. **Have their own SRS tags** and corresponding unit tests
+
+**Note:** This applies ONLY to static functions that are passed to other dependent modules (callbacks). Internal functions that are truly internal and never used to interact with other modules should NOT be exposed in the requirements doc.
+
+```markdown
+### internal_my_item_dispose
+
+`internal_my_item_dispose` is a dispose function passed to `THANDLE_TYPE_DEFINE_WITH_MALLOC_FUNCTIONS` for automatic cleanup.
+
+```c
+static void internal_my_item_dispose(MY_ITEM* item);
+```
+
+**SRS_MY_MODULE_42_050: [** `internal_my_item_dispose` shall release the `child` reference by calling `THANDLE_ASSIGN(CHILD)(&item->child, NULL)`. **]**
+```
+
+## Error Result Type Guidelines {#error-result-types}
+
+When a function can fail for different categories of reasons, use distinct error codes to allow callers to distinguish between error types:
+
+**Categories:**
+- **`*_ERROR`**: Runtime failures (memory allocation, I/O errors, network issues) - may be transient/retryable
+- **`*_INVALID_DATA`**: Data validation failures (corrupt data, format errors, checksum mismatch) - permanent data issues
+- **`*_INVALID_ARG`**: Invalid function arguments - caller programming error
+
+**Example:**
+```c
+// Result enum with distinct error categories
+#define OPEN_RESULT_VALUES \
+    OPEN_RESULT_OK, \
+    OPEN_RESULT_ERROR, \          // Runtime failure (retry may help)
+    OPEN_RESULT_INVALID_DATA, \   // Data corruption (retry won't help)
+    OPEN_RESULT_INVALID_ARG       // Bad arguments (caller bug)
+
+MU_DEFINE_ENUM(OPEN_RESULT, OPEN_RESULT_VALUES)
+
+// In implementation:
+if (checksum_mismatch)
+{
+    result = OPEN_RESULT_INVALID_DATA;  // Data is corrupt
+}
+else if (malloc_failed)
+{
+    result = OPEN_RESULT_ERROR;         // Runtime failure
+}
+```
+
+## Codes_SRS Comment Placement {#codes-srs-placement}
+
+Place `Codes_SRS_*` comments immediately before the specific line of code they trace to, not grouped at the top of a code block. This makes the traceability relationship clear during code review.
+
+```c
+// Good - each comment directly before the line it describes:
+/*Codes_SRS_MODULE_01_001: [ function shall allocate memory ]*/
+void* ptr = malloc(size);
+/*Codes_SRS_MODULE_01_002: [ if allocation fails, function shall return NULL ]*/
+if (ptr == NULL)
+{
+    result = NULL;
+}
+
+// Bad - comments grouped at the top:
+/*Codes_SRS_MODULE_01_001: [ function shall allocate memory ]*/
+/*Codes_SRS_MODULE_01_002: [ if allocation fails, function shall return NULL ]*/
+void* ptr = malloc(size);
+if (ptr == NULL)
+{
+    result = NULL;
+}
+```
+
+## Dispose Function Guidelines {#dispose-guidelines}
+
+In dispose/cleanup functions, don't add unnecessary operations like setting struct fields to NULL before freeing the containing structure. Only perform cleanup that has actual effect (releasing resources, decrementing reference counts).
+
+```c
+// Good - just release resources:
+static void my_dispose(void* context)
+{
+    MY_STRUCT* my_struct = context;
+    THANDLE_ASSIGN(CHILD)(&my_struct->child, NULL);  // Actually decrements ref count
+    // Parent will free my_struct
+}
+
+// Bad - unnecessary NULL assignments:
+static void my_dispose(void* context)
+{
+    MY_STRUCT* my_struct = context;
+    my_struct->some_value = 0;     // Pointless - struct is about to be freed
+    my_struct->some_ptr = NULL;    // Pointless if not ref-counted
+    THANDLE_ASSIGN(CHILD)(&my_struct->child, NULL);
+}
+```
+
+## Reals Unit Testing {#reals-unit-testing}
+
+When adding new `real_*` function implementations (real implementations used to pass-through to actual functions during testing), create corresponding `*_reals_ut` unit tests to verify the real implementations work correctly. This ensures the "reals" are properly exercised.
+
+```c
+// In my_module_reals_ut.c
+TEST_FUNCTION(real_my_module_create_frees_on_failure)
+{
+    ///arrange
+    // Set up conditions that cause failure after partial allocation
+    
+    ///act
+    MY_HANDLE result = real_my_module_create(params);
+    
+    ///assert
+    ASSERT_IS_NULL(result);
+    // Verify no memory leaks via test framework
+}
+```
+
+## Boolean Logging Format {#boolean-logging}
+
+When logging boolean values, use the `PRI_BOOL` format specifier with `%` prefix and `MU_BOOL_VALUE()` macro:
+
+```c
+// Correct:
+LogError("Flag is %" PRI_BOOL, MU_BOOL_VALUE(my_bool_flag));
+LogInfo("Operation succeeded: %" PRI_BOOL, MU_BOOL_VALUE(success));
+
+// Incorrect - missing % prefix:
+LogError("Flag is " PRI_BOOL, MU_BOOL_VALUE(my_bool_flag));
+
+// Incorrect - using %d instead of PRI_BOOL:
+LogError("Flag is %d", my_bool_flag);
+```
+
 These guidelines ensure consistency with the existing Azure C library ecosystem and maintain the high quality and reliability standards of the Azure Messaging Block Storage project.
