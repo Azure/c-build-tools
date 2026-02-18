@@ -985,7 +985,7 @@ Use `<inttypes.h>` format specifier macros (`PRIu64`, `PRId64`, `PRIu32`, etc.) 
 uint64_t value = get_value();
 
 // CORRECT - use format specifier macro
-LogInfo("Value is %" PRIu64, value);
+LogInfo("Value is %" PRIu64 "", value);
 
 // INCORRECT - casting to match format specifier
 LogInfo("Value is %u", (uint32_t)value);  // Potential data loss!
