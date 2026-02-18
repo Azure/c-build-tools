@@ -944,6 +944,7 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 - Use THANDLE pattern for reference-counted objects
 - Always use `THANDLE_INITIALIZE`, `THANDLE_ASSIGN`, `THANDLE_MOVE` appropriately
 - Never manually manipulate reference counts
+- **THANDLE values cannot be assigned like regular pointers** — always use `THANDLE_ASSIGN`, `THANDLE_INITIALIZE_MOVE`, etc. Direct assignment will compile but may fault at runtime
 
 ### Async Operations
 - Use consistent callback patterns with context parameters
@@ -1310,8 +1311,19 @@ TEST_FUNCTION(when_underlying_functions_fail_then_my_function_fails)
 - Only include `umock_c_negative_tests.h` and `umock_c_negative_tests_init()`/`deinit()` when the test file actually uses negative tests
 - Do not add negative test infrastructure to test files that don't use it
 
-#### THANDLE Values in Negative Tests
-When writing negative tests for functions that take or return `THANDLE` parameters, `THANDLE` values **cannot** be simply assigned like regular pointers. They must be manipulated using `THANDLE_ASSIGN`, `THANDLE_INITIALIZE_MOVE`, etc. This applies to setting up test state and verifying cleanup in negative test iterations.
+#### Static THANDLE Variables in Tests
+A `THANDLE` variable declared as a bare static in the default data segment will compile, but `THANDLE_INITIALIZE_MOVE` and `THANDLE_ASSIGN` will fault at runtime. Wrap static `THANDLE` test variables inside a struct:
+
+```c
+// WRONG: Static THANDLE in default data segment — faults at runtime
+static THANDLE(SUBSTREAM_CORE) test_substream_core;
+
+// CORRECT: Wrap in a struct
+static struct
+{
+    THANDLE(SUBSTREAM_CORE) test_substream_core;
+} g = { 0 };
+```
 
 ### No Magic Numbers in Tests
 Numeric literals in test code should be replaced with named `#define` macros. This improves readability and makes the test's intent clear:
