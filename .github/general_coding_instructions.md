@@ -957,6 +957,7 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 - Use THANDLE pattern for reference-counted objects
 - Always use `THANDLE_INITIALIZE`, `THANDLE_ASSIGN`, `THANDLE_MOVE` appropriately
 - Never manually manipulate reference counts
+- **THANDLE values cannot be assigned like regular pointers** — always use `THANDLE_ASSIGN`, `THANDLE_INITIALIZE_MOVE`, etc. Direct assignment will compile but may fault at runtime
 
 ### Async Operations
 - Use consistent callback patterns with context parameters
@@ -1275,7 +1276,7 @@ Requirements in `.md` files use backticks for better readability:
 ```
 
 #### Code Implementation Tracing
-Requirements are traced to implementation using `Codes_SRS_` comments. **Codes_ tags must ALWAYS be inline** — placed on the line immediately before the implementing code. Never place multiple Codes_ tags as a leading comment block before a function signature.
+Requirements are traced to implementation using `Codes_SRS_` comments. **Codes_ tags must ALWAYS be inline** — placed on the line immediately before the implementing code. Never place multiple Codes_ tags as a leading comment block before a function signature. When a `Codes_SRS_` tag references a specific function call (e.g., `critical_section_leave`), place the tag directly before that call, not at the top of the enclosing block.
 
 ```c
 // WRONG: Leading Codes_ tags as a block before the function
@@ -1518,6 +1519,97 @@ TEST_FUNCTION(real_my_module_create_frees_on_failure)
     ASSERT_IS_NULL(result);
     // Verify no memory leaks via test framework
 }
+```
+
+### Negative Testing Requirements
+
+#### All Fallible Functions Must Have Negative Tests
+Every function that allocates memory, calls external dependencies, or can return failure **must** have a negative test using the `umock_c_negative_tests` pattern. This ensures all failure paths are exercised:
+
+```c
+TEST_FUNCTION(when_underlying_functions_fail_then_my_function_fails)
+{
+    ///arrange
+    setup_my_function_expectations();
+
+    umock_c_negative_tests_snapshot();
+
+    for (size_t i = 0; i < umock_c_negative_tests_call_count(); i++)
+    {
+        if (umock_c_negative_tests_can_call_fail(i))
+        {
+            umock_c_negative_tests_reset();
+            umock_c_negative_tests_fail_call(i);
+
+            ///act
+            int result = my_function(...);
+
+            ///assert
+            ASSERT_ARE_NOT_EQUAL(int, 0, result, "On failed call %zu", i);
+        }
+    }
+}
+```
+
+**Guidelines:**
+- Only include `umock_c_negative_tests.h` and `umock_c_negative_tests_init()`/`deinit()` when the test file actually uses negative tests
+- Do not add negative test infrastructure to test files that don't use it
+
+#### Static THANDLE Variables in Tests
+A `THANDLE` variable declared as a bare static in the default data segment will compile, but `THANDLE_INITIALIZE_MOVE` and `THANDLE_ASSIGN` will fault at runtime. Wrap static `THANDLE` test variables inside a struct:
+
+```c
+// WRONG: Static THANDLE in default data segment — faults at runtime
+static THANDLE(SUBSTREAM_CORE) test_substream_core;
+
+// CORRECT: Wrap in a struct
+static struct
+{
+    THANDLE(SUBSTREAM_CORE) test_substream_core;
+} g = { 0 };
+```
+
+### No Magic Numbers in Tests
+Numeric literals in test code should be replaced with named `#define` macros. This improves readability and makes the test's intent clear:
+
+```c
+// WRONG: Magic number in test
+STRICT_EXPECTED_CALL(my_function_create(3, test_cleanup));
+
+// CORRECT: Named constant
+#define TEST_DEFAULT_ARRAY_ENTRY_COUNT 3
+STRICT_EXPECTED_CALL(my_function_create(TEST_DEFAULT_ARRAY_ENTRY_COUNT, test_cleanup));
+```
+
+### Assert Expected Calls in Every Test
+All tests that set up `STRICT_EXPECTED_CALL` expectations **must** verify them with `ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls())`. This is not limited to helper functions — it applies to **every** test function that uses mock expectations:
+
+```c
+TEST_FUNCTION(when_all_calls_succeed_then_operation_succeeds)
+{
+    ///arrange
+    STRICT_EXPECTED_CALL(dependency_create());
+    STRICT_EXPECTED_CALL(dependency_configure(IGNORED_ARG));
+
+    ///act
+    int result = my_function();
+
+    ///assert
+    ASSERT_ARE_EQUAL(int, 0, result);
+    ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());  // REQUIRED
+}
+```
+
+### Struct Arguments Require IGNORED_STRUCT_ARG
+`IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
+
+```c
+// WRONG: IGNORED_ARG is int, UUID_T is a struct
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_ARG));
+// Compiler error: cannot convert from 'int' to 'UUID_T'
+
+// CORRECT: Use IGNORED_STRUCT_ARG for struct parameters
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_STRUCT_ARG(UUID_T)));
 ```
 
 These guidelines ensure consistency with the existing Azure C library ecosystem and maintain the high quality and reliability standards of the Azure Messaging Block Storage project.
