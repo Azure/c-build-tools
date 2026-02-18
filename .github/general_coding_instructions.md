@@ -220,6 +220,7 @@ some_function();  // Compiler should warn about unused return value
   - Error codes (`int`, custom result enums)
   - Pointers and handles
   - Boolean values
+  - Standard library functions that return their destination pointer (`memset`, `memcpy`, `memmove`)
   - Any other return types
 
 ## Parameter Validation Rules {#parameter-validation}
@@ -911,9 +912,21 @@ For unit test files, use the `ENABLE_MOCKS` pattern between infrastructure and d
 - Maintain alphabetical order within each category when possible
 
 ### Memory Management
-- Use `malloc`/`free` for dynamic allocation
-- Use `malloc_2()` helper for array allocations with overflow protection
+- Use `malloc`/`free` for dynamic allocation of single items
+- Use `malloc_2(element_size, count)` for array allocations with overflow protection
+- Use `malloc_flex(base_size, count, element_size)` for structures with flexible array members (fixed-size header + array of items)
 - Always check allocation results and handle failures gracefully
+
+```c
+// Single item
+MY_STRUCT* ptr = malloc(sizeof(MY_STRUCT));
+
+// Array of items - use malloc_2 for overflow protection
+int32_t* items = malloc_2(sizeof(int32_t), count);
+
+// Fixed-size struct + flexible array - use malloc_flex
+MY_DATA* data = malloc_flex(sizeof(MY_DATA), count, sizeof(ITEM));
+```
 
 ### Pointer Casting Rules
 - **Do NOT cast `void*` to other pointer types** - In C, `void*` implicitly converts to any other pointer type without a cast
@@ -949,6 +962,35 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 ### Async Operations
 - Use consistent callback patterns with context parameters
 - Always provide both success and error callback paths
+
+### Array Initialization
+Prefer explicit loops over `memset` for initializing arrays. Loops are type-safe and make the intent clearer:
+
+```c
+// CORRECT - explicit loop
+for (size_t i = 0; i < count; i++)
+{
+    items[i] = 0;
+}
+
+// AVOID - memset for typed arrays
+(void)memset(items, 0, sizeof(int32_t) * count);
+```
+
+### Format Specifier Macros for Integer Types
+Use `<inttypes.h>` format specifier macros (`PRIu64`, `PRId64`, `PRIu32`, etc.) when formatting fixed-width integer types. Do not cast to a smaller type to match a format specifier:
+
+```c
+#include <inttypes.h>
+
+uint64_t value = get_value();
+
+// CORRECT - use format specifier macro
+LogInfo("Value is %" PRIu64 "", value);
+
+// INCORRECT - casting to match format specifier
+LogInfo("Value is %u", (uint32_t)value);  // Potential data loss!
+```
 
 ## Unit Testing Guidelines {#unit-testing}
 
@@ -1084,6 +1126,56 @@ Test helper headers that are used across multiple tests should be included in th
 - Keep test-specific includes in the test file itself
 - This improves build times and reduces include duplication
 - PCH include must be the first include in the test file
+
+### Include Paths for Reals Headers
+When including real implementation headers in test files, use the header name directly without relative paths. The build system's `reals` target adds the correct include directory:
+
+```c
+// CORRECT - header name only
+#include "real_my_module.h"
+
+// INCORRECT - relative path
+#include "../reals/real_my_module.h"
+```
+
+### Using Real Functions in Test Code
+Test setup and helper code should generally call **real implementations** (e.g., `real_gballoc_hl_malloc`, `real_CONSTBUFFER_Create`) instead of mocked versions. Using mocked functions in test helpers generates unexpected mock calls that pollute `umock_c_get_actual_calls()` and can cause spurious test failures.
+
+```c
+// CORRECT - test helper uses reals
+static void setup_test_state(void)
+{
+    int32_t* array = real_gballoc_hl_malloc_2(sizeof(int32_t), count);
+    CONSTBUFFER_HANDLE buffer = real_CONSTBUFFER_Create(data, size);
+    // ...
+    real_CONSTBUFFER_DecRef(buffer);
+    real_gballoc_hl_free(array);
+}
+
+// INCORRECT - test helper uses mocked functions
+static void setup_test_state(void)
+{
+    int32_t* array = gballoc_hl_malloc(sizeof(int32_t) * count);  // Generates mock call!
+    CONSTBUFFER_HANDLE buffer = (CONSTBUFFER_HANDLE)0x4242;       // Fake handle, won't work with real code paths
+}
+```
+
+**Key points:**
+- Real allocations must be paired with real frees (`real_gballoc_hl_free`, `real_CONSTBUFFER_DecRef`)
+- Never use fake handle casts (e.g., `(CONSTBUFFER_HANDLE)0x4242`) when the test exercises code paths that dereference the handle
+
+### Umock Chained Call Formatting
+Always place `.SetReturn()`, `.CopyOutArgumentBuffer()`, `.SetFailReturn()`, and other umock chained method calls on **separate lines** for readability:
+
+```c
+// CORRECT - chained calls on separate lines
+STRICT_EXPECTED_CALL(my_function(IGNORED_ARG, IGNORED_ARG))
+    .SetReturn(42)
+    .CopyOutArgumentBuffer_output(&expected_output, sizeof(expected_output));
+
+// INCORRECT - chained calls on same line
+STRICT_EXPECTED_CALL(my_function(IGNORED_ARG, IGNORED_ARG)).SetReturn(42);
+```
 
 ### Registering New Modules in reals_ut
 When adding a new module that has "reals" (non-mocked implementations in `tests/reals/`), the module must also be registered in the repository's `reals_ut` test. This test verifies that all real-to-mock mappings compile and link correctly.
@@ -1276,6 +1368,25 @@ TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
    - Corresponding `Codes_SRS_` implementation tag(s)
    - Corresponding `Tests_SRS_` unit test tag(s)
 5. **Traceability Tool Verification**: The build system can run `traceabilitytool` to verify complete coverage
+6. **Tag Placement**: `Codes_SRS_` comments belong exclusively in production code (`.c` files). Unit test files must only use `Tests_SRS_` comments. Never place `Codes_SRS_` tags in test files.
+7. **Test Tag Placement**: `Tests_SRS_` tags must be placed immediately before the `TEST_FUNCTION` declaration, never inside setup or helper functions called by tests:
+
+```c
+// CORRECT - tag before TEST_FUNCTION
+// Tests_SRS_MODULE_42_001: [ ... ]
+TEST_FUNCTION(when_condition_then_expected_behavior)
+{
+    setup_test_state();  // No SRS tags inside here
+    // ...
+}
+
+// INCORRECT - tag inside helper function
+static void setup_test_state(void)
+{
+    // Tests_SRS_MODULE_42_001: [ ... ]  // WRONG - don't put tags in helpers
+    STRICT_EXPECTED_CALL(...);
+}
+```
 
 #### Author ID Assignment
 - Each developer is assigned a unique two-digit author ID

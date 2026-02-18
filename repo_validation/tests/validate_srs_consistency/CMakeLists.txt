@@ -141,6 +141,23 @@ add_custom_target(test_validate_srs_consistency_line_comment_with_brackets
     COMMENT "Testing line comments with bracket characters in text content"
 )
 
+# Test 14: Verify tag placement passes on correctly placed tags
+add_custom_target(test_validate_srs_consistency_tag_placement_clean
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_clean"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing tag placement validation on correctly placed tags"
+)
+
+# Test 15: Verify tag placement detects violations (Codes_ in test files, Tests_ in prod files)
+# This test is expected to fail (exit code 1) - run manually to verify detection works
+add_custom_target(test_validate_srs_consistency_tag_placement_violations
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_violations"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing tag placement violation detection"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -160,10 +177,12 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_escaped_multiline_duplication
     test_validate_srs_consistency_incomplete_comment
     test_validate_srs_consistency_line_comment_with_brackets
+    test_validate_srs_consistency_tag_placement_clean
 )
-# Note: We don't add test_validate_srs_consistency_detection as a dependency because
-# it should fail with exit code 1 (which would fail the build). 
-# Instead, it's available to run manually to verify detection works.
+# Note: We don't add test_validate_srs_consistency_detection or 
+# test_validate_srs_consistency_tag_placement_violations as dependencies because
+# they should fail with exit code 1 (which would fail the build). 
+# Instead, they are available to run manually to verify detection works.
 # Test 5: Verify malformed comment handling (missing closing bracket)
 add_custom_target(test_validate_srs_consistency_malformed_comment
     # Create a temporary directory and copy test files
