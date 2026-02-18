@@ -3,21 +3,27 @@
 
 <#
 .SYNOPSIS
-    Validates that SRS requirement text is consistent between markdown files and C code.
+    Validates SRS requirement consistency and tag placement between markdown files and C code.
 
 .DESCRIPTION
-    This script checks that Software Requirements Specification (SRS) tags have identical
-    text content in both requirement documents (*.md in devdoc/) and implementation files (*.c, *_ut.c, *_int.c).
+    This script performs two validations:
+    
+    1. **Consistency**: Checks that SRS tags have identical text content in both requirement 
+       documents (*.md in devdoc/) and implementation files (*.c, *_ut.c, *_int.c).
+    2. **Tag Placement**: Checks that Codes_SRS_ tags only appear in production code and 
+       Tests_SRS_ tags only appear in test files.
     
     The script:
     1. Finds all SRS tags in requirement markdown files
     2. Locates corresponding SRS tags in C source files
     3. Strips markdown formatting (backticks, bold, italics) from markdown text
     4. Compares the text content for consistency
-    5. Reports or fixes inconsistencies
+    5. Validates that Codes_SRS_ and Tests_SRS_ tags are in the correct file types
+    6. Reports or fixes inconsistencies
     
     When the -Fix switch is provided, the script will update C code comments to match
     the requirement document text (after stripping markdown formatting).
+    Tag placement violations cannot be auto-fixed.
 
 .PARAMETER RepoRoot
     The root directory of the repository to validate.
@@ -235,11 +241,26 @@ function Get-SrsTagsFromCCode {
     return $srsTags
 }
 
+# Function to determine if a file is a test file based on naming convention and path
+function Test-IsTestFile {
+    param([string]$FilePath)
+    
+    $fileName = [System.IO.Path]::GetFileName($FilePath)
+    
+    # Check file name patterns for test files
+    if ($fileName -match '_ut\.c$' -or $fileName -match '_int\.c$') {
+        return $true
+    }
+    
+    return $false
+}
+
 # Initialize counters
 $totalRequirements = 0
 $inconsistentRequirements = @()
 $fixedRequirements = @()
 $duplicateTagsCount = 0
+$tagPlacementViolations = @()
 $skippedFiles = 0
 
 Write-Host "Phase 1: Scanning requirement documents..." -ForegroundColor White
@@ -294,6 +315,25 @@ foreach ($cFile in $cFiles) {
     $cTags = Get-SrsTagsFromCCode -Content $content -FilePath $cFile.FullName
     
     foreach ($cTag in $cTags) {
+        # Check tag placement: Codes_SRS_ should not be in test files, Tests_SRS_ should not be in production files
+        $isTestFile = Test-IsTestFile -FilePath $cFile.FullName
+        $relativePath = $cFile.FullName.Substring($RepoRoot.Length).TrimStart('\', '/')
+        
+        if ($isTestFile -and $cTag.Prefix -eq "Codes") {
+            $tagPlacementViolations += [PSCustomObject]@{
+                FilePath = $relativePath
+                Tag = "$($cTag.Prefix)_$($cTag.Tag)"
+                Violation = "Codes_SRS_ tag found in test file (should use Tests_SRS_)"
+            }
+        }
+        elseif (-not $isTestFile -and $cTag.Prefix -eq "Tests") {
+            $tagPlacementViolations += [PSCustomObject]@{
+                FilePath = $relativePath
+                Tag = "$($cTag.Prefix)_$($cTag.Tag)"
+                Violation = "Tests_SRS_ tag found in production file (should use Codes_SRS_)"
+            }
+        }
+
         # Check if this SRS tag exists in requirements
         if ($srsRequirements.ContainsKey($cTag.Tag)) {
             $requirement = $srsRequirements[$cTag.Tag]
@@ -331,6 +371,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Total SRS requirements: $totalRequirements" -ForegroundColor White
 Write-Host "C source files scanned: $($cFiles.Count)" -ForegroundColor White
 Write-Host "Inconsistencies found: $($inconsistentRequirements.Count)" -ForegroundColor White
+Write-Host "Tag placement violations: $($tagPlacementViolations.Count)" -ForegroundColor White
 if ($duplicateTagsCount -gt 0) {
     Write-Host "Duplicate SRS tags found: $duplicateTagsCount" -ForegroundColor Yellow
 }
@@ -460,15 +501,47 @@ if ($inconsistentRequirements.Count -gt 0) {
 
 Write-Host ""
 
-$unfixedCount = $inconsistentRequirements.Count - $fixedRequirements.Count
+# Report tag placement violations
+if ($tagPlacementViolations.Count -gt 0) {
+    $codesInTests = $tagPlacementViolations | Where-Object { $_.Violation -like "Codes_SRS_*" }
+    $testsInProd = $tagPlacementViolations | Where-Object { $_.Violation -like "Tests_SRS_*" }
+    
+    Write-Host "SRS Tag Placement Violations:" -ForegroundColor Red
+    Write-Host ""
+    
+    if ($codesInTests.Count -gt 0) {
+        Write-Host "  Codes_SRS_ tags in test files ($($codesInTests.Count) violations):" -ForegroundColor Yellow
+        foreach ($v in $codesInTests) {
+            Write-Host "    $($v.FilePath): $($v.Tag)" -ForegroundColor White
+        }
+        Write-Host ""
+    }
+    
+    if ($testsInProd.Count -gt 0) {
+        Write-Host "  Tests_SRS_ tags in production files ($($testsInProd.Count) violations):" -ForegroundColor Yellow
+        foreach ($v in $testsInProd) {
+            Write-Host "    $($v.FilePath): $($v.Tag)" -ForegroundColor White
+        }
+        Write-Host ""
+    }
+    
+    Write-Host "  Convention: Codes_SRS_ tags belong in production code, Tests_SRS_ tags belong in test files." -ForegroundColor Cyan
+    Write-Host ""
+}
 
-if ($unfixedCount -eq 0) {
+$unfixedCount = $inconsistentRequirements.Count - $fixedRequirements.Count
+$totalFailures = $unfixedCount + $tagPlacementViolations.Count
+
+if ($totalFailures -eq 0) {
     Write-Host "[VALIDATION PASSED]" -ForegroundColor Green
     exit 0
 } else {
     Write-Host "[VALIDATION FAILED]" -ForegroundColor Red
-    if ($Fix) {
+    if ($Fix -and $unfixedCount -gt 0) {
         Write-Host "$unfixedCount inconsistency(ies) could not be fixed automatically." -ForegroundColor Yellow
+    }
+    if ($tagPlacementViolations.Count -gt 0) {
+        Write-Host "$($tagPlacementViolations.Count) tag placement violation(s) require manual correction." -ForegroundColor Yellow
     }
     exit 1
 }
