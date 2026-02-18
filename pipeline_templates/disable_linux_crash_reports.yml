@@ -1,0 +1,19 @@
+# This template restores default Linux core dump settings after tests
+# Run this template AFTER collecting crash reports to clean up system-level changes
+# made by enable_linux_crash_reports.yml
+#
+# Usage:
+#   - template: pipeline_templates/disable_linux_crash_reports.yml@c_build_tools
+
+steps:
+  - bash: |
+      # Restore default core pattern (pipe to apport on Ubuntu)
+      if [ -f /usr/share/apport/apport ]; then
+          sudo sysctl -w kernel.core_pattern="|/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -- %E"
+      else
+          sudo sysctl -w kernel.core_pattern="core"
+      fi
+      echo "Core pattern restored to: $(cat /proc/sys/kernel/core_pattern)"
+    displayName: 'Disable Linux crash reports'
+    condition: always()
+    continueOnError: true

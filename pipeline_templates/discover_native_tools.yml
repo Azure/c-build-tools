@@ -1,0 +1,325 @@
+# Template: Discover Native Build Tools
+# Finds native build tools (CMake, MSBuild, CTest, dumpbin) for the specified architecture.
+# Sets pipeline variables that can be used in subsequent steps.
+#
+# This template solves the ARM64 agent emulation problem by explicitly finding
+# and using native ARM64 tools instead of relying on the (broken) agent environment.
+#
+# Output Variables:
+#   $(vsPath)       - Visual Studio installation path
+#   $(cmakePath)    - Path to cmake.exe
+#   $(ctestPath)    - Path to ctest.exe  
+#   $(msbuildPath)  - Path to MSBuild.exe (architecture-specific)
+#   $(dumpbinPath)  - Path to dumpbin.exe (architecture-specific)
+#   $(vstestPath)   - Path to vstest.console.exe (architecture-specific)
+#   $(cmakeArch)    - CMake architecture flag (x64, Win32, ARM64)
+#   $(targetPlatform) - MSBuild platform (x64, Win32, ARM64)
+#   $(cmakeGenerator) - CMake generator string (e.g., "Visual Studio 17 2022")
+#
+# Usage:
+#   - template: discover_native_tools.yml@c_build_tools
+#     parameters:
+#       architecture: 'ARM64'
+#
+#   # Then use in subsequent steps:
+#   - script: '"$(cmakePath)" -S . -B build -A $(cmakeArch)'
+#   - script: '"$(msbuildPath)" build\solution.sln /p:Platform=$(targetPlatform)'
+#   - script: '"$(dumpbinPath)" /ALL mylib.lib'
+
+parameters:
+  - name: architecture
+    type: string
+    default: 'x64'
+    values:
+      - 'x64'
+      - 'x86'
+      - 'ARM64'
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Discover Native Tools (${{ parameters.architecture }})'
+    inputs:
+      targetType: 'inline'
+      script: |
+        $arch = "${{ parameters.architecture }}"
+        Write-Host "============================================================"
+        Write-Host "DISCOVERING NATIVE BUILD TOOLS FOR $arch"
+        Write-Host "============================================================"
+        Write-Host ""
+        
+        # Map architecture to CMake arch, target platform, and MSBuild host folder
+        switch ($arch) {
+            'x64'   { 
+                $cmakeArch = 'x64'
+                $targetPlatform = 'x64'
+                $msbuildHost = 'amd64'
+            }
+            'x86'   { 
+                $cmakeArch = 'Win32'
+                $targetPlatform = 'Win32'
+                $msbuildHost = 'amd64'  # Use x64 MSBuild even for x86 targets
+            }
+            'ARM64' { 
+                $cmakeArch = 'ARM64'
+                $targetPlatform = 'ARM64'
+                $msbuildHost = 'arm64'
+            }
+            default {
+                Write-Error "Unknown architecture: $arch"
+                exit 1
+            }
+        }
+        
+        Write-Host "Architecture mapping:"
+        Write-Host "  CMake -A flag:     $cmakeArch"
+        Write-Host "  MSBuild Platform:  $targetPlatform"
+        Write-Host "  MSBuild Host:      $msbuildHost"
+        Write-Host ""
+        
+        # Find Visual Studio using vswhere
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (-not (Test-Path $vswhere)) {
+            Write-Error "vswhere.exe not found at $vswhere"
+            exit 1
+        }
+        
+        $vsPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+        if (-not $vsPath) {
+            Write-Error "Could not find Visual Studio installation"
+            exit 1
+        }
+        Write-Host "Visual Studio found at: $vsPath"
+        Write-Host "##vso[task.setvariable variable=vsPath]$vsPath"
+        
+        # Get VS version to determine CMake generator
+        $vsVersion = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationVersion
+        $vsMajor = [int]($vsVersion -split '\.')[0]
+        Write-Host "Visual Studio version: $vsVersion (major: $vsMajor)"
+        
+        # Map VS major version to CMake generator
+        $cmakeGenerator = switch ($vsMajor) {
+            18 { "Visual Studio 18 2026" }
+            17 { "Visual Studio 17 2022" }
+            16 { "Visual Studio 16 2019" }
+            default { "Visual Studio $vsMajor" }
+        }
+        Write-Host "CMake generator: $cmakeGenerator"
+        Write-Host "##vso[task.setvariable variable=cmakeGenerator]$cmakeGenerator"
+        Write-Host ""
+        
+        # Find CMake bundled with Visual Studio
+        $cmakeBinDir = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+        $cmakePath = Join-Path $cmakeBinDir "cmake.exe"
+        $ctestPath = Join-Path $cmakeBinDir "ctest.exe"
+        
+        if (-not (Test-Path $cmakePath)) {
+            Write-Error "CMake not found at $cmakePath"
+            exit 1
+        }
+        
+        Write-Host "CMake: $cmakePath"
+        Write-Host "CTest: $ctestPath"
+        Write-Host "##vso[task.setvariable variable=cmakePath]$cmakePath"
+        Write-Host "##vso[task.setvariable variable=ctestPath]$ctestPath"
+        Write-Host ""
+        
+        # Find MSBuild for the correct host architecture
+        # For ARM64, we need MSBuild\Current\Bin\arm64\MSBuild.exe to get native compilation
+        $msbuildPath = Join-Path $vsPath "MSBuild\Current\Bin\$msbuildHost\MSBuild.exe"
+        
+        if (-not (Test-Path $msbuildPath)) {
+            # Fallback to default MSBuild location
+            $msbuildPath = Join-Path $vsPath "MSBuild\Current\Bin\MSBuild.exe"
+            Write-Host "##[warning]Architecture-specific MSBuild not found, falling back to: $msbuildPath"
+        }
+        
+        if (-not (Test-Path $msbuildPath)) {
+            Write-Error "MSBuild not found"
+            exit 1
+        }
+        
+        Write-Host "MSBuild: $msbuildPath"
+        Write-Host "##vso[task.setvariable variable=msbuildPath]$msbuildPath"
+        Write-Host ""
+        
+        # Find dumpbin for the correct host architecture
+        # dumpbin is in the VC tools bin directory alongside cl.exe
+        $vcToolsDir = Join-Path $vsPath "VC\Tools\MSVC"
+        $dumpbinPath = $null
+        
+        if (Test-Path $vcToolsDir) {
+            # Get the latest MSVC version
+            $msvcVersions = Get-ChildItem $vcToolsDir -Directory | Sort-Object Name -Descending
+            foreach ($msvcVersion in $msvcVersions) {
+                # Construct the architecture-specific path
+                if ($arch -eq "ARM64") {
+                    $hostTarget = "Hostarm64\arm64"
+                } elseif ($arch -eq "x86") {
+                    $hostTarget = "Hostx86\x86"
+                } else {
+                    $hostTarget = "Hostx64\x64"
+                }
+                
+                $candidatePath = Join-Path $msvcVersion.FullName "bin\$hostTarget\dumpbin.exe"
+                if (Test-Path $candidatePath) {
+                    $dumpbinPath = $candidatePath
+                    break
+                }
+                
+                # Fallback to x64 if arch-specific not found
+                $candidatePath = Join-Path $msvcVersion.FullName "bin\Hostx64\x64\dumpbin.exe"
+                if (Test-Path $candidatePath) {
+                    $dumpbinPath = $candidatePath
+                    Write-Host "##[warning]Architecture-specific dumpbin not found, falling back to x64"
+                    break
+                }
+            }
+        }
+        
+        if ($dumpbinPath -and (Test-Path $dumpbinPath)) {
+            Write-Host "dumpbin: $dumpbinPath"
+            Write-Host "##vso[task.setvariable variable=dumpbinPath]$dumpbinPath"
+            # Also set as environment variable for subprocesses (like ctest)
+            Write-Host "##vso[task.setvariable variable=DUMPBIN_PATH]$dumpbinPath"
+            [Environment]::SetEnvironmentVariable("DUMPBIN_PATH", $dumpbinPath, "Process")
+        } else {
+            Write-Host "##[warning]dumpbin not found - reals_check may fail"
+        }
+        Write-Host ""
+        
+        # Find vstest.console.exe
+        # Path pattern: <vsPath>\Common7\IDE\CommonExtensions\<Microsoft|Platform>\TestPlatform
+        $vstestPath = $null
+        $vstestExeName = "vstest.console.exe"
+        
+        # Check known locations under Common7\IDE\CommonExtensions
+        $commonExtensions = Join-Path $vsPath "Common7\IDE\CommonExtensions"
+        $searchPaths = @(
+            (Join-Path $commonExtensions "Microsoft\TestPlatform"),
+            (Join-Path $commonExtensions "Platform\TestPlatform"),
+            (Join-Path $commonExtensions "Microsoft\TestWindow"),
+            (Join-Path $commonExtensions "Platform\TestWindow")
+        )
+        
+        foreach ($searchPath in $searchPaths) {
+            $candidatePath = Join-Path $searchPath $vstestExeName
+            Write-Host "Checking: $candidatePath"
+            if (Test-Path $candidatePath) {
+                $vstestPath = $candidatePath
+                Write-Host "Found vstest at: $vstestPath"
+                break
+            }
+        }
+        
+        if (-not $vstestPath) {
+            # Fallback: use vswhere -find
+            Write-Host "vstest not found in known locations, trying vswhere -find..."
+            $vstestCandidates = & $vswhere -latest -products * -requires Microsoft.VisualStudio.TestTools.TestPlatform -find "**\$vstestExeName" 2>$null
+            if ($vstestCandidates) {
+                if ($vstestCandidates -is [array]) {
+                    $vstestPath = $vstestCandidates[0]
+                } else {
+                    $vstestPath = $vstestCandidates
+                }
+            }
+        }
+        
+        if ($vstestPath -and (Test-Path $vstestPath)) {
+            Write-Host "vstest: $vstestPath"
+            Write-Host "##vso[task.setvariable variable=vstestPath]$vstestPath"
+        } else {
+            Write-Host "##[warning]$vstestExeName not found"
+        }
+        Write-Host ""
+        
+        # Set architecture variables for use in build commands
+        Write-Host "##vso[task.setvariable variable=cmakeArch]$cmakeArch"
+        Write-Host "##vso[task.setvariable variable=targetPlatform]$targetPlatform"
+        Write-Host ""
+        
+        # ============================================================
+        # ARCHITECTURE VERIFICATION
+        # Verify all detected executables match the expected architecture
+        # ============================================================
+        Write-Host "============================================================"
+        Write-Host "VERIFYING TOOL ARCHITECTURES"
+        Write-Host "============================================================"
+        Write-Host ""
+        
+        # Helper function to get PE architecture from PE header
+        function Get-PEArchitecture {
+            param([string]$FilePath)
+            if (-not (Test-Path $FilePath)) { return $null }
+            try {
+                $stream = [System.IO.File]::OpenRead($FilePath)
+                $reader = New-Object System.IO.BinaryReader($stream)
+                $stream.Seek(0x3C, [System.IO.SeekOrigin]::Begin) | Out-Null
+                $peOffset = $reader.ReadInt32()
+                $stream.Seek($peOffset + 4, [System.IO.SeekOrigin]::Begin) | Out-Null
+                $machine = $reader.ReadUInt16()
+                $reader.Close()
+                $stream.Close()
+                switch ($machine) {
+                    0x014C { return "x86" }
+                    0x8664 { return "x64" }
+                    0xAA64 { return "ARM64" }
+                    default { return "Unknown (0x$($machine.ToString('X4')))" }
+                }
+            } catch {
+                return "Error reading PE header"
+            }
+        }
+        
+        # Expected architecture based on target
+        $expectedArch = switch ($arch) {
+            'x64'   { 'x64' }
+            'x86'   { 'x86' }
+            'ARM64' { 'ARM64' }
+        }
+        
+        $archMismatches = @()
+        $toolsToVerify = @{}
+        if ($cmakePath) { $toolsToVerify['cmake.exe'] = $cmakePath }
+        if ($ctestPath) { $toolsToVerify['ctest.exe'] = $ctestPath }
+        if ($msbuildPath) { $toolsToVerify['MSBuild.exe'] = $msbuildPath }
+        if ($dumpbinPath) { $toolsToVerify['dumpbin.exe'] = $dumpbinPath }
+        if ($vstestPath) { $toolsToVerify['vstest.console.exe'] = $vstestPath }
+        
+        foreach ($tool in $toolsToVerify.GetEnumerator()) {
+            $toolArch = Get-PEArchitecture -FilePath $tool.Value
+            $status = if ($toolArch -eq $expectedArch -or ($expectedArch -eq 'x86' -and $toolArch -eq 'x64')) { "OK" } else { "MISMATCH" }
+            
+            Write-Host "$($tool.Key): $toolArch (expected: $expectedArch) [$status]"
+            Write-Host "  Path: $($tool.Value)"
+            
+            if ($status -eq "MISMATCH" -and $expectedArch -eq "ARM64") {
+                $archMismatches += "$($tool.Key) is $toolArch, expected $expectedArch"
+            }
+        }
+        Write-Host ""
+        
+        if ($archMismatches.Count -gt 0) {
+            Write-Host "##[warning]Architecture mismatches detected for ARM64 build:"
+            foreach ($mismatch in $archMismatches) {
+                Write-Host "##[warning]  - $mismatch"
+            }
+            Write-Host "##[warning]Some tools may run under emulation, which can affect performance."
+            Write-Host ""
+        } else {
+            Write-Host "All tools verified to have correct architecture."
+            Write-Host ""
+        }
+        
+        Write-Host "============================================================"
+        Write-Host "TOOL DISCOVERY COMPLETE"
+        Write-Host "============================================================"
+        Write-Host ""
+        Write-Host "Use these variables in subsequent steps:"
+        Write-Host '  CMake:    "$(cmakePath)" -S . -B build -G "$(cmakeGenerator)" -A $(cmakeArch)'
+        Write-Host '  MSBuild:  "$(msbuildPath)" solution.sln /p:Platform=$(targetPlatform)'
+        Write-Host '  CTest:    "$(ctestPath)" -C Debug --output-on-failure'
+        Write-Host '  dumpbin:  "$(dumpbinPath)" /ALL mylib.lib'
+        Write-Host '  vstest:   "$(vstestPath)" test.dll /Platform:$(targetPlatform)'
+        Write-Host ""
+        Write-Host "Environment variable DUMPBIN_PATH is also set for subprocesses (e.g., ctest)"
+        Write-Host ""

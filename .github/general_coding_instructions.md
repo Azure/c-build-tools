@@ -610,6 +610,101 @@ else
 
 ## Additional Conventions {#additional-conventions}
 
+### Switch Statement Structure
+- **Always place `default:` case FIRST** in switch statements, before all named cases
+- This is consistent with the "error case first" convention used for `if` statements — handle the unexpected/error path first
+
+```c
+// CORRECT - default first (error case first)
+switch (result)
+{
+    default:
+        LogError("unknown result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+        break;
+    case RESULT_ERROR:
+        // handle error
+        break;
+    case RESULT_OK:
+        // handle OK
+        break;
+}
+
+// INCORRECT - default at end
+switch (result)
+{
+    case RESULT_OK:
+        // handle OK
+        break;
+    case RESULT_ERROR:
+        // handle error
+        break;
+    default:
+        LogError("unknown result");
+        break;
+}
+```
+
+### Error-First Pattern in If/Else
+When checking operation results, check for the error case FIRST, then handle success in else:
+
+```c
+// CORRECT - error first
+if (result != RESULT_OK)
+{
+    LogError("operation failed with result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+    // error handling
+}
+else
+{
+    // success path
+}
+
+// AVOID - success first (less common pattern)
+if (result == RESULT_OK)
+{
+    // success path
+}
+else
+{
+    LogError("operation failed");
+}
+```
+
+### Format Specifiers for Enums and Booleans
+Use macro-utils format specifiers for consistent logging of enum values and booleans:
+
+```c
+// For enum values - use PRI_MU_ENUM with MU_ENUM_VALUE
+LogInfo("state=%" PRI_MU_ENUM, MU_ENUM_VALUE(MY_STATE, state));
+LogError("operation failed with result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+
+// For boolean values - use PRI_BOOL with MU_BOOL_VALUE  
+LogInfo("enabled=%" PRI_BOOL, MU_BOOL_VALUE(is_enabled));
+
+// INCORRECT - avoid manual string conversion
+LogInfo("state=%d", (int)state);                          // Don't cast enums to int
+LogInfo("enabled=%s", is_enabled ? "true" : "false");     // Don't use ternary
+```
+
+### Code Comments - No Transient References
+Code comments should not reference transient information like PR numbers, bug IDs, or reviewer names. This information becomes stale and meaningless over time.
+
+```c
+// INCORRECT - references transient info
+// Added per PR #14462634 review feedback
+// Fix for bug 12345
+// Per John's suggestion
+
+// CORRECT - describe the technical reason
+// Handle edge case where count can be zero
+// Prevent integer overflow in size calculation
+```
+
+**Exception**: TODO comments MAY reference ADO work items when tracking deferred work:
+```c
+// TODO: Task 12345 - Implement retry logic for transient failures
+```
+
 ### Mockable Function Declarations {#mockable-functions}
 For functions that need to be mocked in unit tests, use `MOCKABLE_FUNCTION` or `MOCKABLE_FUNCTION_WITH_RETURNS` in header files:
 
@@ -1081,6 +1176,35 @@ STRICT_EXPECTED_CALL(my_function(IGNORED_ARG, IGNORED_ARG))
 STRICT_EXPECTED_CALL(my_function(IGNORED_ARG, IGNORED_ARG)).SetReturn(42);
 ```
 
+### Registering New Modules in reals_ut
+When adding a new module that has "reals" (non-mocked implementations in `tests/reals/`), the module must also be registered in the repository's `reals_ut` test. This test verifies that all real-to-mock mappings compile and link correctly.
+
+**Three files to update:**
+
+1. **`tests/reals_ut/<repo>_reals_ut_pch.h`** — Add the module header inside the `ENABLE_MOCKS` section and the real header after `DISABLE_MOCKS`:
+```c
+#include "umock_c/umock_c_ENABLE_MOCKS.h"
+// ... existing includes ...
+#include "module/new_module.h"  // <-- add new module
+#include "umock_c/umock_c_DISABLE_MOCKS.h"
+
+// ... existing real includes ...
+#include "../tests/reals/real_new_module.h"  // <-- add new module real
+```
+
+2. **`tests/reals_ut/<repo>_reals_ut.c`** — Add the `REGISTER_*_GLOBAL_MOCK_HOOK()` call inside `check_all_<repo>_reals`:
+```c
+TEST_FUNCTION(check_all_repo_reals)
+{
+    // ... existing registrations ...
+    REGISTER_NEW_MODULE_GLOBAL_MOCK_HOOK();  // <-- add new module
+}
+```
+
+3. **`tests/reals/CMakeLists.txt`** — Add the reals source files to the reals target.
+
+The reals_ut test ensures that every `REGISTER_*_GLOBAL_MOCK_HOOK()` macro expands correctly and all `real_*` function symbols resolve. Missing this registration means the reals are untested and could have linking issues that only surface when another module tries to use them.
+
 ### Result Variable Assignment in Tests
 When testing error paths, each error path in the implementation should set the result variable explicitly. This enables line-number tracking during debugging:
 
@@ -1108,6 +1232,18 @@ if (first_check_fails)
     LogError("first check failed");
     // Missing result assignment - harder to debug
 }
+```
+
+### Struct Arguments Require IGNORED_STRUCT_ARG
+`IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
+
+```c
+// WRONG: IGNORED_ARG is int, UUID_T is a struct
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_ARG));
+// Compiler error: cannot convert from 'int' to 'UUID_T'
+
+// CORRECT: Use IGNORED_STRUCT_ARG for struct parameters
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_STRUCT_ARG(UUID_T)));
 ```
 
 ### Requirements Traceability System
@@ -1139,8 +1275,19 @@ Requirements in `.md` files use backticks for better readability:
 ```
 
 #### Code Implementation Tracing
-Requirements are traced to implementation using `Codes_SRS_` comments:
+Requirements are traced to implementation using `Codes_SRS_` comments. **Codes_ tags must ALWAYS be inline** — placed on the line immediately before the implementing code. Never place multiple Codes_ tags as a leading comment block before a function signature.
+
 ```c
+// WRONG: Leading Codes_ tags as a block before the function
+/*Codes_SRS_MODULE_42_001: [ If parameter is NULL then module_function shall fail. ]*/
+/*Codes_SRS_MODULE_42_002: [ module_function shall allocate memory. ]*/
+/*Codes_SRS_MODULE_42_003: [ If malloc fails then module_function shall return NULL. ]*/
+int module_function(void* parameter)
+{
+    ...
+}
+
+// CORRECT: Each Codes_ tag inline, immediately before the code it documents
 int module_function(void* parameter)
 {
     int result;
@@ -1251,5 +1398,126 @@ static void setup_test_state(void)
 - Include error conditions and edge cases
 - Group related requirements logically
 - Update all three locations (spec, code, tests) when modifying requirements
+
+## Internal Callback Functions in Requirements {#internal-callback-requirements}
+
+When creating internal/static callback functions that are passed to other modules (dispose functions, completion handlers, notification handlers), they must be properly documented in the requirements specification:
+
+**Requirements:**
+1. **Named with `internal_` prefix**: e.g., `internal_sp_record_item_dispose`, `internal_bsdl_on_complete`
+2. **Documented in the requirements spec** with their own section and function signature
+3. **Have their own SRS tags** and corresponding unit tests
+
+**Note:** This applies ONLY to static functions that are passed to other dependent modules (callbacks). Internal functions that are truly internal and never used to interact with other modules should NOT be exposed in the requirements doc.
+
+```markdown
+### internal_my_item_dispose
+
+`internal_my_item_dispose` is a dispose function passed to `THANDLE_TYPE_DEFINE_WITH_MALLOC_FUNCTIONS` for automatic cleanup.
+
+```c
+static void internal_my_item_dispose(MY_ITEM* item);
+```
+
+**SRS_MY_MODULE_42_050: [** `internal_my_item_dispose` shall release the `child` reference by calling `THANDLE_ASSIGN(CHILD)(&item->child, NULL)`. **]**
+```
+
+## Error Result Type Guidelines {#error-result-types}
+
+When a function can fail for different categories of reasons, use distinct error codes to allow callers to distinguish between error types:
+
+**Categories:**
+- **`*_ERROR`**: Runtime failures (memory allocation, I/O errors, network issues) - may be transient/retryable
+- **`*_INVALID_DATA`**: Data validation failures (corrupt data, format errors, checksum mismatch) - permanent data issues
+- **`*_INVALID_ARG`**: Invalid function arguments - caller programming error
+
+**Example:**
+```c
+// Result enum with distinct error categories
+#define OPEN_RESULT_VALUES \
+    OPEN_RESULT_OK, \
+    OPEN_RESULT_ERROR, \          // Runtime failure (retry may help)
+    OPEN_RESULT_INVALID_DATA, \   // Data corruption (retry won't help)
+    OPEN_RESULT_INVALID_ARG       // Bad arguments (caller bug)
+
+MU_DEFINE_ENUM(OPEN_RESULT, OPEN_RESULT_VALUES)
+
+// In implementation:
+if (checksum_mismatch)
+{
+    result = OPEN_RESULT_INVALID_DATA;  // Data is corrupt
+}
+else if (malloc_failed)
+{
+    result = OPEN_RESULT_ERROR;         // Runtime failure
+}
+```
+
+## Codes_SRS Comment Placement {#codes-srs-placement}
+
+Place `Codes_SRS_*` comments immediately before the specific line of code they trace to, not grouped at the top of a code block. This makes the traceability relationship clear during code review.
+
+```c
+// Good - each comment directly before the line it describes:
+/*Codes_SRS_MODULE_01_001: [ function shall allocate memory ]*/
+void* ptr = malloc(size);
+/*Codes_SRS_MODULE_01_002: [ if allocation fails, function shall return NULL ]*/
+if (ptr == NULL)
+{
+    result = NULL;
+}
+
+// Bad - comments grouped at the top:
+/*Codes_SRS_MODULE_01_001: [ function shall allocate memory ]*/
+/*Codes_SRS_MODULE_01_002: [ if allocation fails, function shall return NULL ]*/
+void* ptr = malloc(size);
+if (ptr == NULL)
+{
+    result = NULL;
+}
+```
+
+## Dispose Function Guidelines {#dispose-guidelines}
+
+In dispose/cleanup functions, don't add unnecessary operations like setting struct fields to NULL before freeing the containing structure. Only perform cleanup that has actual effect (releasing resources, decrementing reference counts).
+
+```c
+// Good - just release resources:
+static void my_dispose(void* context)
+{
+    MY_STRUCT* my_struct = context;
+    THANDLE_ASSIGN(CHILD)(&my_struct->child, NULL);  // Actually decrements ref count
+    // Parent will free my_struct
+}
+
+// Bad - unnecessary NULL assignments:
+static void my_dispose(void* context)
+{
+    MY_STRUCT* my_struct = context;
+    my_struct->some_value = 0;     // Pointless - struct is about to be freed
+    my_struct->some_ptr = NULL;    // Pointless if not ref-counted
+    THANDLE_ASSIGN(CHILD)(&my_struct->child, NULL);
+}
+```
+
+## Reals Unit Testing {#reals-unit-testing}
+
+When adding new `real_*` function implementations (real implementations used to pass-through to actual functions during testing), create corresponding `*_reals_ut` unit tests to verify the real implementations work correctly. This ensures the "reals" are properly exercised.
+
+```c
+// In my_module_reals_ut.c
+TEST_FUNCTION(real_my_module_create_frees_on_failure)
+{
+    ///arrange
+    // Set up conditions that cause failure after partial allocation
+    
+    ///act
+    MY_HANDLE result = real_my_module_create(params);
+    
+    ///assert
+    ASSERT_IS_NULL(result);
+    // Verify no memory leaks via test framework
+}
+```
 
 These guidelines ensure consistency with the existing Azure C library ecosystem and maintain the high quality and reliability standards of the Azure Messaging Block Storage project.
