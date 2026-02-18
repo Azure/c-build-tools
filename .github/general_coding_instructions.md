@@ -1171,7 +1171,7 @@ Requirements in `.md` files use backticks for better readability:
 ```
 
 #### Code Implementation Tracing
-Requirements are traced to implementation using `Codes_SRS_` comments. **Codes_ tags must ALWAYS be inline** — placed on the line immediately before the implementing code. Never place multiple Codes_ tags as a leading comment block before a function signature.
+Requirements are traced to implementation using `Codes_SRS_` comments. **Codes_ tags must ALWAYS be inline** — placed on the line immediately before the implementing code. Never place multiple Codes_ tags as a leading comment block before a function signature. When a `Codes_SRS_` tag references a specific function call (e.g., `critical_section_leave`), place the tag directly before that call, not at the top of the enclosing block.
 
 ```c
 // WRONG: Leading Codes_ tags as a block before the function
@@ -1275,6 +1275,74 @@ TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
 - Include error conditions and edge cases
 - Group related requirements logically
 - Update all three locations (spec, code, tests) when modifying requirements
+
+### Negative Testing Requirements
+
+#### All Fallible Functions Must Have Negative Tests
+Every function that allocates memory, calls external dependencies, or can return failure **must** have a negative test using the `umock_c_negative_tests` pattern. This ensures all failure paths are exercised:
+
+```c
+TEST_FUNCTION(when_underlying_functions_fail_then_my_function_fails)
+{
+    ///arrange
+    setup_my_function_expectations();
+
+    umock_c_negative_tests_snapshot();
+
+    for (size_t i = 0; i < umock_c_negative_tests_call_count(); i++)
+    {
+        if (umock_c_negative_tests_can_call_fail(i))
+        {
+            umock_c_negative_tests_reset();
+            umock_c_negative_tests_fail_call(i);
+
+            ///act
+            int result = my_function(...);
+
+            ///assert
+            ASSERT_ARE_NOT_EQUAL(int, 0, result, "On failed call %zu", i);
+        }
+    }
+}
+```
+
+**Guidelines:**
+- Only include `umock_c_negative_tests.h` and `umock_c_negative_tests_init()`/`deinit()` when the test file actually uses negative tests
+- Do not add negative test infrastructure to test files that don't use it
+
+#### THANDLE Values in Negative Tests
+When writing negative tests for functions that take or return `THANDLE` parameters, `THANDLE` values **cannot** be simply assigned like regular pointers. They must be manipulated using `THANDLE_ASSIGN`, `THANDLE_INITIALIZE_MOVE`, etc. This applies to setting up test state and verifying cleanup in negative test iterations.
+
+### No Magic Numbers in Tests
+Numeric literals in test code should be replaced with named `#define` macros. This improves readability and makes the test's intent clear:
+
+```c
+// WRONG: Magic number in test
+STRICT_EXPECTED_CALL(my_function_create(3, test_cleanup));
+
+// CORRECT: Named constant
+#define TEST_DEFAULT_ARRAY_ENTRY_COUNT 3
+STRICT_EXPECTED_CALL(my_function_create(TEST_DEFAULT_ARRAY_ENTRY_COUNT, test_cleanup));
+```
+
+### Assert Expected Calls in Every Test
+All tests that set up `STRICT_EXPECTED_CALL` expectations **must** verify them with `ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls())`. This is not limited to helper functions — it applies to **every** test function that uses mock expectations:
+
+```c
+TEST_FUNCTION(when_all_calls_succeed_then_operation_succeeds)
+{
+    ///arrange
+    STRICT_EXPECTED_CALL(dependency_create());
+    STRICT_EXPECTED_CALL(dependency_configure(IGNORED_ARG));
+
+    ///act
+    int result = my_function();
+
+    ///assert
+    ASSERT_ARE_EQUAL(int, 0, result);
+    ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());  // REQUIRED
+}
+```
 
 ### Struct Arguments Require IGNORED_STRUCT_ARG
 `IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
