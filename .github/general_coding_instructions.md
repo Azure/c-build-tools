@@ -1235,6 +1235,139 @@ if (first_check_fails)
 }
 ```
 
+### Mocking THANDLE Types in Unit Tests {#thandle-mocking}
+
+When a module uses `THANDLE(MY_TYPE)` and is tested under umock-c mocking, three files must work together to allow the THANDLE lifecycle functions (ASSIGN, INITIALIZE, MOVE, etc.) to be properly mocked and connected to real implementations.
+
+#### 1. Renames Header (`real_my_module_renames.h`)
+The renames header must rename **both** the type itself and all API functions. Renaming the type ensures that all THANDLE-generated functions (e.g., `MY_TYPE_ASSIGN`, `MY_TYPE_INITIALIZE`) are automatically renamed to their `real_` equivalents:
+
+```c
+// real_my_module_renames.h
+#define MY_TYPE real_MY_TYPE            // Renames the type AND all generated THANDLE functions
+
+#define my_module_create real_my_module_create
+#define my_module_do_something real_my_module_do_something
+```
+
+#### 2. Reals Header (`real_my_module.h`)
+The reals header must:
+- Include `"c_pal/thandle.h"`
+- Register mock hooks for **both** API functions and THANDLE lifecycle operations
+- Typedef the real type and declare its THANDLE
+- Declare the real function prototypes using `THANDLE(real_MY_TYPE)`
+
+```c
+// real_my_module.h
+#ifndef REAL_MY_MODULE_H
+#define REAL_MY_MODULE_H
+
+#include "macro_utils/macro_utils.h"
+#include "c_pal/thandle.h"
+
+#include "my_module/my_module.h"
+
+#define R2(X) REGISTER_GLOBAL_MOCK_HOOK(X, real_##X);
+
+#define REGISTER_MY_MODULE_GLOBAL_MOCK_HOOKS() \
+    MU_FOR_EACH_1(R2, \
+        my_module_create, \
+        my_module_do_something \
+    ) \
+    REGISTER_GLOBAL_MOCK_HOOK(THANDLE_MOVE(MY_TYPE), THANDLE_MOVE(real_MY_TYPE)) \
+    REGISTER_GLOBAL_MOCK_HOOK(THANDLE_INITIALIZE(MY_TYPE), THANDLE_INITIALIZE(real_MY_TYPE)) \
+    REGISTER_GLOBAL_MOCK_HOOK(THANDLE_INITIALIZE_MOVE(MY_TYPE), THANDLE_INITIALIZE_MOVE(real_MY_TYPE)) \
+    REGISTER_GLOBAL_MOCK_HOOK(THANDLE_ASSIGN(MY_TYPE), THANDLE_ASSIGN(real_MY_TYPE)) \
+
+typedef struct MY_TYPE_TAG real_MY_TYPE;
+THANDLE_TYPE_DECLARE(real_MY_TYPE);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+THANDLE(real_MY_TYPE) real_my_module_create(int param);
+void real_my_module_do_something(THANDLE(real_MY_TYPE) handle);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // REAL_MY_MODULE_H
+```
+
+#### 3. Reals Source (`real_my_module.c`)
+The source file includes all renames headers (including `real_gballoc_hl_renames.h` since `THANDLE_TYPE_DEFINE` requires gballoc), then includes the actual source:
+
+```c
+// real_my_module.c
+#include "real_gballoc_hl_renames.h"
+#include "real_interlocked_renames.h"
+#include "real_my_module_renames.h"
+
+#include "../../src/my_module.c"
+```
+
+#### 4. Test PCH Setup
+The test PCH must include `gballoc_hl.h` and `gballoc_hl_redirect.h` inside the `ENABLE_MOCKS` section so that `malloc`/`free` calls from THANDLE infrastructure are observable:
+
+```c
+// my_module_ut_pch.h
+#include "umock_c/umock_c_ENABLE_MOCKS.h"
+
+#include "c_pal/gballoc_hl.h"
+#include "c_pal/gballoc_hl_redirect.h"
+#include "c_pal/interlocked.h"
+// ... other mocked headers ...
+
+#include "umock_c/umock_c_DISABLE_MOCKS.h"
+
+#include "real_gballoc_hl.h"
+#include "real_interlocked.h"
+// ... other reals ...
+```
+
+#### 5. Test Expected Calls
+THANDLE create/dispose functions have additional infrastructure calls that must be included in test expectations:
+
+**Create expectations** must include `malloc` and `interlocked_exchange` (refcount init):
+```c
+static void setup_create_expectations(void)
+{
+    STRICT_EXPECTED_CALL(malloc(IGNORED_ARG));
+    STRICT_EXPECTED_CALL(interlocked_exchange(IGNORED_ARG, 1)).CallCannotFail();
+    // ... module-specific create expectations ...
+}
+```
+
+**Dispose expectations** must include `interlocked_decrement` and `free`:
+```c
+STRICT_EXPECTED_CALL(interlocked_decrement(IGNORED_ARG));
+// ... module-specific dispose expectations ...
+STRICT_EXPECTED_CALL(free(IGNORED_ARG));
+```
+
+#### 6. Safe Dispose on Partial Initialization
+When the create function allocates via `THANDLE_MALLOC` then calls other functions that may fail, the dispose function may be called with partially-initialized fields. Initialize all THANDLE fields to NULL immediately after allocation:
+
+```c
+THANDLE(MY_TYPE) my_module_create(...)
+{
+    THANDLE(MY_TYPE) handle = THANDLE_MALLOC(MY_TYPE)(my_module_dispose);
+    if (handle != NULL)
+    {
+        MY_TYPE* ptr = THANDLE_GET_T(MY_TYPE)(handle);
+        // Initialize THANDLE fields to safe defaults before any failable calls
+        THANDLE_INITIALIZE(RC_STRING)(&ptr->name, NULL);
+        THANDLE_INITIALIZE(CHANNEL)(&ptr->channel, NULL);
+        
+        // Now safe to call functions that may fail - dispose won't crash
+        // Use THANDLE_ASSIGN (not THANDLE_INITIALIZE) for subsequent field assignment
+        // since fields are already initialized
+    }
+}
+```
+
 ### Struct Arguments Require IGNORED_STRUCT_ARG
 `IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
 
