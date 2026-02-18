@@ -68,6 +68,14 @@ function(copy_disable_vld_ini target output_directory)
             "${build_c_tests_internal_dir}/disable_vld.ini" "${output_directory}/vld.ini" )
 endfunction()
 
+function(copy_default_vld_ini target output_directory)
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${build_c_tests_internal_dir}/default_vld.ini" "${output_directory}/vld.ini" )
+endfunction()
+
+
+
 macro(set_default_build_options)
     #compile the code as C17
     set(CMAKE_C_STANDARD 17)
