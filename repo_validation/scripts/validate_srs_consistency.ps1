@@ -248,7 +248,7 @@ function Test-IsTestFile {
     $fileName = [System.IO.Path]::GetFileName($FilePath)
     
     # Check file name patterns for test files
-    if ($fileName -match '_ut\.c$' -or $fileName -match '_int\.c$' -or $fileName -match '_it\.c$') {
+    if ($fileName -match '_ut\.c$' -or $fileName -match '_int\.c$') {
         return $true
     }
     
