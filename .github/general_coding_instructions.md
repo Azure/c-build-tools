@@ -1370,8 +1370,7 @@ THANDLE(MY_TYPE) my_module_create(...)
         }
         else
         {
-            THANDLE_INITIALIZE(RC_STRING)(&ptr->name, name);
-            THANDLE_ASSIGN(RC_STRING)(&name, NULL);
+            THANDLE_INITIALIZE_MOVE(RC_STRING)(&ptr->name, &name);
 
             THANDLE(CHANNEL) channel = channel_create();
             if (channel == NULL)
@@ -1380,8 +1379,7 @@ THANDLE(MY_TYPE) my_module_create(...)
             }
             else
             {
-                THANDLE_INITIALIZE(CHANNEL)(&ptr->channel, channel);
-                THANDLE_ASSIGN(CHANNEL)(&channel, NULL);
+                THANDLE_INITIALIZE_MOVE(CHANNEL)(&ptr->channel, &channel);
 
                 THANDLE_INITIALIZE_MOVE(MY_TYPE)(&result, &handle);
                 goto all_ok;
