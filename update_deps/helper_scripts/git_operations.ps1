@@ -68,44 +68,51 @@ function update-submodules-to-fixed-commits
     }
 
     # Get submodule paths from .gitmodules
-    if (-not (Test-Path ".gitmodules"))
+    if (Test-Path ".gitmodules")
     {
-        return
-    }
-    $submodule_lines = git config --file .gitmodules --get-regexp '\.path$'
-    if (-not $submodule_lines)
-    {
-        return
-    }
-
-    foreach ($line in $submodule_lines)
-    {
-        $sub_path = ($line -split "\s+", 2)[1]
-
-        # Check if this submodule should be ignored
-        if ($sub_path -in $ignore_paths)
+        $submodule_lines = git config --file .gitmodules --get-regexp '\.path$'
+        if ($submodule_lines)
         {
-            continue
-        }
+            foreach ($line in $submodule_lines)
+            {
+                $sub_path = ($line -split "\s+", 2)[1]
 
-        # Derive repo name from submodule path (e.g., "deps/c-util" -> "c-util")
-        $sub_repo_name = Split-Path $sub_path -Leaf
+                # Check if this submodule should be ignored
+                if ($sub_path -in $ignore_paths)
+                {
+                    # ignored submodule, skip
+                }
+                else
+                {
+                    # Derive repo name from submodule path (e.g., "deps/c-util" -> "c-util")
+                    $sub_repo_name = Split-Path $sub_path -Leaf
 
-        Push-Location $sub_path
-        if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
-        {
-            $target_sha = $global:fixed_commits[$sub_repo_name]
-            Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
-            git fetch origin
-            git checkout $target_sha
+                    Push-Location $sub_path
+                    if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
+                    {
+                        $target_sha = $global:fixed_commits[$sub_repo_name]
+                        Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
+                        git fetch origin
+                        git checkout $target_sha
+                    }
+                    else
+                    {
+                        Write-Host "  Updating $sub_path to latest master (no fixed commit)"
+                        git checkout master
+                        git pull
+                    }
+                    Pop-Location
+                }
+            }
         }
         else
         {
-            Write-Host "  Updating $sub_path to latest master (no fixed commit)"
-            git checkout master
-            git pull
+            # no submodules found
         }
-        Pop-Location
+    }
+    else
+    {
+        # no .gitmodules file
     }
 }
 
@@ -117,24 +124,26 @@ function update-fixed-commit
         [string] $repo_name
     )
 
-    if (-not $global:fixed_commits)
+    if ($global:fixed_commits)
     {
-        return
-    }
-
-    Push-Location $repo_name
-    git fetch origin master 2>$null
-    $new_sha = (git rev-parse origin/master 2>$null)
-    if ($LASTEXITCODE -eq 0 -and $new_sha)
-    {
-        $global:fixed_commits[$repo_name] = $new_sha.Trim()
-        Write-Host "  Updated fixed commit for $repo_name to $($new_sha.Trim().Substring(0, 8))"
+        Push-Location $repo_name
+        git fetch origin master 2>$null
+        $new_sha = (git rev-parse origin/master 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $new_sha)
+        {
+            $global:fixed_commits[$repo_name] = $new_sha.Trim()
+            Write-Host "  Updated fixed commit for $repo_name to $($new_sha.Trim().Substring(0, 8))"
+        }
+        else
+        {
+            Write-Host "  Warning: Could not fetch new master commit for $repo_name" -ForegroundColor Yellow
+        }
+        Pop-Location
     }
     else
     {
-        Write-Host "  Warning: Could not fetch new master commit for $repo_name" -ForegroundColor Yellow
+        # no fixed commits table, nothing to update
     }
-    Pop-Location
 }
 
 function refresh-submodules
