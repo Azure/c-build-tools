@@ -1347,24 +1347,51 @@ STRICT_EXPECTED_CALL(interlocked_decrement(IGNORED_ARG));
 STRICT_EXPECTED_CALL(free(IGNORED_ARG));
 ```
 
-#### 6. Safe Dispose on Partial Initialization
-When the create function allocates via `THANDLE_MALLOC` then calls other functions that may fail, the dispose function may be called with partially-initialized fields. Initialize all THANDLE fields to NULL immediately after allocation:
+#### 6. Cleanup on Partial Initialization with `goto all_ok`
+When the create function allocates via `THANDLE_MALLOC` then calls other functions that may fail, use the `goto all_ok` pattern to clean up struct members on failure and `THANDLE_FREE` to release the allocated memory. Do **not** use `THANDLE_ASSIGN(&result, NULL)` to free THANDLE_MALLOC'ed memory from inside the `_create` function:
 
 ```c
 THANDLE(MY_TYPE) my_module_create(...)
 {
+    THANDLE(MY_TYPE) result = NULL;
     THANDLE(MY_TYPE) handle = THANDLE_MALLOC(MY_TYPE)(my_module_dispose);
-    if (handle != NULL)
+    if (handle == NULL)
+    {
+        LogError("THANDLE_MALLOC failed");
+    }
+    else
     {
         MY_TYPE* ptr = THANDLE_GET_T(MY_TYPE)(handle);
-        // Initialize THANDLE fields to safe defaults before any failable calls
-        THANDLE_INITIALIZE(RC_STRING)(&ptr->name, NULL);
-        THANDLE_INITIALIZE(CHANNEL)(&ptr->channel, NULL);
-        
-        // Now safe to call functions that may fail - dispose won't crash
-        // Use THANDLE_ASSIGN (not THANDLE_INITIALIZE) for subsequent field assignment
-        // since fields are already initialized
+
+        THANDLE(RC_STRING) name = rc_string_create("hello");
+        if (name == NULL)
+        {
+            LogError("rc_string_create failed");
+        }
+        else
+        {
+            THANDLE_INITIALIZE(RC_STRING)(&ptr->name, name);
+            THANDLE_ASSIGN(RC_STRING)(&name, NULL);
+
+            THANDLE(CHANNEL) channel = channel_create();
+            if (channel == NULL)
+            {
+                LogError("channel_create failed");
+            }
+            else
+            {
+                THANDLE_INITIALIZE(CHANNEL)(&ptr->channel, channel);
+                THANDLE_ASSIGN(CHANNEL)(&channel, NULL);
+
+                THANDLE_INITIALIZE_MOVE(MY_TYPE)(&result, &handle);
+                goto all_ok;
+            }
+            THANDLE_ASSIGN(RC_STRING)(&ptr->name, NULL);
+        }
+        THANDLE_FREE(MY_TYPE)(handle);
     }
+all_ok:
+    return result;
 }
 ```
 
