@@ -113,11 +113,13 @@ function update-repo
         {
             $pr_url = update-repo-github $repo_name $new_branch_name
             set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+            update-fixed-commit $repo_name
         }
         elseif ($repo_type -eq "azure")
         {
             $pr_url = update-repo-azure $repo_name $new_branch_name
             set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+            update-fixed-commit $repo_name
         }
         else
         {
@@ -230,6 +232,14 @@ function propagate-updates
 
     # Initialize status tracking
     initialize-repo-status -repos $repo_order
+
+    # Snapshot master HEAD commits for all repos before starting updates.
+    # This ensures we propagate the same commit for each dependency throughout
+    # the entire run, even if a repo's master branch is updated externally.
+    Write-Host "`nSnapshotting master commits for all repos..."
+    Set-Location $global:work_dir
+    $global:fixed_commits = snapshot-repo-commits -repo_order $repo_order
+    Write-Host "Fixed commits captured for $($global:fixed_commits.Count) repos`n"
 
     Write-Host "Updating repositories in the following order: "
     for($i = 0; $i -lt $repo_order.Length; $i++)

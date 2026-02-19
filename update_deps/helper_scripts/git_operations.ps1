@@ -23,6 +23,120 @@ function create-ignore-pattern
 # Initialize the ignore pattern when script is sourced
 create-ignore-pattern
 
+# Snapshot the current master HEAD commit for all repos in the work directory.
+# Called once before propagation starts so that every repo is updated to the
+# same set of commits throughout the entire run.
+function snapshot-repo-commits
+{
+    param(
+        [string[]] $repo_order
+    )
+    $commits = @{}
+    foreach ($repo_name in $repo_order)
+    {
+        if (Test-Path $repo_name)
+        {
+            Push-Location $repo_name
+            $sha = (git rev-parse master 2>$null)
+            if ($LASTEXITCODE -eq 0 -and $sha)
+            {
+                $commits[$repo_name] = $sha.Trim()
+                Write-Host "  $repo_name : $($commits[$repo_name].Substring(0, 8))"
+            }
+            else
+            {
+                Write-Host "  Warning: Could not get master commit for $repo_name" -ForegroundColor Yellow
+            }
+            Pop-Location
+        }
+        else
+        {
+            # repo not cloned yet, skip
+        }
+    }
+    return $commits
+}
+
+# Update each submodule to its fixed commit, or latest master if no fixed commit is available
+function update-submodules-to-fixed-commits
+{
+    # Parse ignore pattern into a list for matching
+    $ignore_paths = @()
+    if ($global:ignore_pattern)
+    {
+        $ignore_paths = $global:ignore_pattern -split '\|'
+    }
+
+    # Get submodule paths from .gitmodules
+    if (-not (Test-Path ".gitmodules"))
+    {
+        return
+    }
+    $submodule_lines = git config --file .gitmodules --get-regexp '\.path$'
+    if (-not $submodule_lines)
+    {
+        return
+    }
+
+    foreach ($line in $submodule_lines)
+    {
+        $sub_path = ($line -split "\s+", 2)[1]
+
+        # Check if this submodule should be ignored
+        if ($sub_path -in $ignore_paths)
+        {
+            continue
+        }
+
+        # Derive repo name from submodule path (e.g., "deps/c-util" -> "c-util")
+        $sub_repo_name = Split-Path $sub_path -Leaf
+
+        Push-Location $sub_path
+        if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
+        {
+            $target_sha = $global:fixed_commits[$sub_repo_name]
+            Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
+            git fetch origin
+            git checkout $target_sha
+        }
+        else
+        {
+            Write-Host "  Updating $sub_path to latest master (no fixed commit)"
+            git checkout master
+            git pull
+        }
+        Pop-Location
+    }
+}
+
+# After a repo's PR is merged, fetch the new master HEAD and update fixed_commits
+# so that downstream repos use the commit created by this propagation.
+function update-fixed-commit
+{
+    param(
+        [string] $repo_name
+    )
+
+    if (-not $global:fixed_commits)
+    {
+        return
+    }
+
+    Push-Location $repo_name
+    git fetch origin master 2>$null
+    $new_sha = (git rev-parse origin/master 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $new_sha)
+    {
+        $global:fixed_commits[$repo_name] = $new_sha.Trim()
+        Write-Host "  Updated fixed commit for $repo_name to $($new_sha.Trim().Substring(0, 8))"
+    }
+    else
+    {
+        Write-Host "  Warning: Could not fetch new master commit for $repo_name" -ForegroundColor Yellow
+    }
+    Pop-Location
+}
+
 function refresh-submodules
 {
     $submodules = git submodule | Out-String
@@ -64,8 +178,8 @@ function update-local-repo
         # no deps folder
     }
     git submodule update --init
-    # update all submodules except the ones mentioned in ignores.json
-    git submodule foreach "case `$name in $ignore_pattern ) ;; *) git checkout master && git pull;; esac"
+    # update all submodules to their fixed commits (or latest master as fallback)
+    update-submodules-to-fixed-commits
     # create new branch
     git checkout -B $new_branch_name
     # add updates and push to remote
