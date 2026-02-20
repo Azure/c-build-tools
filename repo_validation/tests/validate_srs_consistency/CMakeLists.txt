@@ -158,6 +158,28 @@ add_custom_target(test_validate_srs_consistency_tag_placement_violations
     COMMENT "Testing tag placement violation detection"
 )
 
+# Test 16: Verify tag placement violation output includes file names (multiple violations)
+add_custom_target(test_validate_srs_consistency_tag_placement_output
+    COMMAND ${POWERSHELL_EXECUTABLE} -NoProfile -ExecutionPolicy Bypass -File
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_tag_placement_output.ps1"
+        -ScriptPath "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -FixtureRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_violations"
+        -ExpectedFileNames "tag_place.c,tag_place_ut.c"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing tag placement violation output includes file names"
+)
+
+# Test 17: Verify tag placement output with a single violation
+add_custom_target(test_validate_srs_consistency_tag_placement_single_violation
+    COMMAND ${POWERSHELL_EXECUTABLE} -NoProfile -ExecutionPolicy Bypass -File
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_tag_placement_output.ps1"
+        -ScriptPath "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -FixtureRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_single_violation"
+        -ExpectedFileNames "single_place.c"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing tag placement output with single violation"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -178,6 +200,8 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_incomplete_comment
     test_validate_srs_consistency_line_comment_with_brackets
     test_validate_srs_consistency_tag_placement_clean
+    test_validate_srs_consistency_tag_placement_output
+    test_validate_srs_consistency_tag_placement_single_violation
 )
 # Note: We don't add test_validate_srs_consistency_detection or 
 # test_validate_srs_consistency_tag_placement_violations as dependencies because
