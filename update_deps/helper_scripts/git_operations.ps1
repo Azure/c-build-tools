@@ -94,6 +94,25 @@ function update-submodules-to-fixed-commits
                         Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
                         git fetch origin
                         git checkout $target_sha
+
+                        # Warn if remote master has moved ahead of the fixed commit
+                        $remote_sha = (git rev-parse origin/master 2>$null)
+                        if ($LASTEXITCODE -eq 0 -and $remote_sha -and $remote_sha.Trim() -ne $target_sha)
+                        {
+                            Write-Host "  WARNING: $sub_repo_name has newer commits on master ($($remote_sha.Trim().Substring(0, 8))) that will NOT be propagated" -ForegroundColor Yellow
+                            if (-not $global:skipped_newer_commits)
+                            {
+                                $global:skipped_newer_commits = @{}
+                            }
+                            $global:skipped_newer_commits[$sub_repo_name] = @{
+                                FixedCommit = $target_sha
+                                RemoteCommit = $remote_sha.Trim()
+                            }
+                        }
+                        else
+                        {
+                            # remote master matches fixed commit
+                        }
                     }
                     else
                     {
@@ -143,6 +162,34 @@ function update-fixed-commit
     else
     {
         # no fixed commits table, nothing to update
+    }
+}
+
+# Show a summary of repos that had newer commits on master that were not propagated
+function show-skipped-commits-summary
+{
+    if ($global:skipped_newer_commits -and $global:skipped_newer_commits.Count -gt 0)
+    {
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Yellow
+        Write-Host "  NEWER COMMITS NOT PROPAGATED" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Yellow
+        Write-Host "The following repos had newer commits on master" -ForegroundColor Yellow
+        Write-Host "that were not included in this propagation run:" -ForegroundColor Yellow
+        Write-Host ""
+        foreach ($repo in $global:skipped_newer_commits.Keys)
+        {
+            $info = $global:skipped_newer_commits[$repo]
+            Write-Host "  $repo" -ForegroundColor Yellow -NoNewline
+            Write-Host "  used: $($info.FixedCommit.Substring(0, 8))  remote: $($info.RemoteCommit.Substring(0, 8))"
+        }
+        Write-Host ""
+        Write-Host "Consider running propagation again to pick up these changes." -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Yellow
+    }
+    else
+    {
+        # all repos were up to date
     }
 }
 

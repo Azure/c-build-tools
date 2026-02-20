@@ -254,6 +254,10 @@ function propagate-updates
 
     # Show final status and check if all succeeded
     $success = show-propagation-status -Final
+
+    # Warn about any repos with newer commits that were not propagated
+    show-skipped-commits-summary
+
     if ($success)
     {
         play-success-animation
