@@ -1,0 +1,71 @@
+# Template: Verify Agent Architecture
+# Checks and reports the agent architecture - useful for diagnosing ARM64 emulation issues.
+# This template is informational only and does not fail the build.
+#
+# Usage:
+#   - template: verify_agent_architecture.yml@c_build_tools
+#     parameters:
+#       expected_architecture: 'ARM64'  # Optional: warns if mismatch
+
+parameters:
+  - name: expected_architecture
+    type: string
+    default: 'ARM64'
+    values:
+      - 'ARM64'
+      - 'x64'
+      - 'x86'
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Verify Agent Architecture (${{ parameters.expected_architecture }})'
+    inputs:
+      targetType: 'inline'
+      script: |
+        Write-Host "============================================================"
+        Write-Host "AGENT ARCHITECTURE VERIFICATION"
+        Write-Host "Expected Architecture: ${{ parameters.expected_architecture }}"
+        Write-Host "============================================================"
+        Write-Host ""
+        
+        Write-Host "Environment:"
+        Write-Host "  PROCESSOR_ARCHITECTURE: $env:PROCESSOR_ARCHITECTURE"
+        Write-Host "  PROCESSOR_ARCHITEW6432: $env:PROCESSOR_ARCHITEW6432"
+        Write-Host "  NUMBER_OF_PROCESSORS: $env:NUMBER_OF_PROCESSORS"
+        Write-Host ""
+        
+        # Check Agent.Worker.exe PE header
+        $agentDir = $env:AGENT_HOMEDIRECTORY
+        $workerExe = Join-Path $agentDir "bin\Agent.Worker.exe"
+        $agentArch = "Unknown"
+        
+        if (Test-Path $workerExe) {
+            $bytes = [System.IO.File]::ReadAllBytes($workerExe)
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+            
+            switch ($machine) {
+                0x014C { $agentArch = "x86" }
+                0x8664 { $agentArch = "x64" }
+                0xAA64 { $agentArch = "ARM64" }
+            }
+            Write-Host "Agent.Worker.exe: $agentArch ($workerExe)"
+        } else {
+            Write-Host "##[warning]Could not find Agent.Worker.exe"
+        }
+        Write-Host ""
+        
+        # Check system folders
+        Write-Host "System Folders:"
+        Write-Host "  SysArm32 exists: $(Test-Path 'C:\Windows\SysArm32')"
+        Write-Host ""
+        
+        # Compare against expected
+        $expected = "${{ parameters.expected_architecture }}"
+        if ($agentArch -ne "Unknown" -and $agentArch -ne $expected) {
+            Write-Host "##[warning]ARCHITECTURE MISMATCH: Expected $expected but agent is $agentArch"
+            Write-Host "##[warning]Build will use explicit native tool paths to work around this."
+        } elseif ($agentArch -eq $expected) {
+            Write-Host "Agent architecture verification PASSED!"
+        }
+        Write-Host "============================================================"

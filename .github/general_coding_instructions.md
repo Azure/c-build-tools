@@ -220,6 +220,7 @@ some_function();  // Compiler should warn about unused return value
   - Error codes (`int`, custom result enums)
   - Pointers and handles
   - Boolean values
+  - Standard library functions that return their destination pointer (`memset`, `memcpy`, `memmove`)
   - Any other return types
 
 ## Parameter Validation Rules {#parameter-validation}
@@ -609,6 +610,101 @@ else
 
 ## Additional Conventions {#additional-conventions}
 
+### Switch Statement Structure
+- **Always place `default:` case FIRST** in switch statements, before all named cases
+- This is consistent with the "error case first" convention used for `if` statements — handle the unexpected/error path first
+
+```c
+// CORRECT - default first (error case first)
+switch (result)
+{
+    default:
+        LogError("unknown result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+        break;
+    case RESULT_ERROR:
+        // handle error
+        break;
+    case RESULT_OK:
+        // handle OK
+        break;
+}
+
+// INCORRECT - default at end
+switch (result)
+{
+    case RESULT_OK:
+        // handle OK
+        break;
+    case RESULT_ERROR:
+        // handle error
+        break;
+    default:
+        LogError("unknown result");
+        break;
+}
+```
+
+### Error-First Pattern in If/Else
+When checking operation results, check for the error case FIRST, then handle success in else:
+
+```c
+// CORRECT - error first
+if (result != RESULT_OK)
+{
+    LogError("operation failed with result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+    // error handling
+}
+else
+{
+    // success path
+}
+
+// AVOID - success first (less common pattern)
+if (result == RESULT_OK)
+{
+    // success path
+}
+else
+{
+    LogError("operation failed");
+}
+```
+
+### Format Specifiers for Enums and Booleans
+Use macro-utils format specifiers for consistent logging of enum values and booleans:
+
+```c
+// For enum values - use PRI_MU_ENUM with MU_ENUM_VALUE
+LogInfo("state=%" PRI_MU_ENUM, MU_ENUM_VALUE(MY_STATE, state));
+LogError("operation failed with result=%" PRI_MU_ENUM, MU_ENUM_VALUE(RESULT_TYPE, result));
+
+// For boolean values - use PRI_BOOL with MU_BOOL_VALUE  
+LogInfo("enabled=%" PRI_BOOL, MU_BOOL_VALUE(is_enabled));
+
+// INCORRECT - avoid manual string conversion
+LogInfo("state=%d", (int)state);                          // Don't cast enums to int
+LogInfo("enabled=%s", is_enabled ? "true" : "false");     // Don't use ternary
+```
+
+### Code Comments - No Transient References
+Code comments should not reference transient information like PR numbers, bug IDs, or reviewer names. This information becomes stale and meaningless over time.
+
+```c
+// INCORRECT - references transient info
+// Added per PR #14462634 review feedback
+// Fix for bug 12345
+// Per John's suggestion
+
+// CORRECT - describe the technical reason
+// Handle edge case where count can be zero
+// Prevent integer overflow in size calculation
+```
+
+**Exception**: TODO comments MAY reference ADO work items when tracking deferred work:
+```c
+// TODO: Task 12345 - Implement retry logic for transient failures
+```
+
 ### Mockable Function Declarations {#mockable-functions}
 For functions that need to be mocked in unit tests, use `MOCKABLE_FUNCTION` or `MOCKABLE_FUNCTION_WITH_RETURNS` in header files:
 
@@ -816,9 +912,21 @@ For unit test files, use the `ENABLE_MOCKS` pattern between infrastructure and d
 - Maintain alphabetical order within each category when possible
 
 ### Memory Management
-- Use `malloc`/`free` for dynamic allocation
-- Use `malloc_2()` helper for array allocations with overflow protection
+- Use `malloc`/`free` for dynamic allocation of single items
+- Use `malloc_2(element_size, count)` for array allocations with overflow protection
+- Use `malloc_flex(base_size, count, element_size)` for structures with flexible array members (fixed-size header + array of items)
 - Always check allocation results and handle failures gracefully
+
+```c
+// Single item
+MY_STRUCT* ptr = malloc(sizeof(MY_STRUCT));
+
+// Array of items - use malloc_2 for overflow protection
+int32_t* items = malloc_2(sizeof(int32_t), count);
+
+// Fixed-size struct + flexible array - use malloc_flex
+MY_DATA* data = malloc_flex(sizeof(MY_DATA), count, sizeof(ITEM));
+```
 
 ### Pointer Casting Rules
 - **Do NOT cast `void*` to other pointer types** - In C, `void*` implicitly converts to any other pointer type without a cast
@@ -849,10 +957,40 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 - Use THANDLE pattern for reference-counted objects
 - Always use `THANDLE_INITIALIZE`, `THANDLE_ASSIGN`, `THANDLE_MOVE` appropriately
 - Never manually manipulate reference counts
+- **THANDLE values cannot be assigned like regular pointers** — always use `THANDLE_ASSIGN`, `THANDLE_INITIALIZE_MOVE`, etc. Direct assignment will compile but may fault at runtime
 
 ### Async Operations
 - Use consistent callback patterns with context parameters
 - Always provide both success and error callback paths
+
+### Array Initialization
+Prefer explicit loops over `memset` for initializing arrays. Loops are type-safe and make the intent clearer:
+
+```c
+// CORRECT - explicit loop
+for (size_t i = 0; i < count; i++)
+{
+    items[i] = 0;
+}
+
+// AVOID - memset for typed arrays
+(void)memset(items, 0, sizeof(int32_t) * count);
+```
+
+### Format Specifier Macros for Integer Types
+Use `<inttypes.h>` format specifier macros (`PRIu64`, `PRId64`, `PRIu32`, etc.) when formatting fixed-width integer types. Do not cast to a smaller type to match a format specifier:
+
+```c
+#include <inttypes.h>
+
+uint64_t value = get_value();
+
+// CORRECT - use format specifier macro
+LogInfo("Value is %" PRIu64 "", value);
+
+// INCORRECT - casting to match format specifier
+LogInfo("Value is %u", (uint32_t)value);  // Potential data loss!
+```
 
 ## Unit Testing Guidelines {#unit-testing}
 
@@ -989,6 +1127,85 @@ Test helper headers that are used across multiple tests should be included in th
 - This improves build times and reduces include duplication
 - PCH include must be the first include in the test file
 
+### Include Paths for Reals Headers
+When including real implementation headers in test files, use the header name directly without relative paths. The build system's `reals` target adds the correct include directory:
+
+```c
+// CORRECT - header name only
+#include "real_my_module.h"
+
+// INCORRECT - relative path
+#include "../reals/real_my_module.h"
+```
+
+### Using Real Functions in Test Code
+Test setup and helper code should generally call **real implementations** (e.g., `real_gballoc_hl_malloc`, `real_CONSTBUFFER_Create`) instead of mocked versions. Using mocked functions in test helpers generates unexpected mock calls that pollute `umock_c_get_actual_calls()` and can cause spurious test failures.
+
+```c
+// CORRECT - test helper uses reals
+static void setup_test_state(void)
+{
+    int32_t* array = real_gballoc_hl_malloc_2(sizeof(int32_t), count);
+    CONSTBUFFER_HANDLE buffer = real_CONSTBUFFER_Create(data, size);
+    // ...
+    real_CONSTBUFFER_DecRef(buffer);
+    real_gballoc_hl_free(array);
+}
+
+// INCORRECT - test helper uses mocked functions
+static void setup_test_state(void)
+{
+    int32_t* array = gballoc_hl_malloc(sizeof(int32_t) * count);  // Generates mock call!
+    CONSTBUFFER_HANDLE buffer = (CONSTBUFFER_HANDLE)0x4242;       // Fake handle, won't work with real code paths
+}
+```
+
+**Key points:**
+- Real allocations must be paired with real frees (`real_gballoc_hl_free`, `real_CONSTBUFFER_DecRef`)
+- Never use fake handle casts (e.g., `(CONSTBUFFER_HANDLE)0x4242`) when the test exercises code paths that dereference the handle
+
+### Umock Chained Call Formatting
+Always place `.SetReturn()`, `.CopyOutArgumentBuffer()`, `.SetFailReturn()`, and other umock chained method calls on **separate lines** for readability:
+
+```c
+// CORRECT - chained calls on separate lines
+STRICT_EXPECTED_CALL(my_function(IGNORED_ARG, IGNORED_ARG))
+    .SetReturn(42)
+    .CopyOutArgumentBuffer_output(&expected_output, sizeof(expected_output));
+
+// INCORRECT - chained calls on same line
+STRICT_EXPECTED_CALL(my_function(IGNORED_ARG, IGNORED_ARG)).SetReturn(42);
+```
+
+### Registering New Modules in reals_ut
+When adding a new module that has "reals" (non-mocked implementations in `tests/reals/`), the module must also be registered in the repository's `reals_ut` test. This test verifies that all real-to-mock mappings compile and link correctly.
+
+**Three files to update:**
+
+1. **`tests/reals_ut/<repo>_reals_ut_pch.h`** — Add the module header inside the `ENABLE_MOCKS` section and the real header after `DISABLE_MOCKS`:
+```c
+#include "umock_c/umock_c_ENABLE_MOCKS.h"
+// ... existing includes ...
+#include "module/new_module.h"  // <-- add new module
+#include "umock_c/umock_c_DISABLE_MOCKS.h"
+
+// ... existing real includes ...
+#include "../tests/reals/real_new_module.h"  // <-- add new module real
+```
+
+2. **`tests/reals_ut/<repo>_reals_ut.c`** — Add the `REGISTER_*_GLOBAL_MOCK_HOOK()` call inside `check_all_<repo>_reals`:
+```c
+TEST_FUNCTION(check_all_repo_reals)
+{
+    // ... existing registrations ...
+    REGISTER_NEW_MODULE_GLOBAL_MOCK_HOOK();  // <-- add new module
+}
+```
+
+3. **`tests/reals/CMakeLists.txt`** — Add the reals source files to the reals target.
+
+The reals_ut test ensures that every `REGISTER_*_GLOBAL_MOCK_HOOK()` macro expands correctly and all `real_*` function symbols resolve. Missing this registration means the reals are untested and could have linking issues that only surface when another module tries to use them.
+
 ### Result Variable Assignment in Tests
 When testing error paths, each error path in the implementation should set the result variable explicitly. This enables line-number tracking during debugging:
 
@@ -1016,6 +1233,18 @@ if (first_check_fails)
     LogError("first check failed");
     // Missing result assignment - harder to debug
 }
+```
+
+### Struct Arguments Require IGNORED_STRUCT_ARG
+`IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
+
+```c
+// WRONG: IGNORED_ARG is int, UUID_T is a struct
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_ARG));
+// Compiler error: cannot convert from 'int' to 'UUID_T'
+
+// CORRECT: Use IGNORED_STRUCT_ARG for struct parameters
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_STRUCT_ARG(UUID_T)));
 ```
 
 ### Requirements Traceability System
@@ -1047,8 +1276,19 @@ Requirements in `.md` files use backticks for better readability:
 ```
 
 #### Code Implementation Tracing
-Requirements are traced to implementation using `Codes_SRS_` comments:
+Requirements are traced to implementation using `Codes_SRS_` comments. **Codes_ tags must ALWAYS be inline** — placed on the line immediately before the implementing code. Never place multiple Codes_ tags as a leading comment block before a function signature. When a `Codes_SRS_` tag references a specific function call (e.g., `critical_section_leave`), place the tag directly before that call, not at the top of the enclosing block.
+
 ```c
+// WRONG: Leading Codes_ tags as a block before the function
+/*Codes_SRS_MODULE_42_001: [ If parameter is NULL then module_function shall fail. ]*/
+/*Codes_SRS_MODULE_42_002: [ module_function shall allocate memory. ]*/
+/*Codes_SRS_MODULE_42_003: [ If malloc fails then module_function shall return NULL. ]*/
+int module_function(void* parameter)
+{
+    ...
+}
+
+// CORRECT: Each Codes_ tag inline, immediately before the code it documents
 int module_function(void* parameter)
 {
     int result;
@@ -1128,6 +1368,25 @@ TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
    - Corresponding `Codes_SRS_` implementation tag(s)
    - Corresponding `Tests_SRS_` unit test tag(s)
 5. **Traceability Tool Verification**: The build system can run `traceabilitytool` to verify complete coverage
+6. **Tag Placement**: `Codes_SRS_` comments belong exclusively in production code (`.c` files). Unit test files must only use `Tests_SRS_` comments. Never place `Codes_SRS_` tags in test files.
+7. **Test Tag Placement**: `Tests_SRS_` tags must be placed immediately before the `TEST_FUNCTION` declaration, never inside setup or helper functions called by tests:
+
+```c
+// CORRECT - tag before TEST_FUNCTION
+// Tests_SRS_MODULE_42_001: [ ... ]
+TEST_FUNCTION(when_condition_then_expected_behavior)
+{
+    setup_test_state();  // No SRS tags inside here
+    // ...
+}
+
+// INCORRECT - tag inside helper function
+static void setup_test_state(void)
+{
+    // Tests_SRS_MODULE_42_001: [ ... ]  // WRONG - don't put tags in helpers
+    STRICT_EXPECTED_CALL(...);
+}
+```
 
 #### Author ID Assignment
 - Each developer is assigned a unique two-digit author ID
@@ -1140,5 +1399,217 @@ TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
 - Include error conditions and edge cases
 - Group related requirements logically
 - Update all three locations (spec, code, tests) when modifying requirements
+
+## Internal Callback Functions in Requirements {#internal-callback-requirements}
+
+When creating internal/static callback functions that are passed to other modules (dispose functions, completion handlers, notification handlers), they must be properly documented in the requirements specification:
+
+**Requirements:**
+1. **Named with `internal_` prefix**: e.g., `internal_sp_record_item_dispose`, `internal_bsdl_on_complete`
+2. **Documented in the requirements spec** with their own section and function signature
+3. **Have their own SRS tags** and corresponding unit tests
+
+**Note:** This applies ONLY to static functions that are passed to other dependent modules (callbacks). Internal functions that are truly internal and never used to interact with other modules should NOT be exposed in the requirements doc.
+
+```markdown
+### internal_my_item_dispose
+
+`internal_my_item_dispose` is a dispose function passed to `THANDLE_TYPE_DEFINE_WITH_MALLOC_FUNCTIONS` for automatic cleanup.
+
+```c
+static void internal_my_item_dispose(MY_ITEM* item);
+```
+
+**SRS_MY_MODULE_42_050: [** `internal_my_item_dispose` shall release the `child` reference by calling `THANDLE_ASSIGN(CHILD)(&item->child, NULL)`. **]**
+```
+
+## Error Result Type Guidelines {#error-result-types}
+
+When a function can fail for different categories of reasons, use distinct error codes to allow callers to distinguish between error types:
+
+**Categories:**
+- **`*_ERROR`**: Runtime failures (memory allocation, I/O errors, network issues) - may be transient/retryable
+- **`*_INVALID_DATA`**: Data validation failures (corrupt data, format errors, checksum mismatch) - permanent data issues
+- **`*_INVALID_ARG`**: Invalid function arguments - caller programming error
+
+**Example:**
+```c
+// Result enum with distinct error categories
+#define OPEN_RESULT_VALUES \
+    OPEN_RESULT_OK, \
+    OPEN_RESULT_ERROR, \          // Runtime failure (retry may help)
+    OPEN_RESULT_INVALID_DATA, \   // Data corruption (retry won't help)
+    OPEN_RESULT_INVALID_ARG       // Bad arguments (caller bug)
+
+MU_DEFINE_ENUM(OPEN_RESULT, OPEN_RESULT_VALUES)
+
+// In implementation:
+if (checksum_mismatch)
+{
+    result = OPEN_RESULT_INVALID_DATA;  // Data is corrupt
+}
+else if (malloc_failed)
+{
+    result = OPEN_RESULT_ERROR;         // Runtime failure
+}
+```
+
+## Codes_SRS Comment Placement {#codes-srs-placement}
+
+Place `Codes_SRS_*` comments immediately before the specific line of code they trace to, not grouped at the top of a code block. This makes the traceability relationship clear during code review.
+
+```c
+// Good - each comment directly before the line it describes:
+/*Codes_SRS_MODULE_01_001: [ function shall allocate memory ]*/
+void* ptr = malloc(size);
+/*Codes_SRS_MODULE_01_002: [ if allocation fails, function shall return NULL ]*/
+if (ptr == NULL)
+{
+    result = NULL;
+}
+
+// Bad - comments grouped at the top:
+/*Codes_SRS_MODULE_01_001: [ function shall allocate memory ]*/
+/*Codes_SRS_MODULE_01_002: [ if allocation fails, function shall return NULL ]*/
+void* ptr = malloc(size);
+if (ptr == NULL)
+{
+    result = NULL;
+}
+```
+
+## Dispose Function Guidelines {#dispose-guidelines}
+
+In dispose/cleanup functions, don't add unnecessary operations like setting struct fields to NULL before freeing the containing structure. Only perform cleanup that has actual effect (releasing resources, decrementing reference counts).
+
+```c
+// Good - just release resources:
+static void my_dispose(void* context)
+{
+    MY_STRUCT* my_struct = context;
+    THANDLE_ASSIGN(CHILD)(&my_struct->child, NULL);  // Actually decrements ref count
+    // Parent will free my_struct
+}
+
+// Bad - unnecessary NULL assignments:
+static void my_dispose(void* context)
+{
+    MY_STRUCT* my_struct = context;
+    my_struct->some_value = 0;     // Pointless - struct is about to be freed
+    my_struct->some_ptr = NULL;    // Pointless if not ref-counted
+    THANDLE_ASSIGN(CHILD)(&my_struct->child, NULL);
+}
+```
+
+## Reals Unit Testing {#reals-unit-testing}
+
+When adding new `real_*` function implementations (real implementations used to pass-through to actual functions during testing), create corresponding `*_reals_ut` unit tests to verify the real implementations work correctly. This ensures the "reals" are properly exercised.
+
+```c
+// In my_module_reals_ut.c
+TEST_FUNCTION(real_my_module_create_frees_on_failure)
+{
+    ///arrange
+    // Set up conditions that cause failure after partial allocation
+    
+    ///act
+    MY_HANDLE result = real_my_module_create(params);
+    
+    ///assert
+    ASSERT_IS_NULL(result);
+    // Verify no memory leaks via test framework
+}
+```
+
+### Negative Testing Requirements
+
+#### All Fallible Functions Must Have Negative Tests
+Every function that allocates memory, calls external dependencies, or can return failure **must** have a negative test using the `umock_c_negative_tests` pattern. This ensures all failure paths are exercised:
+
+```c
+TEST_FUNCTION(when_underlying_functions_fail_then_my_function_fails)
+{
+    ///arrange
+    setup_my_function_expectations();
+
+    umock_c_negative_tests_snapshot();
+
+    for (size_t i = 0; i < umock_c_negative_tests_call_count(); i++)
+    {
+        if (umock_c_negative_tests_can_call_fail(i))
+        {
+            umock_c_negative_tests_reset();
+            umock_c_negative_tests_fail_call(i);
+
+            ///act
+            int result = my_function(...);
+
+            ///assert
+            ASSERT_ARE_NOT_EQUAL(int, 0, result, "On failed call %zu", i);
+        }
+    }
+}
+```
+
+**Guidelines:**
+- Only include `umock_c_negative_tests.h` and `umock_c_negative_tests_init()`/`deinit()` when the test file actually uses negative tests
+- Do not add negative test infrastructure to test files that don't use it
+
+#### Static THANDLE Variables in Tests
+A `THANDLE` variable declared as a bare static in the default data segment will compile, but `THANDLE_INITIALIZE_MOVE` and `THANDLE_ASSIGN` will fault at runtime. Wrap static `THANDLE` test variables inside a struct:
+
+```c
+// WRONG: Static THANDLE in default data segment — faults at runtime
+static THANDLE(SUBSTREAM_CORE) test_substream_core;
+
+// CORRECT: Wrap in a struct
+static struct
+{
+    THANDLE(SUBSTREAM_CORE) test_substream_core;
+} g = { 0 };
+```
+
+### No Magic Numbers in Tests
+Numeric literals in test code should be replaced with named `#define` macros. This improves readability and makes the test's intent clear:
+
+```c
+// WRONG: Magic number in test
+STRICT_EXPECTED_CALL(my_function_create(3, test_cleanup));
+
+// CORRECT: Named constant
+#define TEST_DEFAULT_ARRAY_ENTRY_COUNT 3
+STRICT_EXPECTED_CALL(my_function_create(TEST_DEFAULT_ARRAY_ENTRY_COUNT, test_cleanup));
+```
+
+### Assert Expected Calls in Every Test
+All tests that set up `STRICT_EXPECTED_CALL` expectations **must** verify them with `ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls())`. This is not limited to helper functions — it applies to **every** test function that uses mock expectations:
+
+```c
+TEST_FUNCTION(when_all_calls_succeed_then_operation_succeeds)
+{
+    ///arrange
+    STRICT_EXPECTED_CALL(dependency_create());
+    STRICT_EXPECTED_CALL(dependency_configure(IGNORED_ARG));
+
+    ///act
+    int result = my_function();
+
+    ///assert
+    ASSERT_ARE_EQUAL(int, 0, result);
+    ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());  // REQUIRED
+}
+```
+
+### Struct Arguments Require IGNORED_STRUCT_ARG
+`IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
+
+```c
+// WRONG: IGNORED_ARG is int, UUID_T is a struct
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_ARG));
+// Compiler error: cannot convert from 'int' to 'UUID_T'
+
+// CORRECT: Use IGNORED_STRUCT_ARG for struct parameters
+STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_STRUCT_ARG(UUID_T)));
+```
 
 These guidelines ensure consistency with the existing Azure C library ecosystem and maintain the high quality and reliability standards of the Azure Messaging Block Storage project.
