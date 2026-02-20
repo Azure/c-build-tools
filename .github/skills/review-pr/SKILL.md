@@ -70,19 +70,7 @@ Look for these categories of issues:
 - Incorrect enum values or constant usage
 
 #### Coding Guideline Adherence
-- Requirements traceability: `Codes_SRS_*` comments in implementation, `Tests_SRS_*` in tests
-- Naming conventions: snake_case for variables, proper module prefixes
-- Comment style: `/* */` for C code, proper spec comment format
-- Header inclusion order
-- Memory management patterns (gballoc, THANDLE)
-- Error handling patterns (result enums, LogError)
-
-#### Best Practices
-- Consistency with existing code patterns
-- Documentation accuracy (requirements doc matches code)
-- Test coverage for new behavior
-- Appropriate use of macros vs functions
-- Atomic operation patterns (interlocked_*)
+- Code must adhere to the rules in `general_coding_instructions.md` — refer to that file for the authoritative set of conventions rather than duplicating specific rules here
 
 ### Phase 5: Propose Comments for Approval
 
@@ -146,7 +134,7 @@ All other handlers were updated — this one appears to have been accidentally s
 Focus review effort on:
 1. **Completeness gaps**: Changes that were applied to most but not all similar locations
 2. **Functional correctness**: Logic that doesn't match the stated requirements
-3. **Thread-safety**: Missing or incorrect atomic operations in concurrent code
+3. **Adherence to coding guidelines**: Violations of conventions in `general_coding_instructions.md`
 4. **Documentation-code mismatch**: Requirements docs that don't match the implementation
 
 ## Example Workflow
