@@ -176,11 +176,45 @@ function watch-github-pr-checks
             }
             else
             {
+                # Get list of required check names
+                $required_names = @{}
+                $required_output = gh pr checks --required --json name 2>&1
+                if($LASTEXITCODE -eq 0 -and $required_output)
+                {
+                    $required_checks = $required_output | ConvertFrom-Json
+                    if($required_checks)
+                    {
+                        foreach($rc in $required_checks)
+                        {
+                            $required_names[$rc.name] = $true
+                        }
+                    }
+                    else
+                    {
+                        # no required checks parsed
+                    }
+                }
+                else
+                {
+                    # couldn't get required checks, treat all as blocking
+                }
+
                 # Build normalized check items
                 $normalized_checks = @()
                 foreach($check in $checks)
                 {
                     $normalized_status = convert-github-bucket-to-normalized -bucket $check.bucket
+
+                    # If we got required check info, use it; otherwise leave IsBlocking as $null (all blocking)
+                    $is_blocking = $null
+                    if($required_names.Count -gt 0)
+                    {
+                        $is_blocking = $required_names.ContainsKey($check.name)
+                    }
+                    else
+                    {
+                        # no required info available, default to blocking
+                    }
 
                     $normalized_checks += [PSCustomObject]@{
                         Name = $check.name
@@ -188,6 +222,7 @@ function watch-github-pr-checks
                         StartTime = $check.startedAt
                         FinishTime = $check.completedAt
                         Url = $check.link
+                        IsBlocking = $is_blocking
                     }
                 }
 

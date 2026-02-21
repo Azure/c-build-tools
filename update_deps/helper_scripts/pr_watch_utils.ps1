@@ -339,13 +339,33 @@ function global:show-pr-check-table
     # Display each check
     foreach($check in $checks)
     {
-        $check_name = truncate-string -text $check.Name -max_width $name_width
+        $check_name = $check.Name
+        # Mark optional (non-blocking) checks
+        if($check.IsBlocking -eq $false)
+        {
+            $check_name = $check_name + " (optional)"
+        }
+        else
+        {
+            # required or unknown blocking status
+        }
+        $check_name = truncate-string -text $check_name -max_width $name_width
         $elapsed = format-elapsed-time -start_time $check.StartTime -finish_time $check.FinishTime
         $url = truncate-string -text $check.Url -max_width $url_width
 
         $display = get-status-display -status $check.Status
         $symbol = $display.Symbol
         $color = $display.Color
+
+        # Use dimmer color for optional failed checks
+        if($check.IsBlocking -eq $false -and $check.Status -eq [PrCheckStatus]::Failed)
+        {
+            $color = "DarkYellow"
+        }
+        else
+        {
+            # use default color
+        }
 
         $line = "{0}  {1,-$name_width} {2,-$elapsed_width} {3}" -f $symbol, $check_name, $elapsed, $url
         Write-Host $line -ForegroundColor $color
@@ -391,7 +411,7 @@ function global:get-check-status-counts
 # Test if checks are complete
 #
 # For Azure DevOps: checks have IsBlocking property, only blocking checks matter
-# For GitHub: all checks matter (IsBlocking = $null means treat as blocking)
+# For GitHub: uses --required flag to identify required checks (IsBlocking = $false for optional)
 #
 function global:Test-ChecksComplete
 {
