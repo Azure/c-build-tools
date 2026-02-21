@@ -209,7 +209,29 @@ function watch-github-pr-checks
                     $is_blocking = $null
                     if($required_names.Count -gt 0)
                     {
-                        $is_blocking = $required_names.ContainsKey($check.name)
+                        # Check exact match first, then check if this is a child job
+                        # of a required pipeline (e.g., "Gate (Build x64)" is a child of "Gate")
+                        if($required_names.ContainsKey($check.name))
+                        {
+                            $is_blocking = $true
+                        }
+                        else
+                        {
+                            $is_child = $false
+                            foreach($req_name in $required_names.Keys)
+                            {
+                                if($check.name.StartsWith("$req_name "))
+                                {
+                                    $is_child = $true
+                                    break
+                                }
+                                else
+                                {
+                                    # not a child of this required check
+                                }
+                            }
+                            $is_blocking = $is_child
+                        }
                     }
                     else
                     {
