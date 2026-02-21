@@ -32,6 +32,8 @@ function snapshot-repo-commits
         [string[]] $repo_order
     )
     $commits = @{}
+    # Calculate max repo name length for aligned output
+    $max_name_len = ($repo_order | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
     foreach ($repo_name in $repo_order)
     {
         if (Test-Path $repo_name)
@@ -41,7 +43,7 @@ function snapshot-repo-commits
             if ($LASTEXITCODE -eq 0 -and $sha)
             {
                 $commits[$repo_name] = $sha.Trim()
-                Write-Host "  $repo_name : $($commits[$repo_name].Substring(0, 8))"
+                Write-Host ("  {0,-$max_name_len} : {1}" -f $repo_name, $commits[$repo_name].Substring(0, 8))
             }
             else
             {
