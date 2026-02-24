@@ -58,7 +58,7 @@ add_custom_target(test_validate_srs_consistency_prefix_preservation
     # Verify that Codes_ prefix was preserved in source file
     COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module.c' -Raw) -notmatch 'Codes_SRS_PREFIX_TEST_66_001') { Write-Error 'Codes_ prefix was not preserved'; exit 1 }"
     # Verify that Tests_ prefix was preserved in test file
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module_ut.c' -Raw) -notmatch 'Tests_SRS_PREFIX_TEST_66_001') { Write-Error 'Tests_ prefix was not preserved'; exit 1 }"
+    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module_ut/test_module_ut.c' -Raw) -notmatch 'Tests_SRS_PREFIX_TEST_66_001') { Write-Error 'Tests_ prefix was not preserved'; exit 1 }"
     # Verify that the text was actually fixed (should now match the markdown)
     COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module.c' -Raw) -notmatch 'test_module_create shall allocate memory for a test module') { Write-Error 'Text was not fixed correctly'; exit 1 }"
     # Run validation again to ensure it passes
@@ -180,6 +180,14 @@ add_custom_target(test_validate_srs_consistency_tag_placement_single_violation
     COMMENT "Testing tag placement output with single violation"
 )
 
+# Test 18: Verify Tests_SRS_ tags are allowed in test helper files inside _ut directories
+add_custom_target(test_validate_srs_consistency_tag_placement_test_helper
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_test_helper"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing that Tests_SRS_ tags are allowed in helper files inside _ut directories"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -202,6 +210,7 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_tag_placement_clean
     test_validate_srs_consistency_tag_placement_output
     test_validate_srs_consistency_tag_placement_single_violation
+    test_validate_srs_consistency_tag_placement_test_helper
 )
 # Note: We don't add test_validate_srs_consistency_detection or 
 # test_validate_srs_consistency_tag_placement_violations as dependencies because
