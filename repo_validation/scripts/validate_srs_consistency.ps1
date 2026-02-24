@@ -7,12 +7,12 @@
 
 .DESCRIPTION
     This script performs two validations:
-    
-    1. **Consistency**: Checks that SRS tags have identical text content in both requirement 
+
+    1. **Consistency**: Checks that SRS tags have identical text content in both requirement
        documents (*.md in devdoc/) and implementation files (*.c, *_ut.c, *_int.c).
-    2. **Tag Placement**: Checks that Codes_SRS_ tags only appear in production code and 
+    2. **Tag Placement**: Checks that Codes_SRS_ tags only appear in production code and
        Tests_SRS_ tags only appear in test files.
-    
+
     The script:
     1. Finds all SRS tags in requirement markdown files
     2. Locates corresponding SRS tags in C source files
@@ -20,7 +20,7 @@
     4. Compares the text content for consistency
     5. Validates that Codes_SRS_ and Tests_SRS_ tags are in the correct file types
     6. Reports or fixes inconsistencies
-    
+
     When the -Fix switch is provided, the script will update C code comments to match
     the requirement document text (after stripping markdown formatting).
     Tag placement violations cannot be auto-fixed.
@@ -36,12 +36,12 @@
 
 .EXAMPLE
     .\validate_srs_consistency.ps1 -RepoRoot "C:\repo"
-    
+
     Validates all SRS tags and reports inconsistencies.
 
 .EXAMPLE
     .\validate_srs_consistency.ps1 -RepoRoot "C:\repo" -Fix
-    
+
     Validates and automatically fixes inconsistencies in C code comments.
 
 .NOTES
@@ -52,10 +52,10 @@
 param(
     [Parameter(Mandatory=$true)]
     [string]$RepoRoot,
-    
+
     [Parameter(Mandatory=$false)]
     [string]$ExcludeFolders = "deps,cmake",
-    
+
     [Parameter(Mandatory=$false)]
     [switch]$Fix
 )
@@ -79,7 +79,7 @@ Write-Host ""
 # Function to check if a path should be excluded
 function Test-IsExcluded {
     param([string]$Path, [string]$RepoRoot, [array]$ExcludeDirs)
-    
+
     $relativePath = $Path.Substring($RepoRoot.Length).TrimStart('\', '/')
     foreach ($excludeDir in $ExcludeDirs) {
         if ($relativePath -like "$excludeDir\*" -or $relativePath -like "$excludeDir/*") {
@@ -100,13 +100,13 @@ function Remove-MarkdownFormatting {
     while ($Text -match '\*\*(.+?)\*\*') {
         $Text = $Text -replace '\*\*(.+?)\*\*', '$1'
     }
-    
+
     # Remove italics markers (*word*) - only match word boundaries to avoid C pointers
     $Text = $Text -replace '\*(\w+)\*', '$1'
-    
+
     # Remove backticks
     $Text = $Text -replace '\`([^\`]+)\`', '$1'
-    
+
     # Unescape markdown escaped characters
     # Any backslash followed by a character should be unescaped (e.g., \< -> <, \> -> >, \\ -> \, \* -> *)
     # This handles all markdown escape sequences to match unescaped text in C code
@@ -114,7 +114,7 @@ function Remove-MarkdownFormatting {
 
     # Normalize whitespace (multiple spaces to single space)
     $Text = $Text -replace '\s+', ' '
-    
+
     # Trim leading/trailing whitespace
     $Text = $Text.Trim()
 
@@ -124,9 +124,9 @@ function Remove-MarkdownFormatting {
 # Function to extract SRS tags from markdown content
 function Get-SrsTagsFromMarkdown {
     param([string]$Content, [string]$FilePath)
-    
+
     $srsTags = @()
-    
+
     # Pattern to match SRS tags in markdown: **SRS_MODULE_ID_NUM: [** text **]**
     $pattern = '\*\*SRS_([A-Z0-9_]+)_(\d{2})_(\d{3}):\s*\[\*\*\s*((?:(?!\*\*\]\*\*).)+?)\s*\*\*\]\*\*'
 
@@ -137,10 +137,10 @@ function Get-SrsTagsFromMarkdown {
         $devId = $match.Groups[2].Value
         $reqId = $match.Groups[3].Value
         $text = $match.Groups[4].Value
-        
+
         $srsTag = "SRS_${module}_${devId}_${reqId}"
         $cleanText = Remove-MarkdownFormatting $text
-        
+
         $srsTags += [PSCustomObject]@{
             Tag = $srsTag
             RawText = $text
@@ -148,16 +148,16 @@ function Get-SrsTagsFromMarkdown {
             FilePath = $FilePath
         }
     }
-    
+
     return $srsTags
 }
 
 # Function to extract SRS tags from C code
 function Get-SrsTagsFromCCode {
     param([string]$Content, [string]$FilePath)
-    
+
     $srsTags = @()
-    
+
     # Pattern to match SRS tags in C comments: /* Codes_SRS_MODULE_ID_NUM: [ text ]*/
     # or /* Tests_SRS_MODULE_ID_NUM: [ text ]*/ (for test files)
     # Allow optional whitespace before colon to handle cases like "SRS_TAG :" and "SRS_TAG:"
@@ -168,8 +168,8 @@ function Get-SrsTagsFromCCode {
     # Allow optional whitespace before colon to handle cases like "SRS_TAG :" and "SRS_TAG:"
     # NOTE: Use [^\r\n]* to limit matching to single line (prevents matching across multiple comments)
     # The pattern will match from /* to ]*/ on the SAME LINE ONLY
-    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\r\n]*)(\s*)\](\s*\*+/)' 
-    
+    $blockPattern = '/\*+\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)([^\r\n]*)(\s*)\](\s*\*+/)'
+
     # Pattern for INCOMPLETE comments (missing closing bracket])
     # This pattern matches comments that have [ but no matching ] before the */
     # Uses [^\]\r\n]+ to ensure we don't match ] or cross line boundaries
@@ -178,20 +178,20 @@ function Get-SrsTagsFromCCode {
     # Pattern for line comments: // Codes_SRS_MODULE_ID_NUM: [ text ]
     # NOTE: Pattern captures text up to the LAST ] on the line (handles text containing ] characters)
     $linePattern = '//\s*(Codes|Tests)_SRS_([A-Z0-9_]+)_(\d{2})_(\d{3})\s*:\s*\[(\s*)(.+?)(\s*)\](\s*)$'
-    
+
     # Match both block and line comments
     $blockMatches = [regex]::Matches($Content, $blockPattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
     $incompleteMatches = [regex]::Matches($Content, $incompleteBlockPattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
     $lineMatches = [regex]::Matches($Content, $linePattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
-    
+
     # Combine all matches, but exclude incomplete matches that overlap with complete matches
     $allMatches = @($blockMatches) + @($lineMatches)
-    
+
     # Add incomplete matches only if they don't overlap with complete matches
     foreach ($incompleteMatch in $incompleteMatches) {
         $overlaps = $false
         foreach ($completeMatch in $blockMatches) {
-            if ($incompleteMatch.Index -ge $completeMatch.Index -and 
+            if ($incompleteMatch.Index -ge $completeMatch.Index -and
                 $incompleteMatch.Index -lt ($completeMatch.Index + $completeMatch.Length)) {
                 $overlaps = $true
                 break
@@ -201,31 +201,31 @@ function Get-SrsTagsFromCCode {
             $allMatches += $incompleteMatch
         }
     }
-    
+
     foreach ($match in $allMatches) {
         $prefix = $match.Groups[1].Value  # Captures "Tests" or "Codes"
         $module = $match.Groups[2].Value
         $devId = $match.Groups[3].Value
         $reqId = $match.Groups[4].Value
         $text = $match.Groups[6].Value  # Text content (group 5 is leading whitespace)
-        
+
         $srsTag = "SRS_${module}_${devId}_${reqId}"
-        
+
         # Check if this is an incomplete comment (matched by incompleteBlockPattern)
         # Incomplete pattern has only 8 groups, complete pattern has 9
         $isIncomplete = $match.Groups.Count -eq 8
-        
+
         # Check for duplication by looking at the original matched text
         # If the original match contains multiple ]*/  patterns, it's duplicated
         $hasDuplication = $false
         if ($match.Value -match '\]\*/.*?\]\*/') {
             $hasDuplication = $true
         }
-        
+
         # Normalize whitespace in C code text
         $cleanText = $text -replace '\s+', ' '
         $cleanText = $cleanText.Trim()
-        
+
         $srsTags += [PSCustomObject]@{
             Tag = $srsTag
             Text = $cleanText
@@ -237,21 +237,20 @@ function Get-SrsTagsFromCCode {
             IsIncomplete = $isIncomplete  # Flag for missing closing bracket
         }
     }
-    
+
     return $srsTags
 }
 
-# Function to determine if a file is a test file based on naming convention and path
+# Function to determine if a file is a test file based on its parent directory name
 function Test-IsTestFile {
     param([string]$FilePath)
-    
-    $fileName = [System.IO.Path]::GetFileName($FilePath)
-    
-    # Check file name patterns for test files
-    if ($fileName -match '_ut\.c$' -or $fileName -match '_int\.c$') {
+
+    $dirName = [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($FilePath))
+
+    if ($dirName -match '_ut$' -or $dirName -match '_int$') {
         return $true
     }
-    
+
     return $false
 }
 
@@ -278,9 +277,9 @@ $srsRequirements = @{}
 foreach ($mdFile in $requirementFiles) {
     $content = Get-Content -Path $mdFile.FullName -Raw -ErrorAction SilentlyContinue
     if (-not $content) { continue }
-    
+
     $tags = Get-SrsTagsFromMarkdown -Content $content -FilePath $mdFile.FullName
-    
+
     foreach ($tag in $tags) {
         if (-not $srsRequirements.ContainsKey($tag.Tag)) {
             $srsRequirements[$tag.Tag] = $tag
@@ -311,14 +310,14 @@ $filesWithInconsistencies = @{}
 foreach ($cFile in $cFiles) {
     $content = Get-Content -Path $cFile.FullName -Raw -ErrorAction SilentlyContinue
     if (-not $content) { continue }
-    
+
     $cTags = Get-SrsTagsFromCCode -Content $content -FilePath $cFile.FullName
-    
+
     foreach ($cTag in $cTags) {
         # Check tag placement: Codes_SRS_ should not be in test files, Tests_SRS_ should not be in production files
         $isTestFile = Test-IsTestFile -FilePath $cFile.FullName
         $relativePath = $cFile.FullName.Substring($RepoRoot.Length).TrimStart('\', '/')
-        
+
         if ($isTestFile -and $cTag.Prefix -eq "Codes") {
             $tagPlacementViolations += [PSCustomObject]@{
                 FilePath = $relativePath
@@ -337,7 +336,7 @@ foreach ($cFile in $cFiles) {
         # Check if this SRS tag exists in requirements
         if ($srsRequirements.ContainsKey($cTag.Tag)) {
             $requirement = $srsRequirements[$cTag.Tag]
-            
+
             # Compare text (case-insensitive, whitespace-normalized)
             # Also treat comments with duplication or incomplete comments as inconsistent
             if ($cTag.Text -ne $requirement.CleanText -or $cTag.HasDuplication -or $cTag.IsIncomplete) {
@@ -353,9 +352,9 @@ foreach ($cFile in $cFiles) {
                     HasDuplication = $cTag.HasDuplication
                     IsIncomplete = $cTag.IsIncomplete
                 }
-                
+
                 $inconsistentRequirements += $inconsistency
-                
+
                 if (-not $filesWithInconsistencies.ContainsKey($cFile.FullName)) {
                     $filesWithInconsistencies[$cFile.FullName] = @()
                 }
@@ -380,27 +379,27 @@ Write-Host ""
 if ($inconsistentRequirements.Count -gt 0) {
     Write-Host "Files with inconsistencies: $($filesWithInconsistencies.Count)" -ForegroundColor Yellow
     Write-Host ""
-    
+
     if ($Fix) {
         Write-Host "Fix mode: Updating C source files..." -ForegroundColor Cyan
         Write-Host ""
-        
+
         # Group inconsistencies by file and fix them
         foreach ($filePath in $filesWithInconsistencies.Keys) {
             $fileInconsistencies = $filesWithInconsistencies[$filePath]
-            
+
             # Sort by match index in reverse order to avoid offset issues
             $fileInconsistencies = $fileInconsistencies | Sort-Object -Property MatchIndex -Descending
-            
+
             try {
                 $content = Get-Content -Path $filePath -Raw
                 $modified = $false
-                
+
                 foreach ($inconsistency in $fileInconsistencies) {
                     # Build the correct comment by preserving the original format
                     # Use regex to replace only the text portion while keeping the comment structure
                     $oldComment = $inconsistency.OriginalMatch
-                    
+
                     # Detect the comment type and structure
                     # Capture whitespace separately to preserve exact formatting
                     # Allow optional whitespace before colon to handle cases like "SRS_TAG :" and "SRS_TAG:"
@@ -417,7 +416,7 @@ if ($inconsistentRequirements.Count -gt 0) {
                         $oldText = $matches[7]  # This now includes any garbage/duplication
                         $ws4 = $matches[8]  # whitespace before closing ]
                         $commentEnd = $matches[9]
-                        
+
                         # Build the corrected comment preserving all original whitespace
                         $correctComment = "$commentStart$ws1$srsPrefix$wsBeforeColon`:$ws2[$ws3$($inconsistency.MdText)$ws4]$commentEnd"
                     }
@@ -431,7 +430,7 @@ if ($inconsistentRequirements.Count -gt 0) {
                         $ws3 = $matches[6]
                         $oldText = $matches[7]
                         $commentEnd = " */"  # Always add proper closing
-                        
+
                         # Build the corrected comment with closing bracket
                         $correctComment = "$commentStart$ws1$srsPrefix$wsBeforeColon`:$ws2[$ws3$($inconsistency.MdText) ]$commentEnd"
                     }
@@ -445,7 +444,7 @@ if ($inconsistentRequirements.Count -gt 0) {
                         $oldText = $matches[7]
                         $ws4 = $matches[8]  # whitespace before closing ]
                         $closingBracket = $matches[9]
-                        
+
                         # Build the corrected comment for line-style comments, preserving whitespace
                         $correctComment = "$commentStart$ws1$srsPrefix$wsBeforeColon`:$ws2[$ws3$($inconsistency.MdText)$ws4]"
                     }
@@ -455,7 +454,7 @@ if ($inconsistentRequirements.Count -gt 0) {
                         Write-Host "          Comment: $oldComment" -ForegroundColor Red
                         continue
                     }
-                    
+
                     if ($content.Contains($oldComment)) {
                         $content = $content.Replace($oldComment, $correctComment)
                         $modified = $true
@@ -468,7 +467,7 @@ if ($inconsistentRequirements.Count -gt 0) {
                         Write-Host "          Tag: $($inconsistency.Tag)" -ForegroundColor Red
                     }
                 }
-                
+
                 if ($modified) {
                     Set-Content -Path $filePath -Value $content -NoNewline
                 }
@@ -477,13 +476,13 @@ if ($inconsistentRequirements.Count -gt 0) {
                 Write-Host "  [ERROR] Failed to update $filePath : $_" -ForegroundColor Red
             }
         }
-        
+
         Write-Host ""
         Write-Host "Fixed $($fixedRequirements.Count) inconsistencies" -ForegroundColor Green
     } else {
         Write-Host "Inconsistent SRS requirements found:" -ForegroundColor Red
         Write-Host ""
-        
+
         # Show all inconsistencies
         foreach ($item in $inconsistentRequirements) {
             Write-Host "  [FAIL] $($item.Tag)" -ForegroundColor Red
@@ -493,7 +492,7 @@ if ($inconsistentRequirements.Count -gt 0) {
             Write-Host "         MD text: '$($item.MdText)'" -ForegroundColor Cyan
             Write-Host ""
         }
-        
+
         Write-Host "To fix these inconsistencies automatically, run with -Fix parameter." -ForegroundColor Cyan
         Write-Host "This will update C code comments to match the requirement documents." -ForegroundColor Cyan
     }
@@ -503,12 +502,12 @@ Write-Host ""
 
 # Report tag placement violations
 if ($tagPlacementViolations.Count -gt 0) {
-    $codesInTests = $tagPlacementViolations | Where-Object { $_.Violation -like "Codes_SRS_*" }
-    $testsInProd = $tagPlacementViolations | Where-Object { $_.Violation -like "Tests_SRS_*" }
-    
+    $codesInTests = @($tagPlacementViolations | Where-Object { $_.Violation -like "Codes_SRS_*" })
+    $testsInProd = @($tagPlacementViolations | Where-Object { $_.Violation -like "Tests_SRS_*" })
+
     Write-Host "SRS Tag Placement Violations:" -ForegroundColor Red
     Write-Host ""
-    
+
     if ($codesInTests.Count -gt 0) {
         Write-Host "  Codes_SRS_ tags in test files ($($codesInTests.Count) violations):" -ForegroundColor Yellow
         foreach ($v in $codesInTests) {
@@ -516,7 +515,7 @@ if ($tagPlacementViolations.Count -gt 0) {
         }
         Write-Host ""
     }
-    
+
     if ($testsInProd.Count -gt 0) {
         Write-Host "  Tests_SRS_ tags in production files ($($testsInProd.Count) violations):" -ForegroundColor Yellow
         foreach ($v in $testsInProd) {
@@ -524,7 +523,7 @@ if ($tagPlacementViolations.Count -gt 0) {
         }
         Write-Host ""
     }
-    
+
     Write-Host "  Convention: Codes_SRS_ tags belong in production code, Tests_SRS_ tags belong in test files." -ForegroundColor Cyan
     Write-Host ""
 }

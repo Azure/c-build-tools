@@ -26,6 +26,12 @@ parameters:
     type: string
     default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_traceability:BOOL=ON -Drun_repo_validation:BOOL=ON"
 
+  # additional_cmake_options is appended to cmake_options. Use this to add extra
+  # options without replacing the defaults (e.g. -Drun_perf_tests:BOOL=ON).
+  - name: additional_cmake_options
+    type: string
+    default: ""
+
   # If this parameter is specified the specified test suite will be run without invoking ctest
   - name: run_test_suite_without_ctest
     type: string
@@ -67,7 +73,7 @@ jobs:
               build_configuration: ${{ BUILD_CONFIGURATION_TYPE }}
               FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
               ARCH_TYPE: ${{ ARCH_TYPE }}
-              cmake_options: ${{ parameters.cmake_options }}
+              cmake_options: ${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }}
               run_test_suite_without_ctest: ${{ parameters.run_test_suite_without_ctest }}
               with_app_verifier: ${{ parameters.with_app_verifier }}
               repo_root_override: ${{ parameters.repo_root_override }}

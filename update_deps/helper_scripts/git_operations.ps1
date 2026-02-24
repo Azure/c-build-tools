@@ -23,6 +23,178 @@ function create-ignore-pattern
 # Initialize the ignore pattern when script is sourced
 create-ignore-pattern
 
+# Snapshot the current master HEAD commit for all repos in the work directory.
+# Called once before propagation starts to establish a baseline. Entries are
+# updated after each repo's PR merges via update-fixed-commit.
+function snapshot-repo-commits
+{
+    param(
+        [string[]] $repo_order
+    )
+    $commits = @{}
+    # Calculate max repo name length for aligned output
+    $max_name_len = ($repo_order | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
+    foreach ($repo_name in $repo_order)
+    {
+        if (Test-Path $repo_name)
+        {
+            Push-Location $repo_name
+            $sha = (git rev-parse master 2>$null)
+            if ($LASTEXITCODE -eq 0 -and $sha)
+            {
+                $commits[$repo_name] = $sha.Trim()
+                Write-Host ("  {0,-$max_name_len} : {1}" -f $repo_name, $commits[$repo_name].Substring(0, 8))
+            }
+            else
+            {
+                Write-Host "  Warning: Could not get master commit for $repo_name" -ForegroundColor Yellow
+            }
+            Pop-Location
+        }
+        else
+        {
+            # repo not cloned yet, skip
+        }
+    }
+    return $commits
+}
+
+# Update each submodule to its fixed commit, or latest master if no fixed commit is available
+function update-submodules-to-fixed-commits
+{
+    # Parse ignore pattern into a list for matching
+    $ignore_paths = @()
+    if ($global:ignore_pattern)
+    {
+        $ignore_paths = $global:ignore_pattern -split '\|'
+    }
+
+    # Get submodule paths from .gitmodules
+    if (Test-Path ".gitmodules")
+    {
+        $submodule_lines = git config --file .gitmodules --get-regexp '\.path$'
+        if ($submodule_lines)
+        {
+            foreach ($line in $submodule_lines)
+            {
+                $sub_path = ($line -split "\s+", 2)[1]
+
+                # Check if this submodule should be ignored
+                if ($sub_path -in $ignore_paths)
+                {
+                    # ignored submodule, skip
+                }
+                else
+                {
+                    # Derive repo name from submodule path (e.g., "deps/c-util" -> "c-util")
+                    $sub_repo_name = Split-Path $sub_path -Leaf
+
+                    Push-Location $sub_path
+                    if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
+                    {
+                        $target_sha = $global:fixed_commits[$sub_repo_name]
+                        Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
+                        git fetch origin
+                        git checkout $target_sha
+
+                        # Warn if remote master has moved ahead of the fixed commit
+                        $remote_sha = (git rev-parse origin/master 2>$null)
+                        if ($LASTEXITCODE -eq 0 -and $remote_sha -and $remote_sha.Trim() -ne $target_sha)
+                        {
+                            Write-Host "  WARNING: $sub_repo_name has newer commits on master ($($remote_sha.Trim().Substring(0, 8))) that will NOT be propagated" -ForegroundColor Yellow
+                            if (-not $global:skipped_newer_commits)
+                            {
+                                $global:skipped_newer_commits = @{}
+                            }
+                            $global:skipped_newer_commits[$sub_repo_name] = @{
+                                FixedCommit = $target_sha
+                                RemoteCommit = $remote_sha.Trim()
+                            }
+                        }
+                        else
+                        {
+                            # remote master matches fixed commit
+                        }
+                    }
+                    else
+                    {
+                        Write-Host "  Updating $sub_path to latest master (no fixed commit)"
+                        git checkout master
+                        git pull
+                    }
+                    Pop-Location
+                }
+            }
+        }
+        else
+        {
+            # no submodules found
+        }
+    }
+    else
+    {
+        # no .gitmodules file
+    }
+}
+
+# After a repo's PR is merged, fetch the new master HEAD and update fixed_commits
+# so that downstream repos use the commit created by this propagation.
+function update-fixed-commit
+{
+    param(
+        [string] $repo_name
+    )
+
+    if ($global:fixed_commits)
+    {
+        Push-Location $repo_name
+        git fetch origin master 2>$null
+        $new_sha = (git rev-parse origin/master 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $new_sha)
+        {
+            $global:fixed_commits[$repo_name] = $new_sha.Trim()
+            Write-Host "  Updated fixed commit for $repo_name to $($new_sha.Trim().Substring(0, 8))"
+        }
+        else
+        {
+            Write-Host "  Warning: Could not fetch new master commit for $repo_name" -ForegroundColor Yellow
+        }
+        Pop-Location
+    }
+    else
+    {
+        # no fixed commits table, nothing to update
+    }
+}
+
+# Show a summary of repos that had newer commits on master that were not propagated
+function show-skipped-commits-summary
+{
+    if ($global:skipped_newer_commits -and $global:skipped_newer_commits.Count -gt 0)
+    {
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Yellow
+        Write-Host "  NEWER COMMITS NOT PROPAGATED" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Yellow
+        Write-Host "The following repos had newer commits on master" -ForegroundColor Yellow
+        Write-Host "that were not included in this propagation run:" -ForegroundColor Yellow
+        Write-Host ""
+        foreach ($repo in $global:skipped_newer_commits.Keys)
+        {
+            $info = $global:skipped_newer_commits[$repo]
+            Write-Host "  $repo" -ForegroundColor Yellow -NoNewline
+            Write-Host "  used: $($info.FixedCommit.Substring(0, 8))  remote: $($info.RemoteCommit.Substring(0, 8))"
+        }
+        Write-Host ""
+        Write-Host "Consider running propagation again to pick up these changes." -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Yellow
+    }
+    else
+    {
+        # all repos were up to date
+    }
+}
+
 function refresh-submodules
 {
     $submodules = git submodule | Out-String
@@ -64,8 +236,8 @@ function update-local-repo
         # no deps folder
     }
     git submodule update --init
-    # update all submodules except the ones mentioned in ignores.json
-    git submodule foreach "case `$name in $ignore_pattern ) ;; *) git checkout master && git pull;; esac"
+    # update all submodules to their fixed commits (or latest master as fallback)
+    update-submodules-to-fixed-commits
     # create new branch
     git checkout -B $new_branch_name
     # add updates and push to remote
