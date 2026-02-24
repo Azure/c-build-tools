@@ -411,7 +411,7 @@ function global:get-check-status-counts
 # Test if checks are complete
 #
 # For Azure DevOps: checks have IsBlocking property, only blocking checks matter
-# For GitHub: uses --required flag to identify required checks (IsBlocking = $false for optional)
+# For GitHub: all checks matter (IsBlocking = $null means treat as blocking)
 #
 function global:Test-ChecksComplete
 {
