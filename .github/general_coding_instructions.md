@@ -258,6 +258,7 @@ THANDLE(TYPE) my_function_create(uint32_t count, TYPE_HANDLE* items)
 - Validate value ranges and constraints
 - **Combine all validations in a single `if` statement** with `||` operator whenever possible (avoid multiple separate `if` statements for parameter checks)
 - **Log ALL function arguments when validation fails** - include every parameter with its type and value in the `LogError()` call, not just the invalid ones
+- **Use dedicated format macros for types that define them** — e.g., `PRI_SUBSTREAM_ID`/`SUBSTREAM_ID_VALUE(x)` for `SUBSTREAM_ID`, `PRI_MU_ENUM`/`MU_ENUM_VALUE(ENUM_TYPE, x)` for enums, `PRI_UUID_T`/`UUID_T_VALUES(x)` for UUIDs, `PRI_ZRPC_CUID`/`ZRPC_CUID_VALUES(x)` for `ZRPC_CUID`. Do not fall back to `%p` or `%d` for types that have dedicated print macros.
 - Use `LogError()` to log validation failures with parameter values
 - Include SRS requirement comments for each validation
 
@@ -839,6 +840,11 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 
 **Exception**: Casts ARE required when converting `void*` to `const` qualified pointer types (e.g., `const MY_STRUCT*`).
 
+### Function Pointer Casting Rules
+- **Do NOT cast function pointers to bypass type checking** — even when function signatures are technically compatible (per C11 §6.7.6.3p15), casts remove the compiler's ability to catch type mismatches
+- If a function expects `ON_MODULE_A_CALLBACK` and you have `ON_MODULE_B_CALLBACK`, do NOT cast — use proper adapter functions or fix the type definitions
+- Casts on function pointers hide bugs and defeat the purpose of having distinct types per module
+
 ### Error Handling
 - Use `LogError()` for error conditions with descriptive messages
 - Include parameter values in error messages for debugging
@@ -849,6 +855,7 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 - Use THANDLE pattern for reference-counted objects
 - Always use `THANDLE_INITIALIZE`, `THANDLE_ASSIGN`, `THANDLE_MOVE` appropriately
 - Never manually manipulate reference counts
+- **Do not use `THANDLE_GET_T` for read-only field access** — when a function already has access to the inner struct (e.g., via `THANDLE_GET_T` done once earlier), use it directly. Do not call `THANDLE_GET_T` redundantly just to read fields.
 
 ### Async Operations
 - Use consistent callback patterns with context parameters
