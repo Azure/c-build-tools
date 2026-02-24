@@ -234,8 +234,9 @@ function propagate-updates
     initialize-repo-status -repos $repo_order
 
     # Snapshot master HEAD commits for all repos before starting updates.
-    # This ensures we propagate the same commit for each dependency throughout
-    # the entire run, even if a repo's master branch is updated externally.
+    # This prevents external changes from affecting propagation. After each
+    # repo's PR merges, its entry is updated via update-fixed-commit so that
+    # downstream repos pick up the new commit created by propagation.
     Write-Host "`nSnapshotting master commits for all repos..."
     Set-Location $global:work_dir
     $global:fixed_commits = snapshot-repo-commits -repo_order $repo_order

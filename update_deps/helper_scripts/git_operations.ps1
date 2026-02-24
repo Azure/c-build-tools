@@ -24,8 +24,8 @@ function create-ignore-pattern
 create-ignore-pattern
 
 # Snapshot the current master HEAD commit for all repos in the work directory.
-# Called once before propagation starts so that every repo is updated to the
-# same set of commits throughout the entire run.
+# Called once before propagation starts to establish a baseline. Entries are
+# updated after each repo's PR merges via update-fixed-commit.
 function snapshot-repo-commits
 {
     param(
