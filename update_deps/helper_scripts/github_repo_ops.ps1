@@ -37,6 +37,18 @@ function update-repo-github
     # Update status with PR URL immediately so it shows even if later steps fail
     set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $fn_result
 
+    # Enable auto-merge so GitHub merges once required checks pass
+    Write-Host "Enabling auto-merge"
+    $null = gh pr merge --auto --squash --delete-branch 2>&1
+    if($LASTEXITCODE -ne 0)
+    {
+        Write-Host "Warning: Could not enable auto-merge, will merge manually" -ForegroundColor Yellow
+    }
+    else
+    {
+        Write-Host "Auto-merge enabled" -ForegroundColor Green
+    }
+
     # Small wait to ensure PR is fully created before triggering pipeline
     Start-Sleep -Seconds 30
     $null = gh pr comment --body "/AzurePipelines run"
@@ -45,42 +57,81 @@ function update-repo-github
 
     Write-Host "Waiting for build to complete"
     $watch_result = watch-github-pr-checks -poll_interval 30 -timeout 120 -OnIteration { [void](show-propagation-status) }
-    if(-not $watch_result.Success)
+
+    # Check if PR was auto-merged
+    $pr_state = gh pr view --json state 2>&1
+    $merged = $false
+    if($LASTEXITCODE -eq 0)
     {
-        fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+        $state_data = $pr_state | ConvertFrom-Json
+        if($state_data.state -eq "MERGED")
+        {
+            $merged = $true
+            Write-Host "PR auto-merged successfully" -ForegroundColor Green
+        }
+        else
+        {
+            # PR not merged yet
+        }
     }
     else
     {
-        Write-Host "PR checks passed" -ForegroundColor Green
+        # couldn't get PR state
     }
 
-    Write-Host "Merging PR"
-    $merge_success = $false
-    $max_retries = 3
-    $retry_delay = 30
-
-    for ($i = 1; $i -le $max_retries; $i++)
+    if(-not $merged)
     {
-        $null = gh pr merge --squash --delete-branch 2>&1
-        if ($LASTEXITCODE -eq 0)
+        # Auto-merge didn't happen — required checks may have failed
+        if(-not $watch_result.Success)
         {
-            $merge_success = $true
-            Write-Host "PR merged successfully" -ForegroundColor Green
-            break
+            fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
         }
-
-        if ($i -lt $max_retries)
+        else
         {
-            Write-Host "Merge attempt $i failed, retrying in $retry_delay seconds..." -ForegroundColor Yellow
-            Start-Sleep -Seconds $retry_delay
+            # Checks passed but auto-merge hasn't triggered yet, wait and retry
+            Write-Host "Waiting for auto-merge to complete..."
+            $max_wait = 120
+            $waited = 0
+            while($waited -lt $max_wait -and -not $merged)
+            {
+                Start-Sleep -Seconds 15
+                $waited += 15
+                $pr_state = gh pr view --json state 2>&1
+                if($LASTEXITCODE -eq 0)
+                {
+                    $state_data = $pr_state | ConvertFrom-Json
+                    if($state_data.state -eq "MERGED")
+                    {
+                        $merged = $true
+                        Write-Host "PR auto-merged successfully" -ForegroundColor Green
+                    }
+                    else
+                    {
+                        # still waiting
+                    }
+                }
+                else
+                {
+                    # couldn't get PR state
+                }
+            }
+
+            if(-not $merged)
+            {
+                fail-with-status "PR for repo $repo_name was not merged after waiting ${max_wait}s"
+            }
+            else
+            {
+                # already logged success
+            }
         }
     }
-
-    if (-not $merge_success)
+    else
     {
-        fail-with-status "Failed to merge PR for repo $repo_name after $max_retries attempts"
+        # already merged
     }
-    # Wait for merge to complete
+
+    # Wait for merge to settle
     Start-Sleep -Seconds 10
     Pop-Location
 

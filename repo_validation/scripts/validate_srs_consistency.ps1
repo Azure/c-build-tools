@@ -241,14 +241,13 @@ function Get-SrsTagsFromCCode {
     return $srsTags
 }
 
-# Function to determine if a file is a test file based on naming convention and path
+# Function to determine if a file is a test file based on its parent directory name
 function Test-IsTestFile {
     param([string]$FilePath)
 
-    $fileName = [System.IO.Path]::GetFileName($FilePath)
+    $dirName = [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($FilePath))
 
-    # Check file name patterns for test files
-    if ($fileName -match '_ut\.c$' -or $fileName -match '_int\.c$') {
+    if ($dirName -match '_ut$' -or $dirName -match '_int$') {
         return $true
     }
 
