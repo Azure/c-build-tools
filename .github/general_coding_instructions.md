@@ -1399,6 +1399,36 @@ static void setup_test_state(void)
 - Include error conditions and edge cases
 - Group related requirements logically
 - Update all three locations (spec, code, tests) when modifying requirements
+- **Each SRS requirement must describe a single testable behavior** so it can be tagged on exactly one test. If a requirement describes multiple outcomes, split it into separate specs:
+
+```markdown
+// BAD - combined spec, can't tag individually per test
+**SRS_MODULE_01_020: [** `is_enabled` shall return `FEATURE_ENABLED` if the feature is enabled
+and `FEATURE_DISABLED` if the feature is disabled. **]**
+
+// GOOD - split into individually taggable specs
+**SRS_MODULE_01_022: [** If the feature flag is enabled, `is_enabled` shall return `FEATURE_ENABLED`. **]**
+**SRS_MODULE_01_023: [** If the feature flag is not enabled, `is_enabled` shall return `FEATURE_DISABLED`. **]**
+```
+
+#### Exposed API Section in Requirements
+The `Exposed API` section in `_requirements.md` must mirror the public header file exactly. Include all public enums, typedefs, and function declarations as they appear in the header:
+
+```markdown
+## Exposed API
+
+```c
+#define MY_RESULT_VALUES \
+    MY_RESULT_OK, \
+    MY_RESULT_ERROR, \
+    MY_RESULT_INVALID_ARG
+
+MU_DEFINE_ENUM(MY_RESULT, MY_RESULT_VALUES)
+
+MOCKABLE_FUNCTION_WITH_RETURNS(, THANDLE(MY_MODULE), my_module_create, const char*, param)(valid, NULL);
+MOCKABLE_FUNCTION_WITH_RETURNS(, MY_RESULT, my_module_operation, THANDLE(MY_MODULE), handle)(MY_RESULT_OK, MY_RESULT_ERROR);
+```
+```
 
 ## Internal Callback Functions in Requirements {#internal-callback-requirements}
 
@@ -1555,6 +1585,20 @@ TEST_FUNCTION(when_underlying_functions_fail_then_my_function_fails)
 - Only include `umock_c_negative_tests.h` and `umock_c_negative_tests_init()`/`deinit()` when the test file actually uses negative tests
 - Do not add negative test infrastructure to test files that don't use it
 
+#### `.CallCannotFail()` Modifier Rules
+When writing umock negative tests that use `umock_c_negative_tests_snapshot()`, use `.CallCannotFail()` ONLY on expected calls that should be excluded from failure injection (e.g., getter functions that always succeed). Do NOT use `.CallCannotFail()` in positive/happy path tests — it has no effect there and adds noise.
+
+```c
+// In NEGATIVE test - correct usage
+STRICT_EXPECTED_CALL(config_get_value(IGNORED_ARG))
+    .CallCannotFail();  // This getter never fails, skip it in negative iteration
+STRICT_EXPECTED_CALL(malloc(IGNORED_ARG));  // This CAN fail, test it
+
+// In POSITIVE test - do NOT use .CallCannotFail()
+STRICT_EXPECTED_CALL(config_get_value(IGNORED_ARG));  // No modifier needed
+STRICT_EXPECTED_CALL(malloc(IGNORED_ARG));
+```
+
 #### Static THANDLE Variables in Tests
 A `THANDLE` variable declared as a bare static in the default data segment will compile, but `THANDLE_INITIALIZE_MOVE` and `THANDLE_ASSIGN` will fault at runtime. Wrap static `THANDLE` test variables inside a struct:
 
@@ -1598,18 +1642,6 @@ TEST_FUNCTION(when_all_calls_succeed_then_operation_succeeds)
     ASSERT_ARE_EQUAL(int, 0, result);
     ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());  // REQUIRED
 }
-```
-
-### Struct Arguments Require IGNORED_STRUCT_ARG
-`IGNORED_ARG` is an `int` value (0) and cannot be used for pass-by-value struct parameters (e.g., `UUID_T`, `GUID`). Use `IGNORED_STRUCT_ARG(TYPE)` instead:
-
-```c
-// WRONG: IGNORED_ARG is int, UUID_T is a struct
-STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_ARG));
-// Compiler error: cannot convert from 'int' to 'UUID_T'
-
-// CORRECT: Use IGNORED_STRUCT_ARG for struct parameters
-STRICT_EXPECTED_CALL(function(IGNORED_ARG, IGNORED_STRUCT_ARG(UUID_T)));
 ```
 
 These guidelines ensure consistency with the existing Azure C library ecosystem and maintain the high quality and reliability standards of the Azure Messaging Block Storage project.
