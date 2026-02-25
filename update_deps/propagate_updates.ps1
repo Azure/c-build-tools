@@ -96,156 +96,7 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\azure_repo_ops.ps1"
 . "$helper_scripts\github_repo_ops.ps1"
 . "$helper_scripts\success_animation.ps1"
-
-$script:STATE_FILE_NAME = "propagation_state.json"
-
-# Save propagation state to a JSON file in the work directory.
-# Called after each repo completes so the run can be resumed.
-function save-propagation-state
-{
-    param(
-        [string] $branch_name,
-        [string[]] $repo_order,
-        $repo_urls
-    )
-
-    # Build repo_statuses from the global tracking
-    $statuses = @{}
-    foreach ($repo in $repo_order)
-    {
-        if ($global:repo_status.ContainsKey($repo))
-        {
-            $statuses[$repo] = @{
-                Status = $global:repo_status[$repo].Status
-                Message = $global:repo_status[$repo].Message
-                PrUrl = $global:repo_status[$repo].PrUrl
-            }
-        }
-        else
-        {
-            # repo not tracked
-        }
-    }
-
-    $state = @{
-        branch_name = $branch_name
-        repo_order = $repo_order
-        repo_urls = $repo_urls
-        fixed_commits = $global:fixed_commits
-        repo_statuses = $statuses
-        root_list = $root_list
-        azure_work_item = $azure_work_item
-    }
-
-    $state_path = Join-Path $global:work_dir $script:STATE_FILE_NAME
-    $state | ConvertTo-Json -Depth 4 | Set-Content -Path $state_path -Encoding UTF8
-}
-
-# Find the most recent propagation state file in the current directory.
-# Scans new_deps_* directories for propagation_state.json, returns the newest.
-function find-latest-state-file
-{
-    $result = $null
-
-    $candidates = Get-ChildItem -Directory -Filter "new_deps_*" -ErrorAction SilentlyContinue | Sort-Object Name -Descending
-    foreach ($dir in $candidates)
-    {
-        $state_path = Join-Path $dir.FullName $script:STATE_FILE_NAME
-        if (Test-Path $state_path)
-        {
-            $result = $state_path
-            break
-        }
-        else
-        {
-            # no state file in this directory
-        }
-    }
-
-    return $result
-}
-
-# Load propagation state from a JSON file.
-# Returns a hashtable with all saved state, or $null if loading fails.
-function load-propagation-state
-{
-    param(
-        [string] $state_path
-    )
-    $result = $null
-
-    $json = Get-Content -Path $state_path -Raw -ErrorAction SilentlyContinue
-    if (-not $json)
-    {
-        Write-Host "Failed to read state file: $state_path" -ForegroundColor Red
-    }
-    else
-    {
-        $data = $json | ConvertFrom-Json -ErrorAction SilentlyContinue
-        if (-not $data)
-        {
-            Write-Host "Failed to parse state file: $state_path" -ForegroundColor Red
-        }
-        else
-        {
-            # Convert fixed_commits from PSObject to hashtable
-            $fc = @{}
-            if ($data.fixed_commits)
-            {
-                $data.fixed_commits.PSObject.Properties | ForEach-Object {
-                    $fc[$_.Name] = $_.Value
-                }
-            }
-            else
-            {
-                # no fixed commits in state
-            }
-
-            # Convert repo_urls from PSObject to hashtable
-            $urls = @{}
-            if ($data.repo_urls)
-            {
-                $data.repo_urls.PSObject.Properties | ForEach-Object {
-                    $urls[$_.Name] = $_.Value
-                }
-            }
-            else
-            {
-                # no repo urls in state
-            }
-
-            # Convert repo_statuses from PSObject to hashtable
-            $statuses = @{}
-            if ($data.repo_statuses)
-            {
-                $data.repo_statuses.PSObject.Properties | ForEach-Object {
-                    $status_obj = $_.Value
-                    $statuses[$_.Name] = @{
-                        Status = $status_obj.Status
-                        Message = $status_obj.Message
-                        PrUrl = $status_obj.PrUrl
-                    }
-                }
-            }
-            else
-            {
-                # no repo statuses in state
-            }
-
-            $result = @{
-                branch_name = $data.branch_name
-                repo_order = @($data.repo_order)
-                repo_urls = $urls
-                fixed_commits = $fc
-                repo_statuses = $statuses
-                root_list = @($data.root_list)
-                azure_work_item = $data.azure_work_item
-            }
-        }
-    }
-
-    return $result
-}
+. "$helper_scripts\propagation_state.ps1"
 
 
 # update dependencies for given repo
@@ -297,7 +148,6 @@ function propagate-updates
 {
     # Save original directory to restore at exit (including on failure)
     $global:original_dir = (Get-Location).Path
-    Push-Location
 
     # Close failed PRs by default unless -NoCloseFailedPr is specified
     $global:close_failed_pr = -not $NoCloseFailedPr.IsPresent
@@ -350,6 +200,16 @@ function propagate-updates
         $global:work_dir = Split-Path $state_path -Parent
         $azure_work_item = $saved_state.azure_work_item
         $root_list = $saved_state.root_list
+
+        # Validate that critical state was restored
+        if (-not $global:fixed_commits -or $global:fixed_commits.Count -eq 0)
+        {
+            fail-with-status "State file is missing fixed_commits. Cannot resume without commit information."
+        }
+        else
+        {
+            # fixed_commits restored successfully
+        }
 
         Set-Location $global:work_dir
         Write-Host "Work directory: $global:work_dir"
@@ -442,7 +302,6 @@ function propagate-updates
             .$helper_scripts\build_graph.ps1 -root_list $root_list
             if($LASTEXITCODE -ne 0)
             {
-                Pop-Location
                 fail-with-status "Could not build dependency graph for $root_list."
             }
             else
@@ -454,7 +313,6 @@ function propagate-updates
             $cached_data = get-cached-repo-order -root_list $root_list
             if (-not $cached_data)
             {
-                Pop-Location
                 fail-with-status "Failed to get cached repo order after building graph."
             }
             else
@@ -498,7 +356,7 @@ function propagate-updates
         }
 
         # Save state after each repo so the run can be resumed
-        save-propagation-state -branch_name $new_branch_name -repo_order $repo_order -repo_urls $repo_urls
+        save-propagation-state -branch_name $new_branch_name -repo_order $repo_order -repo_urls $repo_urls -root_list $root_list -azure_work_item $azure_work_item
     }
 
     # Show final status and check if all succeeded
@@ -517,7 +375,7 @@ function propagate-updates
     }
 
     # Restore original directory
-    Pop-Location
+    restore-original-directory
 }
 
 propagate-updates

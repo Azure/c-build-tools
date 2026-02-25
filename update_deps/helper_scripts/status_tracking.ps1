@@ -34,53 +34,6 @@ function initialize-repo-status
     }
 }
 
-# Restore repo statuses from saved state (for resume).
-# Repos that were updated or skipped keep their status.
-# Repos that failed or were pending are reset to pending.
-function restore-repo-status
-{
-    param(
-        [string[]] $repos,
-        [hashtable] $saved_statuses
-    )
-    $global:repo_order_list = $repos
-    $global:repo_status = @{}
-    $global:current_repo = ""
-    foreach ($repo in $repos)
-    {
-        if ($saved_statuses.ContainsKey($repo))
-        {
-            $saved = $saved_statuses[$repo]
-            if ($saved.Status -eq $script:STATUS_UPDATED -or $saved.Status -eq $script:STATUS_SKIPPED)
-            {
-                $global:repo_status[$repo] = @{
-                    Status = $saved.Status
-                    Message = $saved.Message
-                    PrUrl = $saved.PrUrl
-                }
-            }
-            else
-            {
-                # failed or pending — reset to pending for retry
-                $global:repo_status[$repo] = @{
-                    Status = $script:STATUS_PENDING
-                    Message = ""
-                    PrUrl = ""
-                }
-            }
-        }
-        else
-        {
-            # not in saved state — treat as pending
-            $global:repo_status[$repo] = @{
-                Status = $script:STATUS_PENDING
-                Message = ""
-                PrUrl = ""
-            }
-        }
-    }
-}
-
 # Update status for a repo
 function set-repo-status
 {
@@ -210,14 +163,7 @@ function fail-with-status
     show-propagation-status -Final
 
     # Restore original directory so the user is not stranded in work_dir/<repo>
-    if ($global:original_dir)
-    {
-        Set-Location $global:original_dir
-    }
-    else
-    {
-        # no original_dir saved
-    }
+    restore-original-directory
 
     Write-Error $message
     exit -1
@@ -298,107 +244,108 @@ function show-propagation-status
     if (-not $global:repo_order_list -or $global:repo_order_list.Count -eq 0)
     {
         Write-Host "No repos to display status for." -ForegroundColor Yellow
-        return $result
-    }
-
-    # Calculate dynamic column widths
-    $index_width = ($global:repo_order_list.Count).ToString().Length + 1  # +1 for the dot
-    $repo_width = ($global:repo_order_list | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
-    $status_width = 11  # "IN PROGRESS" is the longest status text
-
-    # Build table rows with display info
-    $rows = @()
-    $index = 1
-    foreach($repo in $global:repo_order_list)
-    {
-        $info = $global:repo_status[$repo]
-        $display = get-repo-status-display -status $info.Status
-        $rows += @{
-            Index = $index
-            Repo = $repo
-            Status = $info.Status
-            StatusText = $display.Text
-            Symbol = $display.Symbol
-            Color = $display.Color
-            Message = $info.Message
-            PrUrl = $info.PrUrl
-        }
-        $index++
-    }
-
-    # Print header
-    if($Final)
-    {
-        Write-Host ""
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "     PROPAGATION STATUS SUMMARY" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
     }
     else
     {
-        Write-Host ""
-        Write-Host "--- Propagation Status ---" -ForegroundColor Cyan
-    }
+        # Calculate dynamic column widths
+        $index_width = ($global:repo_order_list.Count).ToString().Length + 1  # +1 for the dot
+        $repo_width = ($global:repo_order_list | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
+        $status_width = 11  # "IN PROGRESS" is the longest status text
 
-    # Print table header
-    $header = "   {0,-$index_width} {1,-$repo_width} {2,-$status_width} {3}" -f "#", "REPOSITORY", "STATUS", "PR"
-    Write-Host $header -ForegroundColor White
-
-    # Print each row
-    foreach($row in $rows)
-    {
-        $index_str = "{0}." -f $row.Index
-        $status_display = $row.StatusText
-        if($row.Message)
+        # Build table rows with display info
+        $rows = @()
+        $index = 1
+        foreach($repo in $global:repo_order_list)
         {
-            $status_display = "{0} ({1})" -f $row.StatusText, $row.Message
+            $info = $global:repo_status[$repo]
+            $display = get-repo-status-display -status $info.Status
+            $rows += @{
+                Index = $index
+                Repo = $repo
+                Status = $info.Status
+                StatusText = $display.Text
+                Symbol = $display.Symbol
+                Color = $display.Color
+                Message = $info.Message
+                PrUrl = $info.PrUrl
+            }
+            $index++
+        }
+
+        # Print header
+        if($Final)
+        {
+            Write-Host ""
+            Write-Host "========================================" -ForegroundColor Cyan
+            Write-Host "     PROPAGATION STATUS SUMMARY" -ForegroundColor Cyan
+            Write-Host "========================================" -ForegroundColor Cyan
         }
         else
         {
-            # no message to append
+            Write-Host ""
+            Write-Host "--- Propagation Status ---" -ForegroundColor Cyan
         }
 
-        # Build the line with fixed-width columns
-        $symbol = $row.Symbol
-        $line = "{0}  {1,-$index_width} {2,-$repo_width} {3,-$status_width} {4}" -f $symbol, $index_str, $row.Repo, $row.StatusText, $row.PrUrl
+        # Print table header
+        $header = "   {0,-$index_width} {1,-$repo_width} {2,-$status_width} {3}" -f "#", "REPOSITORY", "STATUS", "PR"
+        Write-Host $header -ForegroundColor White
 
-        Write-Host $line -ForegroundColor $row.Color
-    }
-
-    if($Final)
-    {
-        Write-Host "========================================" -ForegroundColor Cyan
-
-        # Summary counts
-        $updated = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_UPDATED }).Count
-        $skipped = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_SKIPPED }).Count
-        $failed = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_FAILED }).Count
-        $pending = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_PENDING }).Count
-
-        Write-Host ""
-        Write-Host "Summary: " -NoNewline
-        Write-Host "$updated updated" -ForegroundColor Green -NoNewline
-        Write-Host ", $skipped skipped" -ForegroundColor Gray -NoNewline
-        Write-Host ", $failed failed" -ForegroundColor Red -NoNewline
-        Write-Host ", $pending pending" -ForegroundColor DarkGray
-        Write-Host ""
-
-        # Return success if no failures
-        if($failed -eq 0)
+        # Print each row
+        foreach($row in $rows)
         {
-            $result = $true
+            $index_str = "{0}." -f $row.Index
+            $status_display = $row.StatusText
+            if($row.Message)
+            {
+                $status_display = "{0} ({1})" -f $row.StatusText, $row.Message
+            }
+            else
+            {
+                # no message to append
+            }
+
+            # Build the line with fixed-width columns
+            $symbol = $row.Symbol
+            $line = "{0}  {1,-$index_width} {2,-$repo_width} {3,-$status_width} {4}" -f $symbol, $index_str, $row.Repo, $row.StatusText, $row.PrUrl
+
+            Write-Host $line -ForegroundColor $row.Color
+        }
+
+        if($Final)
+        {
+            Write-Host "========================================" -ForegroundColor Cyan
+
+            # Summary counts
+            $updated = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_UPDATED }).Count
+            $skipped = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_SKIPPED }).Count
+            $failed = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_FAILED }).Count
+            $pending = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_PENDING }).Count
+
+            Write-Host ""
+            Write-Host "Summary: " -NoNewline
+            Write-Host "$updated updated" -ForegroundColor Green -NoNewline
+            Write-Host ", $skipped skipped" -ForegroundColor Gray -NoNewline
+            Write-Host ", $failed failed" -ForegroundColor Red -NoNewline
+            Write-Host ", $pending pending" -ForegroundColor DarkGray
+            Write-Host ""
+
+            # Return success if no failures
+            if($failed -eq 0)
+            {
+                $result = $true
+            }
+            else
+            {
+                # there were failures
+            }
         }
         else
         {
-            # there were failures
+            # not final - no summary, result stays false
         }
-    }
-    else
-    {
-        # not final - no summary, result stays false
-    }
 
-    Write-Host ""
+        Write-Host ""
+    }
 
     return $result
 }
