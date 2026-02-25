@@ -34,6 +34,53 @@ function initialize-repo-status
     }
 }
 
+# Restore repo statuses from saved state (for resume).
+# Repos that were updated or skipped keep their status.
+# Repos that failed or were pending are reset to pending.
+function restore-repo-status
+{
+    param(
+        [string[]] $repos,
+        [hashtable] $saved_statuses
+    )
+    $global:repo_order_list = $repos
+    $global:repo_status = @{}
+    $global:current_repo = ""
+    foreach ($repo in $repos)
+    {
+        if ($saved_statuses.ContainsKey($repo))
+        {
+            $saved = $saved_statuses[$repo]
+            if ($saved.Status -eq $script:STATUS_UPDATED -or $saved.Status -eq $script:STATUS_SKIPPED)
+            {
+                $global:repo_status[$repo] = @{
+                    Status = $saved.Status
+                    Message = $saved.Message
+                    PrUrl = $saved.PrUrl
+                }
+            }
+            else
+            {
+                # failed or pending — reset to pending for retry
+                $global:repo_status[$repo] = @{
+                    Status = $script:STATUS_PENDING
+                    Message = ""
+                    PrUrl = ""
+                }
+            }
+        }
+        else
+        {
+            # not in saved state — treat as pending
+            $global:repo_status[$repo] = @{
+                Status = $script:STATUS_PENDING
+                Message = ""
+                PrUrl = ""
+            }
+        }
+    }
+}
+
 # Update status for a repo
 function set-repo-status
 {
@@ -161,6 +208,17 @@ function fail-with-status
         # no current repo to mark as failed
     }
     show-propagation-status -Final
+
+    # Restore original directory so the user is not stranded in work_dir/<repo>
+    if ($global:original_dir)
+    {
+        Set-Location $global:original_dir
+    }
+    else
+    {
+        # no original_dir saved
+    }
+
     Write-Error $message
     exit -1
 }
@@ -236,6 +294,12 @@ function show-propagation-status
         [switch] $Final
     )
     $result = $false
+
+    if (-not $global:repo_order_list -or $global:repo_order_list.Count -eq 0)
+    {
+        Write-Host "No repos to display status for." -ForegroundColor Yellow
+        return $result
+    }
 
     # Calculate dynamic column widths
     $index_width = ($global:repo_order_list.Count).ToString().Length + 1  # +1 for the dot
