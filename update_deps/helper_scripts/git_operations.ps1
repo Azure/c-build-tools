@@ -223,7 +223,11 @@ function refresh-submodules
         # Only delete dep that is listed in .gitmodules
         if($submodules.Contains($_.Name))
         {
+            # Suppress progress bar from Remove-Item (renders as garbled text in non-interactive terminals)
+            $oldProgress = $ProgressPreference
+            $ProgressPreference = 'SilentlyContinue'
             Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+            $ProgressPreference = $oldProgress
         }
         else
         {
