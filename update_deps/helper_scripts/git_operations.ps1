@@ -114,7 +114,7 @@ function update-submodules-to-fixed-commits
                         git fetch origin
                         git checkout $target_sha
                         # Reset console color — git checkout may leave ANSI color codes active
-                        [Console]::ResetColor()
+                        Write-Host "`e[0m" -NoNewline
 
                         # Warn if remote master has moved ahead of the fixed commit
                         $remote_sha = (git rev-parse origin/master 2>$null)
@@ -139,7 +139,7 @@ function update-submodules-to-fixed-commits
                     {
                         Write-Host "  Updating $sub_path to latest master (no fixed commit)"
                         git checkout master
-                        [Console]::ResetColor()
+                        Write-Host "`e[0m" -NoNewline
                         git pull
                     }
                     Pop-Location
@@ -514,7 +514,7 @@ function update-local-repo
 
     Push-Location $repo_name
     git checkout master
-    [Console]::ResetColor()
+    Write-Host "`e[0m" -NoNewline
     git pull
     # Sometimes git fails to detect updates in submodules
     # Fix is to delete the submodule and reinitializes it
@@ -531,7 +531,7 @@ function update-local-repo
     update-submodules-to-fixed-commits
     # create new branch
     git checkout -B $new_branch_name
-    [Console]::ResetColor()
+    Write-Host "`e[0m" -NoNewline
     # add updates and push to remote
     git add .
 
