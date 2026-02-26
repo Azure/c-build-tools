@@ -218,6 +218,22 @@ function propagate-updates
         # Restore repo statuses (updated/skipped stay, failed resets to pending)
         restore-repo-status -repos $repo_order -saved_statuses $saved_state.repo_statuses
 
+        # Check if the previous run already completed successfully
+        $pending_count = ($repo_order | Where-Object {
+            $global:repo_status[$_].Status -ne "updated" -and $global:repo_status[$_].Status -ne "skipped"
+        }).Count
+        if ($pending_count -eq 0)
+        {
+            Write-Host "`nThe previous propagation run already completed successfully. Nothing to resume." -ForegroundColor Green
+            Write-Host "To start a new propagation, run the script without -Resume." -ForegroundColor Cyan
+            restore-original-directory
+            return
+        }
+        else
+        {
+            # there are repos to process
+        }
+
         # Show what was already done
         Write-Host "`nResumed propagation status:" -ForegroundColor Cyan
         show-propagation-status
