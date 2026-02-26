@@ -43,7 +43,24 @@ function snapshot-repo-commits
             if ($LASTEXITCODE -eq 0 -and $sha)
             {
                 $commits[$repo_name] = $sha.Trim()
-                Write-Host ("  {0,-$max_name_len} : {1}" -f $repo_name, $commits[$repo_name].Substring(0, 8))
+                $subject = (git log -1 --format="%s" $sha.Trim() 2>$null)
+                if ($subject)
+                {
+                    # Truncate long commit messages for display
+                    if ($subject.Length -gt 50)
+                    {
+                        $subject = $subject.Substring(0, 47) + "..."
+                    }
+                    else
+                    {
+                        # short enough to display as-is
+                    }
+                    Write-Host ("  {0,-$max_name_len} : {1}  {2}" -f $repo_name, $commits[$repo_name].Substring(0, 8), $subject)
+                }
+                else
+                {
+                    Write-Host ("  {0,-$max_name_len} : {1}" -f $repo_name, $commits[$repo_name].Substring(0, 8))
+                }
             }
             else
             {
@@ -203,7 +220,7 @@ function refresh-submodules
         # Only delete dep that is listed in .gitmodules
         if($submodules.Contains($_.Name))
         {
-            Remove-Item $_.FullName -Recurse -Force
+            Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
         }
         else
         {
