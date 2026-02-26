@@ -215,18 +215,22 @@ function show-skipped-commits-summary
 function refresh-submodules
 {
     $submodules = git submodule | Out-String
+    # Suppress progress bar from Remove-Item to avoid garbled terminal output
+    $oldProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
     Get-ChildItem "deps\" | ForEach-Object {
         # There can be folders in deps\ that are not listed in .gitmodules.
         # Only delete dep that is listed in .gitmodules
         if($submodules.Contains($_.Name))
         {
-            Remove-Item $_.FullName -Recurse -Force
+            Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
         }
         else
         {
             # not a submodule, leave it
         }
     }
+    $ProgressPreference = $oldProgress
 }
 
 # update the submodules of the given repo and push changes
