@@ -214,6 +214,42 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
   # dt variable  - Display type and value of a variable
   ```
 
+### Linux Development
+
+Not all projects support Linux builds. Projects that do include: **c-pal**, **c-util**, **zrpc**, and **c-build-tools**. Check the project's `build/*.yml` files for `build_linux.yml` template references to confirm Linux support.
+
+#### CMake Generation and Building on Linux
+- **Default CMake Output Directory**: Use `cmake_linux/` as the directory for CMake generation on Linux. Do not use `cmake/` (reserved for Windows) or `build/`.
+- **Environment Setup**: Set `BUILD_BINARIESDIRECTORY` to point to the output directory before running CMake.
+- **Example CMake Commands**:
+  ```bash
+  # Set the build output directory
+  export BUILD_BINARIESDIRECTORY=<repo_root>/cmake_linux
+
+  # Generate CMake files from the output directory
+  cd cmake_linux
+  cmake -Drun_valgrind:BOOL=ON -Drun_unittests:BOOL=ON -Drun_int_tests:BOOL=ON -DCMAKE_BUILD_TYPE=Debug ..
+
+  # Build using all available cores
+  make --jobs=$(nproc)
+  ```
+- **Project-Specific Options**: Some projects have additional CMake options (e.g., zrpc uses `-Duse_network_send_delay:BOOL=ON`). Check the project's CMakeLists.txt or build YAML for available options.
+
+#### Running Tests on Linux
+- **Run all tests** with ctest from the CMake output directory:
+  ```bash
+  ctest -j $(nproc) --output-on-failure
+  ```
+- **Run only valgrind tests**:
+  ```bash
+  ctest -j $(nproc) --output-on-failure -R "_valgrind$"
+  ```
+- **Run only helgrind tests**:
+  ```bash
+  ctest -j $(nproc) --output-on-failure -R "_helgrind$"
+  ```
+- **Valgrind/Helgrind Requirements**: Enable valgrind/helgrind tests at CMake generation time with `-Drun_valgrind:BOOL=ON`. The test names are suffixed with `_valgrind` or `_helgrind`, so use ctest's `-R` regex filter to target them specifically.
+
 ## Git and Source Control Guidelines
 
 ### Commit Messages
