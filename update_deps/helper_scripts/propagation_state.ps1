@@ -44,6 +44,7 @@ function save-propagation-state
         repo_statuses = $statuses
         root_list = $root_list
         azure_work_item = $azure_work_item
+        change_descriptions = $global:repo_change_descriptions
     }
 
     $state_path = Join-Path $global:work_dir $script:STATE_FILE_NAME
@@ -141,6 +142,29 @@ function load-propagation-state
                 # no repo statuses in state
             }
 
+            # Convert change_descriptions — hashtable of repo name -> array of change objects
+            $change_descs = @{}
+            if ($data.change_descriptions)
+            {
+                $data.change_descriptions.PSObject.Properties | ForEach-Object {
+                    $repo_name = $_.Name
+                    $changes = @()
+                    foreach ($item in $_.Value)
+                    {
+                        $changes += @{
+                            Repo = $item.Repo
+                            SHA = $item.SHA
+                            Subject = $item.Subject
+                        }
+                    }
+                    $change_descs[$repo_name] = $changes
+                }
+            }
+            else
+            {
+                # no change descriptions in state (older state file)
+            }
+
             $result = @{
                 branch_name = $data.branch_name
                 repo_order = @($data.repo_order)
@@ -149,6 +173,7 @@ function load-propagation-state
                 repo_statuses = $statuses
                 root_list = @($data.root_list)
                 azure_work_item = $data.azure_work_item
+                change_descriptions = $change_descs
             }
         }
     }
