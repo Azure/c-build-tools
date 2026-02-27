@@ -911,6 +911,19 @@ For unit test files, use the `ENABLE_MOCKS` pattern between infrastructure and d
 - Component's own header comes last in project-specific section
 - Maintain alphabetical order within each category when possible
 
+#### No Transitive Include Dependencies
+**Never rely on transitive includes.** Always directly include headers for the macros, types, or functions you use, even if they happen to be pulled in transitively through another header. Transitive includes are an implementation detail that can change without notice.
+
+```c
+// WRONG - relies on thandle.h transitively including macro_utils.h
+#include "c_pal/thandle.h"
+// Uses PRI_BOOL / MU_BOOL_VALUE from macro_utils.h without including it
+
+// CORRECT - explicitly include every header you depend on
+#include "macro_utils/macro_utils.h"  // For PRI_BOOL, MU_BOOL_VALUE
+#include "c_pal/thandle.h"           // For THANDLE
+```
+
 ### Memory Management
 - Use `malloc`/`free` for dynamic allocation of single items
 - Use `malloc_2(element_size, count)` for array allocations with overflow protection
@@ -1399,6 +1412,8 @@ static void setup_test_state(void)
 - Include error conditions and edge cases
 - Group related requirements logically
 - Update all three locations (spec, code, tests) when modifying requirements
+- **Never reuse or repurpose an existing SRS tag** — when adding new requirements, always create new SRS tags. Reusing an existing tag by replacing its text breaks the traceability chain and makes git history misleading. If a requirement is removed, retire the tag rather than reassigning it.
+- **Keep requirements docs in sync with code** — when modifying function signatures (adding, removing, or changing parameters), always update the corresponding `_requirements.md` code blocks in the Exposed API section to match the actual API.
 - **Each SRS requirement must describe a single testable behavior** so it can be tagged on exactly one test. If a requirement describes multiple outcomes, split it into separate specs:
 
 ```markdown
