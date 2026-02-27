@@ -47,12 +47,12 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
     - `fix_repo_validation_errors=ON` - Automatically fix validation errors (default is OFF)
   - **Usage**: Call `add_repo_validation(project_name [EXCLUDE_FOLDERS folder1 folder2 ...])` in CMakeLists.txt
     - Default exclusions if not specified: `cmake deps`
-  - **Examples**: 
+  - **Examples**:
     - `add_repo_validation(my_project)` - Uses default exclusions (cmake, deps)
     - `add_repo_validation(my_project EXCLUDE_FOLDERS deps cmake external)` - Custom exclusions
   - **Running**: `cmake --build . --target project_name_repo_validation`
   - **Fix Mode**: When `fix_repo_validation_errors=ON`, scripts receive `-Fix` parameter to auto-correct issues (excluding specified directories)
-  - **Available Validations**: 
+  - **Available Validations**:
     - **File Ending Newline** (`validate_file_endings.ps1`): Ensures source files (`.h`, `.hpp`, `.c`, `.cpp`, `.cs`) end with proper newline (CRLF on Windows)
     - **Requirements Document Naming**: Ensures requirement documents in `devdoc/` folders follow `{module_name}_requirements.md` convention (detects files with SRS tags)
     - **SRS Requirement Consistency** (`validate_srs_consistency.ps1`): Validates that SRS requirement text matches between markdown documentation and C code comments (`Codes_SRS_` and `Tests_SRS_` patterns). Preserves original prefix (Tests_ or Codes_) when fixing inconsistencies.
@@ -66,7 +66,7 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
     - Include realistic test data with positive cases (compliant files) and negative cases (files with violations)
     - Create `CMakeLists.txt` with three test targets following the pattern:
       - **Detection test**: Verify script correctly identifies violations in negative test cases
-      - **Clean test**: Verify script doesn't modify files that are already compliant  
+      - **Clean test**: Verify script doesn't modify files that are already compliant
       - **Fix test**: Verify script correctly fixes violations and files pass validation afterward
     - Follow naming pattern: `test_validate_your_feature_detection`, `test_validate_your_feature_clean`, `test_validate_your_feature_fix`
     - Use temporary directories for fix tests to avoid contamination between test runs
@@ -114,7 +114,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 
 ### Test Categories
 - Unit tests: `run_unittests=ON`
-- Integration: `run_int_tests=ON` 
+- Integration: `run_int_tests=ON`
 - Performance: `run_perf_tests=ON`
 - E2E: `run_e2e_tests=ON`
 
@@ -176,7 +176,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
   ```powershell
   # Generate CMake files in cmake/ directory
   cmake -S . -B cmake -G "Visual Studio 17 2022" -A x64
-  
+
   # Build a specific target (wait for completion)
   cmake --build cmake --config Debug --target my_target
   ```
@@ -203,7 +203,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
   ```powershell
   # Run test under debugger, break on crash
   cdb -g -G -noio path\to\test_exe.exe
-  
+
   # When crash occurs, useful commands:
   # k     - Display stack trace
   # kp    - Display stack trace with parameters
@@ -216,7 +216,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 
 ### Linux Development
 
-Not all projects support Linux builds. Projects that do include: **c-pal**, **c-util**, **zrpc**, and **c-build-tools**. Check the project's `build/*.yml` files for `build_linux.yml` template references to confirm Linux support.
+Not all projects support Linux builds. Check the project's `build/*.yml` files for `build_linux.yml` template references to confirm Linux support.
 
 #### CMake Generation and Building on Linux
 - **Default CMake Output Directory**: Use `cmake_linux/` as the directory for CMake generation on Linux. Do not use `cmake/` (reserved for Windows) or `build/`.
