@@ -113,7 +113,9 @@ function update-repo
     # Ensure we're in the work directory
     Set-Location $global:work_dir
 
-    [string]$git_output = (update-local-repo $repo_name $new_branch_name)
+    $update_result = (update-local-repo $repo_name $new_branch_name)
+    [string]$git_output = $update_result.GitOutput
+    $description = $update_result.Description
     if($git_output.Contains("nothing to commit"))
     {
         Write-Host "Nothing to commit, skipping repo $repo_name"
@@ -125,13 +127,13 @@ function update-repo
         $pr_url = $null
         if($repo_type -eq "github")
         {
-            $pr_url = update-repo-github $repo_name $new_branch_name
+            $pr_url = update-repo-github $repo_name $new_branch_name $description
             set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
             update-fixed-commit $repo_name
         }
         elseif ($repo_type -eq "azure")
         {
-            $pr_url = update-repo-azure $repo_name $new_branch_name
+            $pr_url = update-repo-azure $repo_name $new_branch_name $description
             set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
             update-fixed-commit $repo_name
         }
@@ -200,6 +202,9 @@ function propagate-updates
         $global:work_dir = Split-Path $state_path -Parent
         $azure_work_item = $saved_state.azure_work_item
         $root_list = $saved_state.root_list
+
+        # Restore change descriptions for recursive bubbling on resume
+        $global:repo_change_descriptions = $saved_state.change_descriptions
 
         # Validate that critical state was restored
         if (-not $global:fixed_commits -or $global:fixed_commits.Count -eq 0)
