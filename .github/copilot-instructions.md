@@ -171,12 +171,13 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 
 ### CMake Generation and Building
 - **Default CMake Output Directory**: Always use `cmake/` as the directory for CMake generation (e.g., `cmake -S . -B cmake`). Do not use `build/` or other directories unless explicitly instructed.
+- **Generator Requirement**: Always use a Visual Studio CMake generator for local builds; prefer `-G "Visual Studio 18 2026" -A x64` unless a repo explicitly requires a different Visual Studio version. Do not use Ninja.
 - **Wait for Build Completion**: When generating CMake files or building targets, always wait for the process to complete before proceeding. Do not run CMake generation or builds as background processes - use `isBackground=false` and set an appropriate timeout.
 - **Example CMake Commands**:
   ```powershell
   # Generate CMake files in cmake/ directory
-  cmake -S . -B cmake -G "Visual Studio 17 2022" -A x64
-
+  cmake -S . -B cmake -G "Visual Studio 18 2026" -A x64
+  
   # Build a specific target (wait for completion)
   cmake --build cmake --config Debug --target my_target
   ```
