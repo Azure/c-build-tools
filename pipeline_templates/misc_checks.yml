@@ -1,0 +1,86 @@
+# Copyright (C) Microsoft Corporation. All rights reserved.
+
+# This is a parameterized job template for miscellaneous build checks.
+# It includes:
+# - VLD check: Ensures vld.h is not accidentally included (with configurable exclusions)
+# - Backticks check: Ensures SRS requirements don't contain raw backticks
+# - Component Governance: Scans for component dependencies
+
+parameters:
+  - name: pool_name
+    type: string
+    default: 'Azure-MessagingStore-WinBuildPoolVS2022_0'
+  - name: pool_demands
+    type: object
+    default:
+      - Cmd
+      - msbuild
+      - cmake
+      - visualstudio
+  # VLD exclusions as a string of git pathspec exclude patterns
+  # Example: ':(exclude)path/to/file.c :(exclude)deps/folder/'
+  - name: vld_exclusions
+    type: string
+    default: ''
+  - name: run_vld_check
+    type: boolean
+    default: true
+  - name: run_backticks_check
+    type: boolean
+    default: true
+  - name: run_component_governance
+    type: boolean
+    default: true
+
+jobs:
+- job: misc_checks
+  displayName: 'Misc checks'
+  pool:
+    name: ${{ parameters.pool_name }}
+    demands: ${{ parameters.pool_demands }}
+
+  workspace:
+    clean: all
+
+  steps:
+  - checkout: self
+    fetchDepth: 1
+    fetchTags: false
+    submodules: true
+    clean: false
+    persistCredentials: true
+
+  - task: CmdLine@2
+    displayName: 'Git submodule sync'
+    inputs:
+      script: '"C:\Program Files\Git\bin\git.exe" submodule sync'
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+  - task: CmdLine@2
+    displayName: 'Git submodule update'
+    inputs:
+      script: '"C:\Program Files\Git\bin\git.exe" submodule update --init --force --depth 1'
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+  - ${{ if eq(parameters.run_vld_check, true) }}:
+    - task: BatchScript@1
+      displayName: 'VLD check'
+      inputs:
+        filename: '$(Build.SourcesDirectory)/deps/c-build-tools/pipeline_templates/scripts/vld_check.bat'
+        arguments: '${{ parameters.vld_exclusions }}'
+        workingFolder: '$(Build.SourcesDirectory)'
+
+  - ${{ if eq(parameters.run_backticks_check, true) }}:
+    - task: BatchScript@1
+      displayName: 'Backticks check'
+      inputs:
+        filename: '$(Build.SourcesDirectory)/deps/c-build-tools/pipeline_templates/scripts/reject_backticks.bat'
+        workingFolder: '$(Build.SourcesDirectory)'
+
+  - ${{ if eq(parameters.run_component_governance, true) }}:
+    - task: ComponentGovernanceComponentDetection@0
+      displayName: 'Component governance'
+      inputs:
+        sourceScanPath: $(Build.SourcesDirectory)
+
+  - template: clean_ado_folders.yml
