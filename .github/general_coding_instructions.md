@@ -1140,6 +1140,44 @@ Test helper headers that are used across multiple tests should be included in th
 - This improves build times and reduces include duplication
 - PCH include must be the first include in the test file
 
+### Test Suite Initialize and Cleanup
+
+Test suites must use `TIMED_TEST_SUITE_INITIALIZE` and `TIMED_TEST_SUITE_CLEANUP` from `c_pal/timed_test_suite.h` instead of `TEST_SUITE_INITIALIZE` / `TEST_SUITE_CLEANUP`. The timed versions inject a process watchdog that terminates the test process if a test suite hangs, preventing CI pipelines from stalling indefinitely.
+
+```c
+#include "c_pal/timed_test_suite.h"
+
+// timeout_ms is required - use TIMED_TEST_DEFAULT_TIMEOUT_MS (10 minutes) or a custom value
+TIMED_TEST_SUITE_INITIALIZE(TestSuiteInit, TIMED_TEST_DEFAULT_TIMEOUT_MS)
+{
+    // suite initialization code
+}
+
+TIMED_TEST_SUITE_CLEANUP(TestSuiteCleanup)
+{
+    // suite cleanup code
+}
+```
+
+Additional fixtures can be passed as variadic arguments, just like with the old macros:
+
+```c
+TIMED_TEST_SUITE_INITIALIZE(TestSuiteInit, TIMED_TEST_DEFAULT_TIMEOUT_MS, my_extra_init_fixture)
+{
+    // suite initialization code
+}
+
+TIMED_TEST_SUITE_CLEANUP(TestSuiteCleanup, my_extra_cleanup_fixture)
+{
+    // suite cleanup code
+}
+```
+
+**Guidelines:**
+- Do NOT use `TEST_SUITE_INITIALIZE` or `TEST_SUITE_CLEANUP` directly — they are internal macros and will produce a compile error
+- Always include `c_pal/timed_test_suite.h` instead of `testrunnerswitcher.h` directly
+- Use `TIMED_TEST_DEFAULT_TIMEOUT_MS` (10 minutes) unless a test suite needs a different timeout
+
 ### Include Paths for Reals Headers
 When including real implementation headers in test files, use the header name directly without relative paths. The build system's `reals` target adds the correct include directory:
 
