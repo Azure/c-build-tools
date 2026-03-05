@@ -1,0 +1,68 @@
+# This template collects Linux crash reports and core dumps after tests run
+# Run this template AFTER tests to collect any crash artifacts
+#
+# If enable_linux_crash_reports.yml was used before tests, core files will already
+# be in the crash_reports_directory via kernel.core_pattern. This template also
+# collects from /var/crash (Ubuntu apport) and searches the build directory as fallbacks.
+#
+# Usage:
+#   - template: pipeline_templates/collect_linux_crash_reports.yml@c_build_tools
+#     parameters:
+#       crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
+#       build_directory: $(Build.SourcesDirectory)/cmake_linux
+#       search_depth: 4
+#       artifact_name: Linux_crash_reports
+
+parameters:
+  - name: crash_reports_directory
+    default: $(Build.ArtifactStagingDirectory)/crash_reports
+  - name: build_directory
+    default: $(Build.SourcesDirectory)
+  - name: search_depth
+    default: 4
+  - name: artifact_name
+    default: Linux_crash_reports
+
+steps:
+  - bash: |
+      crash_dir="${{ parameters.crash_reports_directory }}"
+      mkdir -p "$crash_dir"
+
+      echo "=== Collecting Linux crash reports ==="
+
+      # Core files from kernel.core_pattern should already be in crash_dir
+      # (if enable_linux_crash_reports.yml was used)
+      echo "Core files already in crash directory:"
+      ls -la "$crash_dir"/core.* 2>/dev/null || echo "  (none)"
+
+      # Collect from Ubuntu apport system as fallback
+      if [ -d /var/crash ]; then
+          echo "Checking /var/crash..."
+          ls -la /var/crash/ 2>/dev/null || true
+          cp -r /var/crash/* "$crash_dir/" 2>/dev/null || true
+      fi
+
+      # Search build directory for any core files not captured by core_pattern
+      echo "Searching for core files in ${{ parameters.build_directory }}..."
+      find "${{ parameters.build_directory }}" -maxdepth ${{ parameters.search_depth }} -name "core*" -type f \
+          -exec cp {} "$crash_dir/" \; 2>/dev/null || true
+
+      # List all collected files
+      echo "=== All files collected ==="
+      ls -la "$crash_dir/" 2>/dev/null || echo "No crash reports found"
+
+      # Create a marker file so the artifact always has content
+      echo "Crash report collection completed at $(date)" > "$crash_dir/collection_info.txt"
+      echo "Build directory searched: ${{ parameters.build_directory }}" >> "$crash_dir/collection_info.txt"
+      echo "Search depth: ${{ parameters.search_depth }}" >> "$crash_dir/collection_info.txt"
+    displayName: 'Collect Linux crash reports'
+    condition: always()
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish crash reports'
+    inputs:
+      pathtoPublish: '${{ parameters.crash_reports_directory }}'
+      artifactName: '${{ parameters.artifact_name }}'
+      parallel: true
+    condition: failed()
+    continueOnError: true

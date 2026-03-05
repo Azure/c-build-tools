@@ -1,0 +1,107 @@
+# This template wraps a test script with Linux crash report collection.
+# It enables core dumps, runs the test script with ulimit -c unlimited,
+# collects any crash dumps, and publishes them as artifacts on failure.
+#
+# Usage:
+#   - template: pipeline_templates/run_with_crash_reports.yml@c_build_tools
+#     parameters:
+#       test_script: |
+#         ./build/linux/build_linux.sh $(Build.Repository.LocalPath)
+#       test_displayName: 'Build and run tests'
+#       test_workingDirectory: '$(Build.Repository.LocalPath)'
+
+parameters:
+  - name: crash_reports_directory
+    default: $(Build.ArtifactStagingDirectory)/crash_reports
+  - name: build_directory
+    default: $(Build.SourcesDirectory)
+  - name: search_depth
+    default: 4
+  - name: artifact_name
+    default: Linux_crash_reports
+  - name: test_script
+    type: string
+  - name: test_displayName
+    type: string
+    default: 'Run tests'
+  - name: test_workingDirectory
+    type: string
+    default: $(Build.SourcesDirectory)
+
+steps:
+  # 1. Enable crash reports
+  - bash: |
+      # Create crash reports output directory
+      mkdir -p "${{ parameters.crash_reports_directory }}"
+      echo "Crash reports directory created: ${{ parameters.crash_reports_directory }}"
+
+      # Set kernel core pattern to write core files to the crash reports directory
+      # Format: core.<executable_name>.<pid>.<timestamp>
+      # Note: ulimit -c must be set in the same shell that runs tests
+      sudo sysctl -w kernel.core_pattern="${{ parameters.crash_reports_directory }}/core.%e.%p.%t"
+      echo "Core pattern set to: $(cat /proc/sys/kernel/core_pattern)"
+    displayName: 'Enable Linux crash reports'
+
+  # 2. Run test script with ulimit -c unlimited
+  - bash: |
+      ulimit -c unlimited
+      ${{ parameters.test_script }}
+    workingDirectory: ${{ parameters.test_workingDirectory }}
+    displayName: '${{ parameters.test_displayName }} [crash reports enabled]'
+
+  # 3. Collect crash reports (runs always, even on failure)
+  - bash: |
+      crash_dir="${{ parameters.crash_reports_directory }}"
+      mkdir -p "$crash_dir"
+
+      echo "=== Collecting Linux crash reports ==="
+
+      # Core files from kernel.core_pattern should already be in crash_dir
+      echo "Core files already in crash directory:"
+      ls -la "$crash_dir"/core.* 2>/dev/null || echo "  (none)"
+
+      # Collect from Ubuntu apport system as fallback
+      if [ -d /var/crash ]; then
+          echo "Checking /var/crash..."
+          ls -la /var/crash/ 2>/dev/null || true
+          cp -r /var/crash/* "$crash_dir/" 2>/dev/null || true
+      fi
+
+      # Search build directory for any core files not captured by core_pattern
+      echo "Searching for core files in ${{ parameters.build_directory }}..."
+      find "${{ parameters.build_directory }}" -maxdepth ${{ parameters.search_depth }} -name "core*" -type f \
+          -exec cp {} "$crash_dir/" \; 2>/dev/null || true
+
+      # List all collected files
+      echo "=== All files collected ==="
+      ls -la "$crash_dir/" 2>/dev/null || echo "No crash reports found"
+
+      # Create a marker file so the artifact always has content
+      echo "Crash report collection completed at $(date)" > "$crash_dir/collection_info.txt"
+      echo "Build directory searched: ${{ parameters.build_directory }}" >> "$crash_dir/collection_info.txt"
+      echo "Search depth: ${{ parameters.search_depth }}" >> "$crash_dir/collection_info.txt"
+    displayName: 'Collect Linux crash reports'
+    condition: always()
+
+  # 4. Publish crash reports (only on failure)
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish crash reports'
+    inputs:
+      pathtoPublish: '${{ parameters.crash_reports_directory }}'
+      artifactName: '${{ parameters.artifact_name }}'
+      parallel: true
+    condition: failed()
+    continueOnError: true
+
+  # 5. Restore default core dump settings (runs always)
+  - bash: |
+      # Restore default core pattern (pipe to apport on Ubuntu)
+      if [ -f /usr/share/apport/apport ]; then
+          sudo sysctl -w kernel.core_pattern="|/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -- %E"
+      else
+          sudo sysctl -w kernel.core_pattern="core"
+      fi
+      echo "Core pattern restored to: $(cat /proc/sys/kernel/core_pattern)"
+    displayName: 'Disable Linux crash reports'
+    condition: always()
+    continueOnError: true

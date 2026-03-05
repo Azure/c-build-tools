@@ -8,26 +8,45 @@ Propagates dependency updates for git repositories.
 
 .DESCRIPTION
 
-Given a root repo and personal access tokens for Github and Azure Devops Services, this script \
-builds the dependency graph and propagates updates from the lowest level up to the \
-root repo by making PRs to each repo in bottom-up level-order.
+Given a root repo, this script builds the dependency graph and propagates updates from the
+lowest level up to the root repo by making PRs to each repo in bottom-up level-order.
 
-.PARAMETER root
+By default, if a PR fails (e.g., checks fail), it is automatically closed/abandoned before
+exiting. Use -NoCloseFailedPr to leave failed PRs open instead.
 
-Comma-separated list of URLs of the repositories upto which updates must be propagated.
+Authentication for Azure DevOps uses WAM (Web Account Manager) by default on Windows, which
+provides SSO using your Windows login. If WAM is not available or fails, you can provide a
+PAT token as a fallback. GitHub authentication is handled via 'gh auth login'.
 
-.PARAMETER azure_token
+.PARAMETER root_list
 
-Personal access token for Azure Devops Services
+Comma-separated list of URLs of the repositories up to which updates must be propagated.
 
 .PARAMETER azure_work_item
 
 Work item id that is linked to PRs made to Azure repos.
 
+.PARAMETER azure_token
+
+(Optional) Personal Access Token for Azure DevOps authentication. If not provided, WAM
+authentication will be used. PAT must have Code (Read & Write) and Work Items (Read) permissions.
+
+.PARAMETER NoCloseFailedPr
+
+(Optional) When set, disables the default behavior of automatically closing/abandoning the
+PR that caused a failure. By default, failed PRs are closed (GitHub via 'gh pr close',
+Azure via 'az repos pr update --status abandoned').
+
+.PARAMETER Resume
+
+(Optional) Resume a previously failed propagation run. Finds the most recent work directory
+(new_deps_*) in the current folder, loads saved state (repo order, fixed commits, branch name),
+and continues from the repo that failed. Repos that were already updated or skipped are not
+re-processed.
+
 .INPUTS
 
 ignore.json: list of repositories that must be ignored for updates.
-order.json: reads order in which repositories must be updated from order.json
 
 .OUTPUTS
 
@@ -35,371 +54,349 @@ None.
 
 .EXAMPLE
 
-PS> .\{PATH_TO_SCRIPT}\propagate_updates.ps1 -azure_token {token1} -github_token {token2} -root_list root1, root2, ...
+PS> .\propagate_updates.ps1 -azure_work_item 12345 -root_list root1, root2, ...
+
+.EXAMPLE
+
+PS> .\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345 -root_list root1, root2, ...
+
+.EXAMPLE
+
+PS> .\propagate_updates.ps1 -azure_work_item 12345 -useCachedRepoOrder -root_list root1, root2, ...
+# Uses cached repo order if root_list matches the cached root_list
+
+.EXAMPLE
+
+PS> .\propagate_updates.ps1 -Resume
+# Resumes the most recent failed propagation run from the last failed repo
 #>
 
 
 param(
-    [Parameter(Mandatory=$true)][string]$azure_token, # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
-    [Parameter(Mandatory=$true)][Int32]$azure_work_item, # Azure Devops Services personal access token: https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page
-    [Parameter(Mandatory=$true)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
+    [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
+    [Parameter(Mandatory=$false)][Int32]$azure_work_item, # Work item id to link to Azure PRs
+    [switch]$useCachedRepoOrder, # use cached repo order if root_list matches
+    [switch]$NoCloseFailedPr, # keep the PR open if it fails (default: close/abandon failed PRs)
+    [switch]$Resume, # resume a previously failed propagation run
+    [Parameter(Mandatory=$false)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
 
 
-# sleep for $seconds seconds and play spinner animation
-function spin {
-    param(
-        [int] $seconds
-    )
-    $steps = @('|','/','-','\')
-    $interval_ms = 50
-    for($i=0; $i -lt (($seconds*1000)/$interval_ms); $i++){
-        Write-Host "`b$($steps[$i % $steps.Length])" -NoNewline -ForegroundColor Yellow
-        Start-Sleep -Milliseconds $interval_ms
-    }
-    # erase spinner
-    Write-Host "`b"-NoNewLine
-}
-
-
-# create a global variable $ignore_pattern
-# $ignore pattern is used in the shell command for 'git submodule foreach' to ignore repos
-function create-ignore-pattern {
-    $path_to_ignores = $PSScriptRoot + "\ignores.json"
-    # get list of repos to ignore from ignores.json
-    $repos_to_ignore = (Get-Content -Path $path_to_ignores) | ConvertFrom-Json
-    $ignore_list = New-Object -TypeName "System.Collections.ArrayList"
-    # prepend "deps/" to the name of each repo
-    foreach($repo_to_ignore in $repos_to_ignore) {
-        [void]$ignore_list.Add("deps/"+$repo_to_ignore)
-    }
-    # join repo names to get pattern of the form "deps/{repo1}|deps/repo{2}|..."
-    $global:ignore_pattern = $ignore_list -join "|"
-}
-
-create-ignore-pattern
-
-function refresh-submodules {
-    $submodules = git submodule | Out-String
-    Get-ChildItem "deps\" | ForEach-Object {
-        # There can be folders in deps\ that are not listed in .gitmodules.
-        # Only delete dep that is listed in .gitmodules
-        if($submodules.Contains($_.Name)) {
-            Remove-Item $_.FullName -Recurse -Force
-        }
-    }
-}
-
-# update the submodules of the given repo and push changes
-# returns $true if the local repo was update
-# returns $false if no changes were made
-function update-local-repo {
-    param (
-        [string] $repo_name,
-        [string] $new_branch_name
-    )
-    cd $repo_name
-    git checkout master
-    git pull
-    # Sometimes git fails to detect updates in submodules
-    # Fix is to delete the submodule and reinitializes it
-    if (Test-Path "deps\") {
-        refresh-submodules
-    }
-    git submodule update --init
-    # update all submodules except the ones mentioned in ignores.json
-    git submodule foreach "case `$name in $ignore_pattern ) ;; *) git checkout master && git pull;; esac"
-    # create new branch
-    git checkout -B $new_branch_name
-    # add updates and push to remote
-    git add .
-    git commit -m "Update dependencies"
-    git push -f origin $new_branch_name
-    cd ..
-}
-
-function check-gh-cli-exists {
-    $gh = Get-Command gh -ErrorAction SilentlyContinue
-    if(!$gh) {
-        Write-Error "Github CLI is not installed. Install it from https://cli.github.com/"
-        exit -1
-    }
-}
-
-# update dependencies for Github repo
-function update-repo-github {
-    param(
-        [string] $repo_name,
-        [string] $new_branch_name
-    )
-    cd $repo_name
-    Write-Host "`nCreating PR"
-    $working_directory = (Get-Location).Path
-    gh pr create --title "[autogenerated] update dependencies" --body "Propagating dependency updates" --head $new_branch_name
-    gh pr comment --body "/AzurePipelines run"
-    Write-Host "Waiting for checks to start"
-    Start-Sleep -Seconds 120 
-    Write-Host "Waiting for build to complete"
-    gh pr checks --watch
-    Write-Host "Merging PR"
-    gh pr merge --squash --delete-branch
-    if($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to merge PR for repo $repo_name"
-        exit -1
-    }
-    # Wait for merge to complete
-    Start-Sleep -Seconds 10
-    cd ..
-}
-
-
-# create global variable $azure_header
-# $azure_header is used to authenticate requests to the Azure Devops Services API: https://docs.microsoft.com/en-us/rest/api/azure/devops/?view=azure-devops-rest-6.1
-function create-header-azure {
-    param(
-        [string] $token
-    )
-    $base64_azure_pat = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(":$token"))
-    $global:azure_header = @{
-        Authorization="Basic $base64_azure_pat"
-    }
-}
-
-create-header-azure $azure_token
-
-
-# create PR to update dependencies for Azure repo
-function create-pr-azure {
-    param(
-        [string] $repo_name,
-        [string] $new_branch_name
-    )
-    $request_url = "https://dev.azure.com/msazure/One/_apis/git/repositories/$repo_name/pullrequests?api-version=6.0"
-    $body = @{
-        sourceRefName="refs/heads/$new_branch_name"
-        targetRefName='refs/heads/master'
-        title='[autogenerated] update dependencies'
-    }
-    $body = $body | ConvertTo-Json
-    $response = Invoke-WebRequest -URI $request_url -UseBasicParsing -Method Post -Headers $azure_header -Body $body -ContentType "application/json"
-    if(!$response) {
-        Write-Error "Failed to create PR for repo $repo_name"
-        exit -1
-    }
-    $content = $response.Content | ConvertFrom-Json
-    return $content
-}
-
-
-# link work item to PR for Azure repo
-function link-work-item-to-pr-azure {
-    param(
-        [string] $pr_artifact_id
-    )
-    if(!$azure_work_item){
-        Write-Error "Updating Azure repos requires providing a work item id. Provide work item id as: -azure_work_item [id]"
-        exit -1
-    }
-    $request_url = 'https://dev.azure.com/msazure/One/_apis/wit/workitems/'+$azure_work_item+'?api-version=6.0'
-    # body format found here: https://stackoverflow.com/questions/65111930/how-to-link-a-work-item-to-a-pull-request-using-rest-api-in-azure-devops
-    $body = @(
-        @{
-            op='add'
-            path='/relations/-'
-            value=@{
-                rel='ArtifactLink'
-                url=$pr_artifact_id
-                attributes=@{
-                    name="pull request"
-                }
-            }
-        }
-    )
-    $body = $body | ConvertTo-Json
-    # This PATCH endpoint takes a list of patch objects so $body must be encased in a list
-    $response = Invoke-WebRequest -URI $request_url -UseBasicParsing -Method Patch -Headers $azure_header -Body "[$body]" -ContentType "application/json-patch+json"
-    if(!$response) {
-        Write-Error "Failed to link work item to PR.`nWork item: $work_item_id`nPR: $pr_artifact_id"
-        exit -1
-    }
-}
-
-
-# approve PR for Azure repo
-function approve-pr-azure {
-    param(
-        [string] $pr_url,
-        [string] $creator_id
-    )
-    $request_url = $pr_url + '/reviewers/' + $creator_id + '?api-version=6.0'
-    $body = @{
-        vote=10
-    }
-    $body = $body | ConvertTo-Json
-    $response = Invoke-WebRequest -URI $request_url -UseBasicParsing -Method Put -Headers $azure_header -Body $body -ContentType "application/json"
-    if(!$response) {
-        Write-Error "Failed to approve PR: $pr_url"
-        exit -1
-    }
-}
-
-
-# set PR for Azure repo to merge automatically once build completes
-function set-autocomplete-azure {
-    param(
-        $pr_url,
-        $creator_id
-    )
-    $request_url = $pr_url + '?api-version=6.0'
-    $body =@{
-        autoCompleteSetBy=@{
-            id=$creator_id
-        }
-        completionOptions=@{
-            mergeStrategy="squash"
-            deleteSourceBranch=$true
-        }
-    }
-    $body = $body | ConvertTo-Json
-    $response = Invoke-WebRequest -URI $request_url -UseBasicParsing -Method Patch -Headers $azure_header -Body $body -ContentType "application/json"
-    if(!$response) {
-        Write-Error "Failed to set autocomplete for PR $pr_url"
-        exit -1
-    }
-}
-
-
-# wait until build completes for Azure repo
-function wait-until-complete-azure {
-    param(
-        [string] $pr_url
-    )
-    $status = ""
-    while($true){
-        $response = Invoke-WebRequest -URI $pr_url -UseBasicParsing -Method Get -Headers $azure_header
-        if(!$response) {
-            Write-Error "Failed to get PR: $pr_url"
-            exit -1
-        }
-        $content =  $response.Content | ConvertFrom-Json
-        $status = $content.status
-        $merge_status = $content.mergeStatus
-        if($status -ne "active" -or !($merge_status -eq "succeeded" -or $merge_status -eq "queued")) {
-            break
-        }
-        spin 10
-    }
-    if($status -ne "completed") {
-        Write-Host "Problem with pull request: $pr_url"
-        Write-Error $response.Content
-        exit -1
-    }
-}
-
-
-# update dependencies for Azure repo
-function update-repo-azure {
-    param(
-        [string] $repo_name,
-        [string] $new_branch_name
-    )
-    Write-Host "`nCreating PR"
-    $create_pr_response = create-pr-azure $repo_name $new_branch_name
-    $pr_artifact_id = $create_pr_response.artifactId
-    Write-Host "Linking work item to PR"
-    link-work-item-to-pr-azure $pr_artifact_id
-    Write-Host "Approving PR"
-    approve-pr-azure $create_pr_response.url $create_pr_response.createdBy.id
-    Write-Host "Enabling PR to autocomplete"
-    set-autocomplete-azure $create_pr_response.url $create_pr_response.createdBy.id
-    Write-Host "Waiting for build to complete"
-    wait-until-complete-azure $create_pr_response.url
-}
-
-
-# determine whether given repo is an azure repo or a github repo
-function  get-repo-type {
-    param (
-        [string] $repo_name
-    )
-    cd $repo_name
-    $repo_url = git config --get remote.origin.url
-    cd ..
-    Write-Host $repo_url -NoNewline
-    if($repo_url.Contains("github")){
-        return "github"
-    }elseif ($repo_url.Contains("azure")) {
-        return "azure"
-    }
-    return "unknown"
-}
+# Source helper scripts
+$helper_scripts = "$PSScriptRoot\helper_scripts"
+. "$helper_scripts\check_powershell_version.ps1"
+. "$helper_scripts\check_script_update.ps1"
+. "$helper_scripts\install_az_cli.ps1"
+. "$helper_scripts\install_gh_cli.ps1"
+. "$helper_scripts\repo_order_cache.ps1"
+. "$helper_scripts\status_tracking.ps1"
+. "$helper_scripts\git_operations.ps1"
+. "$helper_scripts\watch_azure_pr.ps1"
+. "$helper_scripts\watch_github_pr.ps1"
+. "$helper_scripts\azure_repo_ops.ps1"
+. "$helper_scripts\github_repo_ops.ps1"
+. "$helper_scripts\success_animation.ps1"
+. "$helper_scripts\propagation_state.ps1"
 
 
 # update dependencies for given repo
-function update-repo {
+function update-repo
+{
     param(
         [string] $repo_name,
         [string] $new_branch_name
     )
     Write-Host "`n`nUpdating repo $repo_name"
-    [string]$git_output = (update-local-repo $repo_name $new_branch_name)
-    if($git_output.Contains("nothing to commit")) {
+    set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS
+    $global:current_repo = $repo_name
+
+    # Ensure we're in the work directory
+    Set-Location $global:work_dir
+
+    $update_result = (update-local-repo $repo_name $new_branch_name)
+    [string]$git_output = $update_result.GitOutput
+    $description = $update_result.Description
+    if($git_output.Contains("nothing to commit"))
+    {
         Write-Host "Nothing to commit, skipping repo $repo_name"
-    } else {
+        set-repo-status -repo_name $repo_name -status $script:STATUS_SKIPPED -message "No changes"
+    }
+    else
+    {
         $repo_type = get-repo-type $repo_name
-        if($repo_type -eq "github") {
-            update-repo-github $repo_name $new_branch_name
-        } elseif ($repo_type -eq "azure") {
-            update-repo-azure $repo_name  $new_branch_name
-        } else {
-            Write-Error "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
-            exit -1
+        $pr_url = $null
+        if($repo_type -eq "github")
+        {
+            $pr_url = update-repo-github $repo_name $new_branch_name $description
+            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+            update-fixed-commit $repo_name
+        }
+        elseif ($repo_type -eq "azure")
+        {
+            $pr_url = update-repo-azure $repo_name $new_branch_name $description
+            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+            update-fixed-commit $repo_name
+        }
+        else
+        {
+            fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
         }
     }
     Write-Host "Done updating repo $repo_name"
 }
 
-function clear-directory {
-    $currentDirectory = Get-Location
-    $proceed = Read-Host("This script will clear the current directory ($currentDirectory). Enter [Y] to proceed.")
-    if($proceed -ne "Y")
-    {
-        exit 0
-    }
-    $Path = Get-Location | Select -expand Path
-    Set-Location ..
-    Remove-Item -LiteralPath $Path -Recurse -Force
-    $out = mkdir $Path
-    Set-Location $Path
-}
-
 # iterate over all repos and update them
-function propagate-updates {
-    check-gh-cli-exists
-    clear-directory
-    # build dependency graph
-    Write-Host "Building dependency graph..."
+function propagate-updates
+{
+    # Save original directory to restore at exit (including on failure)
+    $global:original_dir = (Get-Location).Path
 
-    .$PSScriptRoot\build_graph.ps1 -root_list $root_list
-    if($LASTEXITCODE -ne 0)
+    # Close failed PRs by default unless -NoCloseFailedPr is specified
+    $global:close_failed_pr = -not $NoCloseFailedPr.IsPresent
+
+    # Check PowerShell version first
+    check-powershell-version
+
+    # Check for script updates before starting
+    check-for-script-updates -script_root $PSScriptRoot
+
+    check-az-cli-exists -pat_token $azure_token
+    check-gh-cli-exists
+
+    $repo_order = $null
+    $repo_urls = $null
+    $new_branch_name = $null
+
+    if ($Resume.IsPresent)
     {
-        Write-Error("Could not build dependency graph for $root_list.")
-        exit -1
+        # --- Resume path: load state from the most recent run ---
+        Write-Host "`nResuming previous propagation run..." -ForegroundColor Cyan
+
+        $state_path = find-latest-state-file
+        if (-not $state_path)
+        {
+            fail-with-status "No previous propagation state found. Run without -Resume first."
+        }
+        else
+        {
+            # state file found
+        }
+
+        Write-Host "Loading state from: $state_path"
+        $saved_state = load-propagation-state -state_path $state_path
+
+        if (-not $saved_state)
+        {
+            fail-with-status "Failed to load propagation state from: $state_path"
+        }
+        else
+        {
+            # state loaded successfully
+        }
+
+        # Restore globals from saved state
+        $new_branch_name = $saved_state.branch_name
+        $repo_order = $saved_state.repo_order
+        $repo_urls = $saved_state.repo_urls
+        $global:fixed_commits = $saved_state.fixed_commits
+        $global:work_dir = Split-Path $state_path -Parent
+        $azure_work_item = $saved_state.azure_work_item
+        $root_list = $saved_state.root_list
+
+        # Restore change descriptions for recursive bubbling on resume
+        $global:repo_change_descriptions = $saved_state.change_descriptions
+
+        # Validate that critical state was restored
+        if (-not $global:fixed_commits -or $global:fixed_commits.Count -eq 0)
+        {
+            fail-with-status "State file is missing fixed_commits. Cannot resume without commit information."
+        }
+        else
+        {
+            # fixed_commits restored successfully
+        }
+
+        Set-Location $global:work_dir
+        Write-Host "Work directory: $global:work_dir"
+        Write-Host "Branch name: $new_branch_name"
+
+        # Restore repo statuses (updated/skipped stay, failed resets to pending)
+        restore-repo-status -repos $repo_order -saved_statuses $saved_state.repo_statuses
+
+        # Check if the previous run already completed successfully
+        $pending_count = ($repo_order | Where-Object {
+            $global:repo_status[$_].Status -ne "updated" -and $global:repo_status[$_].Status -ne "skipped"
+        }).Count
+        if ($pending_count -eq 0)
+        {
+            Write-Host "`nThe previous propagation run already completed successfully. Nothing to resume." -ForegroundColor Green
+            Write-Host "To start a new propagation, run the script without -Resume." -ForegroundColor Cyan
+            restore-original-directory
+            return
+        }
+        else
+        {
+            # there are repos to process
+        }
+
+        # Show what was already done
+        Write-Host "`nResumed propagation status:" -ForegroundColor Cyan
+        show-propagation-status
+    }
+    else
+    {
+        # --- Normal path: validate params, build graph, snapshot ---
+
+        # Validate required parameters for normal (non-resume) runs
+        if (-not $azure_work_item)
+        {
+            fail-with-status "azure_work_item is required. Provide: -azure_work_item [id]"
+        }
+        else
+        {
+            # azure_work_item provided
+        }
+        if (-not $root_list)
+        {
+            fail-with-status "root_list is required. Provide: -root_list repo1, repo2, ..."
+        }
+        else
+        {
+            # root_list provided
+        }
+
+        # Generate branch name with timestamp
+        $new_branch_name = "new_deps_" + (Get-Date -Format "yyyyMMddHHmmss")
+        Write-Host "New branch name: $new_branch_name"
+
+        # Create a new directory for this update session
+        $global:work_dir = Join-Path (Get-Location).Path $new_branch_name
+        New-Item -ItemType Directory -Path $global:work_dir -Force | Out-Null
+        Set-Location $global:work_dir
+        Write-Host "Working directory: $global:work_dir"
+
+        # build dependency graph (or use cache)
+        $cached_data = $null
+
+        if ($useCachedRepoOrder)
+        {
+            $cached_data = get-cached-repo-order -root_list $root_list
+        }
+        else
+        {
+            # will build fresh
+        }
+
+        if ($cached_data)
+        {
+            $repo_order = $cached_data.repo_order
+            $repo_urls = $cached_data.repo_urls
+            Write-Host "Using cached repo order"
+            Set-Content -Path .\order.json -Value ($repo_order | ConvertTo-Json)
+            # Clone repos that aren't already present using cached URLs
+            Write-Host "Cloning repositories..."
+            foreach ($repo_name in $repo_order)
+            {
+                if (-not (Test-Path -Path $repo_name))
+                {
+                    $repo_url = $repo_urls.$repo_name
+                    if ($repo_url)
+                    {
+                        Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
+                        git clone $repo_url
+                    }
+                    else
+                    {
+                        Write-Host "Warning: No URL cached for $repo_name, skipping" -ForegroundColor Yellow
+                    }
+                }
+                else
+                {
+                    # already present
+                }
+            }
+            Write-Host "Done cloning repositories"
+        }
+        else
+        {
+            Write-Host "Building dependency graph..."
+            .$helper_scripts\build_graph.ps1 -root_list $root_list
+            if($LASTEXITCODE -ne 0)
+            {
+                fail-with-status "Could not build dependency graph for $root_list."
+            }
+            else
+            {
+                # graph built successfully
+            }
+            Write-Host "Done building dependency graph"
+            # build_graph.ps1 sets the cache, so read from it
+            $cached_data = get-cached-repo-order -root_list $root_list
+            if (-not $cached_data)
+            {
+                fail-with-status "Failed to get cached repo order after building graph."
+            }
+            else
+            {
+                # cache retrieved
+            }
+            $repo_order = $cached_data.repo_order
+            $repo_urls = $cached_data.repo_urls
+        }
+
+        # Initialize status tracking
+        initialize-repo-status -repos $repo_order
+
+        # Snapshot master HEAD commits for all repos before starting updates.
+        # This prevents external changes from affecting propagation. After each
+        # repo's PR merges, its entry is updated via update-fixed-commit so that
+        # downstream repos pick up the new commit created by propagation.
+        Write-Host "`nSnapshotting master commits for all repos..."
+        Set-Location $global:work_dir
+        $global:fixed_commits = snapshot-repo-commits -repo_order $repo_order
+        Write-Host "Fixed commits captured for $($global:fixed_commits.Count) repos`n"
     }
 
-    Write-Host "Done building dependency graph"
-    $repo_order = (Get-Content -Path order.json) | ConvertFrom-Json
     Write-Host "Updating repositories in the following order: "
-    for($i = 0; $i -lt $repo_order.Length; $i++){
+    for($i = 0; $i -lt $repo_order.Length; $i++)
+    {
         Write-Host "$($i+1). $($repo_order[$i])"
     }
 
-    $new_branch_name = "new_deps_" + (Get-Date -Format "yyyyMMddHHmmss")
-    Write-Host "New branch name: $new_branch_name"
-    foreach ($repo in $repo_order) {
-        update-repo $repo $new_branch_name
+    foreach ($repo in $repo_order)
+    {
+        # Skip repos that were already updated or skipped (for resume)
+        if ($global:repo_status.ContainsKey($repo) -and
+            ($global:repo_status[$repo].Status -eq "updated" -or $global:repo_status[$repo].Status -eq "skipped"))
+        {
+            Write-Host "`nSkipping $repo (already $($global:repo_status[$repo].Status))" -ForegroundColor Gray
+        }
+        else
+        {
+            update-repo $repo $new_branch_name
+        }
+
+        # Save state after each repo so the run can be resumed
+        save-propagation-state -branch_name $new_branch_name -repo_order $repo_order -repo_urls $repo_urls -root_list $root_list -azure_work_item $azure_work_item
     }
-    Write-Host "Done updating all repos!"
+
+    # Show final status and check if all succeeded
+    $success = show-propagation-status -Final
+
+    # Warn about any repos with newer commits that were not propagated
+    show-skipped-commits-summary
+
+    if ($success)
+    {
+        play-success-animation
+    }
+    else
+    {
+        Write-Host "Done updating repos (with some failures)" -ForegroundColor Yellow
+    }
+
+    # Restore original directory
+    restore-original-directory
 }
 
 propagate-updates

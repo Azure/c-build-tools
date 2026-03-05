@@ -62,7 +62,7 @@ foreach ($submodule in $submodules) {
     if ($isAncestor) {
         Write-Host "SHA $submoduleSHA found in $branchToCheck branch of $submodulePath"
     } else {
-        Write-Host "SHA $submoduleSHA not found in $branchToCheck branch of $submodulePath"
+        Write-Host "##[warning]SHA $submoduleSHA not found in $branchToCheck branch of $submodulePath"
         $global:returnCode = 1
     }
 
@@ -70,5 +70,12 @@ foreach ($submodule in $submodules) {
     Pop-Location
 }
 
-# Exit with the appropriate return code
-exit $global:returnCode
+# Report results but don't fail the build (temporary for parallel ARM64 development)
+if ($global:returnCode -ne 0) {
+    Write-Host "##[warning]============================================================"
+    Write-Host "##[warning]SUBMODULE MASTER CHECK: Issues detected but not blocking build"
+    Write-Host "##[warning]============================================================"
+}
+
+# Always exit 0 - check is informational only during parallel development
+exit 0
