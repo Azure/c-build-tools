@@ -58,7 +58,7 @@ add_custom_target(test_validate_srs_consistency_prefix_preservation
     # Verify that Codes_ prefix was preserved in source file
     COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module.c' -Raw) -notmatch 'Codes_SRS_PREFIX_TEST_66_001') { Write-Error 'Codes_ prefix was not preserved'; exit 1 }"
     # Verify that Tests_ prefix was preserved in test file
-    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module_ut.c' -Raw) -notmatch 'Tests_SRS_PREFIX_TEST_66_001') { Write-Error 'Tests_ prefix was not preserved'; exit 1 }"
+    COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module_ut/test_module_ut.c' -Raw) -notmatch 'Tests_SRS_PREFIX_TEST_66_001') { Write-Error 'Tests_ prefix was not preserved'; exit 1 }"
     # Verify that the text was actually fixed (should now match the markdown)
     COMMAND ${POWERSHELL_EXECUTABLE} -Command "if ((Get-Content '${CMAKE_CURRENT_BINARY_DIR}/temp_prefix_test/test_module.c' -Raw) -notmatch 'test_module_create shall allocate memory for a test module') { Write-Error 'Text was not fixed correctly'; exit 1 }"
     # Run validation again to ensure it passes
@@ -141,6 +141,53 @@ add_custom_target(test_validate_srs_consistency_line_comment_with_brackets
     COMMENT "Testing line comments with bracket characters in text content"
 )
 
+# Test 14: Verify tag placement passes on correctly placed tags
+add_custom_target(test_validate_srs_consistency_tag_placement_clean
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_clean"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing tag placement validation on correctly placed tags"
+)
+
+# Test 15: Verify tag placement detects violations (Codes_ in test files, Tests_ in prod files)
+# This test is expected to fail (exit code 1) - run manually to verify detection works
+add_custom_target(test_validate_srs_consistency_tag_placement_violations
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_violations"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing tag placement violation detection"
+)
+
+# Test 16: Verify tag placement violation output includes file names (multiple violations)
+add_custom_target(test_validate_srs_consistency_tag_placement_output
+    COMMAND ${POWERSHELL_EXECUTABLE} -NoProfile -ExecutionPolicy Bypass -File
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_tag_placement_output.ps1"
+        -ScriptPath "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -FixtureRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_violations"
+        -ExpectedFileNames "tag_place.c,tag_place_ut.c"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing tag placement violation output includes file names"
+)
+
+# Test 17: Verify tag placement output with a single violation
+add_custom_target(test_validate_srs_consistency_tag_placement_single_violation
+    COMMAND ${POWERSHELL_EXECUTABLE} -NoProfile -ExecutionPolicy Bypass -File
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_tag_placement_output.ps1"
+        -ScriptPath "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -FixtureRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_single_violation"
+        -ExpectedFileNames "single_place.c"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing tag placement output with single violation"
+)
+
+# Test 18: Verify Tests_SRS_ tags are allowed in test helper files inside _ut directories
+add_custom_target(test_validate_srs_consistency_tag_placement_test_helper
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/tag_placement_test_helper"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing that Tests_SRS_ tags are allowed in helper files inside _ut directories"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -160,10 +207,15 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_escaped_multiline_duplication
     test_validate_srs_consistency_incomplete_comment
     test_validate_srs_consistency_line_comment_with_brackets
+    test_validate_srs_consistency_tag_placement_clean
+    test_validate_srs_consistency_tag_placement_output
+    test_validate_srs_consistency_tag_placement_single_violation
+    test_validate_srs_consistency_tag_placement_test_helper
 )
-# Note: We don't add test_validate_srs_consistency_detection as a dependency because
-# it should fail with exit code 1 (which would fail the build). 
-# Instead, it's available to run manually to verify detection works.
+# Note: We don't add test_validate_srs_consistency_detection or 
+# test_validate_srs_consistency_tag_placement_violations as dependencies because
+# they should fail with exit code 1 (which would fail the build). 
+# Instead, they are available to run manually to verify detection works.
 # Test 5: Verify malformed comment handling (missing closing bracket)
 add_custom_target(test_validate_srs_consistency_malformed_comment
     # Create a temporary directory and copy test files

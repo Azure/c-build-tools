@@ -220,6 +220,7 @@ some_function();  // Compiler should warn about unused return value
   - Error codes (`int`, custom result enums)
   - Pointers and handles
   - Boolean values
+  - Standard library functions that return their destination pointer (`memset`, `memcpy`, `memmove`)
   - Any other return types
 
 ## Parameter Validation Rules {#parameter-validation}
@@ -910,10 +911,35 @@ For unit test files, use the `ENABLE_MOCKS` pattern between infrastructure and d
 - Component's own header comes last in project-specific section
 - Maintain alphabetical order within each category when possible
 
+#### No Transitive Include Dependencies
+**Never rely on transitive includes.** Always directly include headers for the macros, types, or functions you use, even if they happen to be pulled in transitively through another header. Transitive includes are an implementation detail that can change without notice.
+
+```c
+// WRONG - relies on thandle.h transitively including macro_utils.h
+#include "c_pal/thandle.h"
+// Uses PRI_BOOL / MU_BOOL_VALUE from macro_utils.h without including it
+
+// CORRECT - explicitly include every header you depend on
+#include "macro_utils/macro_utils.h"  // For PRI_BOOL, MU_BOOL_VALUE
+#include "c_pal/thandle.h"           // For THANDLE
+```
+
 ### Memory Management
-- Use `malloc`/`free` for dynamic allocation
-- Use `malloc_2()` helper for array allocations with overflow protection
+- Use `malloc`/`free` for dynamic allocation of single items
+- Use `malloc_2(element_size, count)` for array allocations with overflow protection
+- Use `malloc_flex(base_size, count, element_size)` for structures with flexible array members (fixed-size header + array of items)
 - Always check allocation results and handle failures gracefully
+
+```c
+// Single item
+MY_STRUCT* ptr = malloc(sizeof(MY_STRUCT));
+
+// Array of items - use malloc_2 for overflow protection
+int32_t* items = malloc_2(sizeof(int32_t), count);
+
+// Fixed-size struct + flexible array - use malloc_flex
+MY_DATA* data = malloc_flex(sizeof(MY_DATA), count, sizeof(ITEM));
+```
 
 ### Pointer Casting Rules
 - **Do NOT cast `void*` to other pointer types** - In C, `void*` implicitly converts to any other pointer type without a cast
@@ -944,12 +970,57 @@ MY_CONTEXT* context_ptr = (MY_CONTEXT*)context;          // Don't do this
 - Use THANDLE pattern for reference-counted objects
 - Always use `THANDLE_INITIALIZE`, `THANDLE_ASSIGN`, `THANDLE_MOVE` appropriately
 - Never manually manipulate reference counts
+- **THANDLE values cannot be assigned like regular pointers** — always use `THANDLE_ASSIGN`, `THANDLE_INITIALIZE_MOVE`, etc. Direct assignment will compile but may fault at runtime
 
 ### Async Operations
 - Use consistent callback patterns with context parameters
 - Always provide both success and error callback paths
 
+### Array Initialization
+Prefer explicit loops over `memset` for initializing arrays. Loops are type-safe and make the intent clearer:
+
+```c
+// CORRECT - explicit loop
+for (size_t i = 0; i < count; i++)
+{
+    items[i] = 0;
+}
+
+// AVOID - memset for typed arrays
+(void)memset(items, 0, sizeof(int32_t) * count);
+```
+
+### Format Specifier Macros for Integer Types
+Use `<inttypes.h>` format specifier macros (`PRIu64`, `PRId64`, `PRIu32`, etc.) when formatting fixed-width integer types. Do not cast to a smaller type to match a format specifier:
+
+```c
+#include <inttypes.h>
+
+uint64_t value = get_value();
+
+// CORRECT - use format specifier macro
+LogInfo("Value is %" PRIu64 "", value);
+
+// INCORRECT - casting to match format specifier
+LogInfo("Value is %u", (uint32_t)value);  // Potential data loss!
+```
+
 ## Unit Testing Guidelines {#unit-testing}
+
+### Always Run the Full Test Suite
+When source code changes could affect any test in a test project, **run the entire test suite** for that project — not just the new or modified tests. Existing tests may break due to changed behavior such as resource lifecycle changes, new non-NULL handles that need cleanup, or different state transitions.
+
+- **Unit tests**: Run the full `_ut_exe` for every test project whose source files you modified
+- **Integration tests**: Run the full `_int_exe` for any integration test project that exercises the changed code
+- Running only the test you wrote or modified gives **false confidence** — other tests in the suite exercise different code paths through the same functions
+
+```bash
+# WRONG: Only run the new test
+offload_store_multi_blob_int_exe_ebs.exe my_new_test_name
+
+# CORRECT: Run the full suite to catch regressions
+offload_store_multi_blob_int_exe_ebs.exe
+```
 
 ### Test Function Naming Convention
 `TEST_FUNCTION` names should generally follow the `when_X_then_Y` pattern to clearly express the test scenario:
@@ -1084,6 +1155,56 @@ Test helper headers that are used across multiple tests should be included in th
 - This improves build times and reduces include duplication
 - PCH include must be the first include in the test file
 
+### Include Paths for Reals Headers
+When including real implementation headers in test files, use the header name directly without relative paths. The build system's `reals` target adds the correct include directory:
+
+```c
+// CORRECT - header name only
+#include "real_my_module.h"
+
+// INCORRECT - relative path
+#include "../reals/real_my_module.h"
+```
+
+### Using Real Functions in Test Code
+Test setup and helper code should generally call **real implementations** (e.g., `real_gballoc_hl_malloc`, `real_CONSTBUFFER_Create`) instead of mocked versions. Using mocked functions in test helpers generates unexpected mock calls that pollute `umock_c_get_actual_calls()` and can cause spurious test failures.
+
+```c
+// CORRECT - test helper uses reals
+static void setup_test_state(void)
+{
+    int32_t* array = real_gballoc_hl_malloc_2(sizeof(int32_t), count);
+    CONSTBUFFER_HANDLE buffer = real_CONSTBUFFER_Create(data, size);
+    // ...
+    real_CONSTBUFFER_DecRef(buffer);
+    real_gballoc_hl_free(array);
+}
+
+// INCORRECT - test helper uses mocked functions
+static void setup_test_state(void)
+{
+    int32_t* array = gballoc_hl_malloc(sizeof(int32_t) * count);  // Generates mock call!
+    CONSTBUFFER_HANDLE buffer = (CONSTBUFFER_HANDLE)0x4242;       // Fake handle, won't work with real code paths
+}
+```
+
+**Key points:**
+- Real allocations must be paired with real frees (`real_gballoc_hl_free`, `real_CONSTBUFFER_DecRef`)
+- Never use fake handle casts (e.g., `(CONSTBUFFER_HANDLE)0x4242`) when the test exercises code paths that dereference the handle
+
+### Umock Chained Call Formatting
+Always place `.SetReturn()`, `.CopyOutArgumentBuffer()`, `.SetFailReturn()`, and other umock chained method calls on **separate lines** for readability:
+
+```c
+// CORRECT - chained calls on separate lines
+STRICT_EXPECTED_CALL(my_function(IGNORED_ARG, IGNORED_ARG))
+    .SetReturn(42)
+    .CopyOutArgumentBuffer_output(&expected_output, sizeof(expected_output));
+
+// INCORRECT - chained calls on same line
+STRICT_EXPECTED_CALL(my_function(IGNORED_ARG, IGNORED_ARG)).SetReturn(42);
+```
+
 ### Registering New Modules in reals_ut
 When adding a new module that has "reals" (non-mocked implementations in `tests/reals/`), the module must also be registered in the repository's `reals_ut` test. This test verifies that all real-to-mock mappings compile and link correctly.
 
@@ -1183,7 +1304,7 @@ Requirements in `.md` files use backticks for better readability:
 ```
 
 #### Code Implementation Tracing
-Requirements are traced to implementation using `Codes_SRS_` comments. **Codes_ tags must ALWAYS be inline** — placed on the line immediately before the implementing code. Never place multiple Codes_ tags as a leading comment block before a function signature.
+Requirements are traced to implementation using `Codes_SRS_` comments. **Codes_ tags must ALWAYS be inline** — placed on the line immediately before the implementing code. Never place multiple Codes_ tags as a leading comment block before a function signature. When a `Codes_SRS_` tag references a specific function call (e.g., `critical_section_leave`), place the tag directly before that call, not at the top of the enclosing block.
 
 ```c
 // WRONG: Leading Codes_ tags as a block before the function
@@ -1274,7 +1395,47 @@ TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
 4. **Complete Coverage**: Every `SRS_` requirement should have:
    - Corresponding `Codes_SRS_` implementation tag(s)
    - Corresponding `Tests_SRS_` unit test tag(s)
-5. **Traceability Tool Verification**: The build system can run `traceabilitytool` to verify complete coverage
+5. **Traceability Tool Verification**: The build system can run `traceabilitytool` to verify complete coverage. **Always run `repo_validation`** (e.g., `cmake --build cmake --target ebs_repo_validation`) after any changes to spec IDs, spec text, or `Codes_SRS_`/`Tests_SRS_` comments
+
+#### Adding New Spec IDs Workflow
+When adding new requirement spec IDs, follow this order to avoid ID conflicts and text mismatches:
+1. **Check for the highest existing ID** in the module's `devdoc/<module>_requirements.md` file — new IDs must be higher than all existing ones
+2. **Add the new spec to the requirements `.md` file first** — this is the source of truth
+3. **Add the matching `Codes_SRS_` comment** in the source `.c` file with identical text
+4. **Add the matching `Tests_SRS_` comment** in the unit test `.c` file with identical text
+5. **Run repo validation** to confirm consistency
+
+```
+// WRONG: Invent a spec ID in the .c file without checking the .md file
+// Risk: The ID may already be used for a different spec, causing a conflict
+/*Codes_SRS_MODULE_42_269: [ function shall do X ]*/  // 42_269 already exists!
+
+// CORRECT: Check the .md file for the highest existing ID, then use the next one
+// In devdoc/module_requirements.md, highest is 42_327
+// So use 42_328 for the new spec:
+// 1. Add to .md:  **SRS_MODULE_42_328: [** function shall do X **]**
+// 2. Add to .c:   /*Codes_SRS_MODULE_42_328: [ function shall do X ]*/
+// 3. Add to _ut.c: /*Tests_SRS_MODULE_42_328: [ function shall do X ]*/
+```
+6. **Tag Placement**: `Codes_SRS_` comments belong exclusively in production code (`.c` files). Unit test files must only use `Tests_SRS_` comments. Never place `Codes_SRS_` tags in test files.
+7. **Test Tag Placement**: `Tests_SRS_` tags must be placed immediately before the `TEST_FUNCTION` declaration, never inside setup or helper functions called by tests:
+
+```c
+// CORRECT - tag before TEST_FUNCTION
+// Tests_SRS_MODULE_42_001: [ ... ]
+TEST_FUNCTION(when_condition_then_expected_behavior)
+{
+    setup_test_state();  // No SRS tags inside here
+    // ...
+}
+
+// INCORRECT - tag inside helper function
+static void setup_test_state(void)
+{
+    // Tests_SRS_MODULE_42_001: [ ... ]  // WRONG - don't put tags in helpers
+    STRICT_EXPECTED_CALL(...);
+}
+```
 
 #### Author ID Assignment
 - Each developer is assigned a unique two-digit author ID
@@ -1287,6 +1448,38 @@ TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
 - Include error conditions and edge cases
 - Group related requirements logically
 - Update all three locations (spec, code, tests) when modifying requirements
+- **Never reuse or repurpose an existing SRS tag** — when adding new requirements, always create new SRS tags. Reusing an existing tag by replacing its text breaks the traceability chain and makes git history misleading. If a requirement is removed, retire the tag rather than reassigning it.
+- **Keep requirements docs in sync with code** — when modifying function signatures (adding, removing, or changing parameters), always update the corresponding `_requirements.md` code blocks in the Exposed API section to match the actual API.
+- **Each SRS requirement must describe a single testable behavior** so it can be tagged on exactly one test. If a requirement describes multiple outcomes, split it into separate specs:
+
+```markdown
+// BAD - combined spec, can't tag individually per test
+**SRS_MODULE_01_020: [** `is_enabled` shall return `FEATURE_ENABLED` if the feature is enabled
+and `FEATURE_DISABLED` if the feature is disabled. **]**
+
+// GOOD - split into individually taggable specs
+**SRS_MODULE_01_022: [** If the feature flag is enabled, `is_enabled` shall return `FEATURE_ENABLED`. **]**
+**SRS_MODULE_01_023: [** If the feature flag is not enabled, `is_enabled` shall return `FEATURE_DISABLED`. **]**
+```
+
+#### Exposed API Section in Requirements
+The `Exposed API` section in `_requirements.md` must mirror the public header file exactly. Include all public enums, typedefs, and function declarations as they appear in the header:
+
+```markdown
+## Exposed API
+
+```c
+#define MY_RESULT_VALUES \
+    MY_RESULT_OK, \
+    MY_RESULT_ERROR, \
+    MY_RESULT_INVALID_ARG
+
+MU_DEFINE_ENUM(MY_RESULT, MY_RESULT_VALUES)
+
+MOCKABLE_FUNCTION_WITH_RETURNS(, THANDLE(MY_MODULE), my_module_create, const char*, param)(valid, NULL);
+MOCKABLE_FUNCTION_WITH_RETURNS(, MY_RESULT, my_module_operation, THANDLE(MY_MODULE), handle)(MY_RESULT_OK, MY_RESULT_ERROR);
+```
+```
 
 ## Internal Callback Functions in Requirements {#internal-callback-requirements}
 
@@ -1406,6 +1599,99 @@ TEST_FUNCTION(real_my_module_create_frees_on_failure)
     ///assert
     ASSERT_IS_NULL(result);
     // Verify no memory leaks via test framework
+}
+```
+
+### Negative Testing Requirements
+
+#### All Fallible Functions Must Have Negative Tests
+Every function that allocates memory, calls external dependencies, or can return failure **must** have a negative test using the `umock_c_negative_tests` pattern. This ensures all failure paths are exercised:
+
+```c
+TEST_FUNCTION(when_underlying_functions_fail_then_my_function_fails)
+{
+    ///arrange
+    setup_my_function_expectations();
+
+    umock_c_negative_tests_snapshot();
+
+    for (size_t i = 0; i < umock_c_negative_tests_call_count(); i++)
+    {
+        if (umock_c_negative_tests_can_call_fail(i))
+        {
+            umock_c_negative_tests_reset();
+            umock_c_negative_tests_fail_call(i);
+
+            ///act
+            int result = my_function(...);
+
+            ///assert
+            ASSERT_ARE_NOT_EQUAL(int, 0, result, "On failed call %zu", i);
+        }
+    }
+}
+```
+
+**Guidelines:**
+- Only include `umock_c_negative_tests.h` and `umock_c_negative_tests_init()`/`deinit()` when the test file actually uses negative tests
+- Do not add negative test infrastructure to test files that don't use it
+
+#### `.CallCannotFail()` Modifier Rules
+When writing umock negative tests that use `umock_c_negative_tests_snapshot()`, use `.CallCannotFail()` ONLY on expected calls that should be excluded from failure injection (e.g., getter functions that always succeed). Do NOT use `.CallCannotFail()` in positive/happy path tests — it has no effect there and adds noise.
+
+```c
+// In NEGATIVE test - correct usage
+STRICT_EXPECTED_CALL(config_get_value(IGNORED_ARG))
+    .CallCannotFail();  // This getter never fails, skip it in negative iteration
+STRICT_EXPECTED_CALL(malloc(IGNORED_ARG));  // This CAN fail, test it
+
+// In POSITIVE test - do NOT use .CallCannotFail()
+STRICT_EXPECTED_CALL(config_get_value(IGNORED_ARG));  // No modifier needed
+STRICT_EXPECTED_CALL(malloc(IGNORED_ARG));
+```
+
+#### Static THANDLE Variables in Tests
+A `THANDLE` variable declared as a bare static in the default data segment will compile, but `THANDLE_INITIALIZE_MOVE` and `THANDLE_ASSIGN` will fault at runtime. Wrap static `THANDLE` test variables inside a struct:
+
+```c
+// WRONG: Static THANDLE in default data segment — faults at runtime
+static THANDLE(SUBSTREAM_CORE) test_substream_core;
+
+// CORRECT: Wrap in a struct
+static struct
+{
+    THANDLE(SUBSTREAM_CORE) test_substream_core;
+} g = { 0 };
+```
+
+### No Magic Numbers in Tests
+Numeric literals in test code should be replaced with named `#define` macros. This improves readability and makes the test's intent clear:
+
+```c
+// WRONG: Magic number in test
+STRICT_EXPECTED_CALL(my_function_create(3, test_cleanup));
+
+// CORRECT: Named constant
+#define TEST_DEFAULT_ARRAY_ENTRY_COUNT 3
+STRICT_EXPECTED_CALL(my_function_create(TEST_DEFAULT_ARRAY_ENTRY_COUNT, test_cleanup));
+```
+
+### Assert Expected Calls in Every Test
+All tests that set up `STRICT_EXPECTED_CALL` expectations **must** verify them with `ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls())`. This is not limited to helper functions — it applies to **every** test function that uses mock expectations:
+
+```c
+TEST_FUNCTION(when_all_calls_succeed_then_operation_succeeds)
+{
+    ///arrange
+    STRICT_EXPECTED_CALL(dependency_create());
+    STRICT_EXPECTED_CALL(dependency_configure(IGNORED_ARG));
+
+    ///act
+    int result = my_function();
+
+    ///assert
+    ASSERT_ARE_EQUAL(int, 0, result);
+    ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());  // REQUIRED
 }
 ```
 
