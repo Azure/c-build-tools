@@ -1007,6 +1007,21 @@ LogInfo("Value is %u", (uint32_t)value);  // Potential data loss!
 
 ## Unit Testing Guidelines {#unit-testing}
 
+### Always Run the Full Test Suite
+When source code changes could affect any test in a test project, **run the entire test suite** for that project — not just the new or modified tests. Existing tests may break due to changed behavior such as resource lifecycle changes, new non-NULL handles that need cleanup, or different state transitions.
+
+- **Unit tests**: Run the full `_ut_exe` for every test project whose source files you modified
+- **Integration tests**: Run the full `_int_exe` for any integration test project that exercises the changed code
+- Running only the test you wrote or modified gives **false confidence** — other tests in the suite exercise different code paths through the same functions
+
+```bash
+# WRONG: Only run the new test
+offload_store_multi_blob_int_exe_ebs.exe my_new_test_name
+
+# CORRECT: Run the full suite to catch regressions
+offload_store_multi_blob_int_exe_ebs.exe
+```
+
 ### Test Function Naming Convention
 `TEST_FUNCTION` names should generally follow the `when_X_then_Y` pattern to clearly express the test scenario:
 
@@ -1380,7 +1395,28 @@ TEST_FUNCTION(when_malloc_fails_then_module_function_returns_failure)
 4. **Complete Coverage**: Every `SRS_` requirement should have:
    - Corresponding `Codes_SRS_` implementation tag(s)
    - Corresponding `Tests_SRS_` unit test tag(s)
-5. **Traceability Tool Verification**: The build system can run `traceabilitytool` to verify complete coverage
+5. **Traceability Tool Verification**: The build system can run `traceabilitytool` to verify complete coverage. **Always run `repo_validation`** (e.g., `cmake --build cmake --target ebs_repo_validation`) after any changes to spec IDs, spec text, or `Codes_SRS_`/`Tests_SRS_` comments
+
+#### Adding New Spec IDs Workflow
+When adding new requirement spec IDs, follow this order to avoid ID conflicts and text mismatches:
+1. **Check for the highest existing ID** in the module's `devdoc/<module>_requirements.md` file — new IDs must be higher than all existing ones
+2. **Add the new spec to the requirements `.md` file first** — this is the source of truth
+3. **Add the matching `Codes_SRS_` comment** in the source `.c` file with identical text
+4. **Add the matching `Tests_SRS_` comment** in the unit test `.c` file with identical text
+5. **Run repo validation** to confirm consistency
+
+```
+// WRONG: Invent a spec ID in the .c file without checking the .md file
+// Risk: The ID may already be used for a different spec, causing a conflict
+/*Codes_SRS_MODULE_42_269: [ function shall do X ]*/  // 42_269 already exists!
+
+// CORRECT: Check the .md file for the highest existing ID, then use the next one
+// In devdoc/module_requirements.md, highest is 42_327
+// So use 42_328 for the new spec:
+// 1. Add to .md:  **SRS_MODULE_42_328: [** function shall do X **]**
+// 2. Add to .c:   /*Codes_SRS_MODULE_42_328: [ function shall do X ]*/
+// 3. Add to _ut.c: /*Tests_SRS_MODULE_42_328: [ function shall do X ]*/
+```
 6. **Tag Placement**: `Codes_SRS_` comments belong exclusively in production code (`.c` files). Unit test files must only use `Tests_SRS_` comments. Never place `Codes_SRS_` tags in test files.
 7. **Test Tag Placement**: `Tests_SRS_` tags must be placed immediately before the `TEST_FUNCTION` declaration, never inside setup or helper functions called by tests:
 
