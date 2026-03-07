@@ -39,6 +39,12 @@ parameters:
   - name: is_optional
     type: boolean
     default: false
+  - name: pool_name
+    type: string
+    default: "Azure-MessagingStore-WinBuildPoolVS2022_0"
+  - name: pool_name_arm64
+    type: string
+    default: "Azure-MessagingStore-WinBuildPoolARM"
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -54,14 +60,14 @@ jobs:
   # ARM64 uses dedicated ARM pool, x64 uses standard pool
   ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
     pool:
-      name: Azure-MessagingStore-WinBuildPoolARM
+      name: ${{ parameters.pool_name_arm64 }}
       demands:
       - msbuild
       - cmake
       - visualstudio
   ${{ else }}:
     pool:
-      name: Azure-MessagingStore-WinBuildPoolVS2022_0
+      name: ${{ parameters.pool_name }}
       demands:
       - msbuild
       - cmake
