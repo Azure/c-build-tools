@@ -86,8 +86,10 @@ jobs:
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
               failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
-              pool_name_x64: ${{ parameters.pool_name_x64 }}
-              pool_name_arm64: ${{ parameters.pool_name_arm64 }}
+              ${{ if eq(ARCH_TYPE, 'ARM64') }}:
+                pool_name: ${{ parameters.pool_name_arm64 }}
+              ${{ else }}:
+                pool_name: ${{ parameters.pool_name_x64 }}
               # ARM64 builds are optional (non-blocking)
               ${{ if eq(ARCH_TYPE, 'ARM64') }}:
                 is_optional: true
