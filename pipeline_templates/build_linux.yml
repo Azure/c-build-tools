@@ -5,6 +5,9 @@ parameters:
   - name: ctest_exclude_regex
     type: string
     default: ''
+  - name: pool_name
+    type: string
+    default: 'Azure-MsgStore-Linux2204BuildMachinePool'
 
 jobs:
 - job: linuxubuntu
@@ -13,7 +16,7 @@ jobs:
     Codeql.Enabled: false
     crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
   pool:
-    name: Azure-MsgStore-Linux2204BuildMachinePool
+    name: ${{ parameters.pool_name }}
     demands:
       - linux
   workspace:
