@@ -9,12 +9,15 @@ parameters:
   default: 'RelWithDebInfo'
 - name: repo_root
   default: $(Build.SourcesDirectory)/deps/c-build-tools
+- name: pool_name
+  type: string
+  default: 'Azure-MessagingStore-WinBuildPoolVS2022_0'
 
 jobs:
 - job: codeql
   displayName: 'Run CodeQL on production code'
   pool:
-    name: Azure-MessagingStore-WinBuildPoolVS2022_0
+    name: ${{ parameters.pool_name }}
     demands:
     - Cmd
     - msbuild
