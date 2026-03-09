@@ -8,7 +8,7 @@ parameters:
   - name: pool_name_windows_arm64
     displayName: 'Windows ARM64 Pool'
     type: string
-    default: 'Azure-MessagingStore-WinBuildPoolARM'
+    default: 'Azure-MessagingStore-WinBuildPool-ARM64-v24'
   - name: pool_name_linux
     displayName: 'Linux Pool'
     type: string
