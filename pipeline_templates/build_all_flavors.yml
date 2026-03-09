@@ -62,7 +62,7 @@ parameters:
     default: "Azure-MessagingStore-WinBuildPoolVS2022_0"
   - name: pool_name_arm64
     type: string
-    default: "Azure-MessagingStore-WinBuildPoolARM"
+    default: "Azure-MessagingStore-WinBuildPool-ARM64-v24"
 
 jobs:
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
