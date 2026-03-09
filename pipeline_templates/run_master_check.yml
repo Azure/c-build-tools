@@ -9,12 +9,15 @@ parameters:
   - name: custom_submodule_branches # Comma-separated list of custom submodule branches, in the format "submodulePath:branchName", e.g. "deps/libuv:master,submodule2:develop"
     default: ""
     type: string
+  - name: pool_name
+    type: string
+    default: "Azure-MessagingStore-WinBuildPoolVS2022_0"
 
 jobs:
 - job: run_master_check
   displayName: 'Run submodule master check'
   pool:
-    name: Azure-MessagingStore-WinBuildPoolVS2022_0
+    name: ${{ parameters.pool_name }}
     demands:
     - Cmd
 
