@@ -65,6 +65,8 @@ jobs:
     clean: all
 
   steps:
+  - template: get_machine_information.yml
+
   - checkout: self
     submodules: true
     clean: false
