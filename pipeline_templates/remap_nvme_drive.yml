@@ -32,16 +32,36 @@ steps:
                 exit 0
             }
 
-            # D: is a CD-ROM, empty, or non-local — free the letter
-            Write-Host "D: is not a usable local disk ($typeName, ${dSizeGB} GB). Freeing letter..."
+            # D: is a CD-ROM, empty, or non-local — reassign it to a letter from end of alphabet
+            Write-Host "D: is not a usable local disk ($typeName, ${dSizeGB} GB). Reassigning..."
+            $usedLetters = (Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter } | ForEach-Object { $_.DriveLetter })
+            $newLetter = $null
+            foreach ($l in [char[]]('Z','Y','X','W','V','U','T','S','R','Q','P','O','N','M','L','K','J','I')) {
+                if ($l -notin $usedLetters) {
+                    $newLetter = $l
+                    break
+                }
+            }
+
+            if (-not $newLetter) {
+                Write-Host "No free drive letters available. Giving up."
+                exit 0
+            }
+
             $dPartition = Get-Partition | Where-Object { $_.DriveLetter -eq 'D' } -ErrorAction SilentlyContinue
             if ($dPartition) {
-                $dPartition | Remove-PartitionAccessPath -AccessPath "D:\" -ErrorAction SilentlyContinue
-                Write-Host "Removed D: from partition on Disk $($dPartition.DiskNumber)"
+                $dPartition | Set-Partition -NewDriveLetter $newLetter -ErrorAction SilentlyContinue
+                Write-Host "Reassigned D: -> ${newLetter}: (partition on Disk $($dPartition.DiskNumber))"
             } else {
-                # Might be a CD-ROM — use mountvol to remove
+                # Likely a CD-ROM — remove D: then re-mount with new letter
+                $volPath = (mountvol D: /L 2>&1).Trim()
                 mountvol D: /D 2>&1
-                Write-Host "Removed D: via mountvol"
+                if ($volPath -and $volPath -like '\\?\Volume*') {
+                    mountvol "${newLetter}:\" $volPath 2>&1
+                    Write-Host "Reassigned D: -> ${newLetter}: via mountvol"
+                } else {
+                    Write-Host "Removed D: but could not reassign (no volume path)"
+                }
             }
 
             # Verify D: is gone
