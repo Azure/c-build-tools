@@ -67,8 +67,6 @@ jobs:
   steps:
   - template: get_machine_information.yml
 
-  - template: map_nvme_drives.yml
-
   - checkout: self
     submodules: true
     clean: false
