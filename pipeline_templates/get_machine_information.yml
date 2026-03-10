@@ -76,6 +76,7 @@ steps:
                 Write-Host "    Size        : ${sizeGB} GB"
                 Write-Host "    Health      : $($disk.HealthStatus)"
                 Write-Host "    Op Status   : $($disk.OperationalStatus)"
+                Write-Host "    Sector Size : $($disk.PhysicalSectorSize) bytes"
 
                 if ($disk.BusType -eq 'NVMe') {
                     Write-Host "    [NVMe Drive Detected]"
