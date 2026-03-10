@@ -65,16 +65,13 @@ jobs:
     clean: all
 
   steps:
+  - template: get_machine_information.yml
+
   - template: map_nvme_drives.yml
 
   - checkout: self
     submodules: true
     clean: false
-
-  - template: get_machine_information.yml
-    parameters:
-      ${{ if ne(parameters.repo_root_override, '') }}:
-        repo_root: ${{ parameters.repo_root_override }}
 
   # ARM64: Verify agent architecture and discover native tools
   - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
