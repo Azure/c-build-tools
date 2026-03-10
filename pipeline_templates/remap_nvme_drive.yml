@@ -1,0 +1,68 @@
+# Remaps the largest NVMe drive to D: if D: does not already exist.
+# Uses inline script so it works before checkout / submodule init.
+# This script is best-effort and must never fail the pipeline.
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Remap NVMe to D:'
+    inputs:
+      targetType: 'inline'
+      errorActionPreference: 'SilentlyContinue'
+      script: |
+        $ErrorActionPreference = 'SilentlyContinue'
+
+        # --- Check if D: already exists ---
+        $dDrive = Get-Volume -DriveLetter D -ErrorAction SilentlyContinue
+        if ($dDrive) {
+            Write-Host "D: already exists (Size: $([math]::Round($dDrive.Size / 1GB, 2)) GB). Nothing to do."
+            exit 0
+        }
+
+        # --- Find all healthy NVMe physical disks ---
+        $nvmeDisks = Get-PhysicalDisk | Where-Object { $_.BusType -eq 'NVMe' -and $_.HealthStatus -eq 'Healthy' }
+        if (-not $nvmeDisks -or @($nvmeDisks).Count -eq 0) {
+            Write-Host "No healthy NVMe drives found. Nothing to do."
+            exit 0
+        }
+
+        # --- Find the NVMe partition with the largest volume (the "fattest") ---
+        $bestPartition = $null
+        $bestSize = 0
+        $bestOldLetter = $null
+
+        foreach ($disk in $nvmeDisks) {
+            $partitions = Get-Partition -DiskNumber $disk.DeviceId -ErrorAction SilentlyContinue
+            foreach ($part in $partitions) {
+                if (-not $part.DriveLetter) { continue }
+                $vol = Get-Volume -DriveLetter $part.DriveLetter -ErrorAction SilentlyContinue
+                if ($vol -and $vol.Size -gt $bestSize) {
+                    $bestPartition = $part
+                    $bestSize = $vol.Size
+                    $bestOldLetter = $part.DriveLetter
+                }
+            }
+        }
+
+        if (-not $bestPartition) {
+            Write-Host "No NVMe partitions with drive letters found. Nothing to do."
+            exit 0
+        }
+
+        $sizeGB = [math]::Round($bestSize / 1GB, 2)
+        Write-Host "Selected NVMe partition: ${bestOldLetter}: (${sizeGB} GB) on Disk $($bestPartition.DiskNumber)"
+
+        # --- Remove the old letter and assign D: ---
+        Write-Host "Removing drive letter ${bestOldLetter}: ..."
+        $bestPartition | Set-Partition -NewDriveLetter D -ErrorAction Stop 2>&1
+
+        # Verify
+        $verify = Get-Volume -DriveLetter D -ErrorAction SilentlyContinue
+        if ($verify) {
+            Write-Host "Success: ${bestOldLetter}: remapped to D: ($([math]::Round($verify.Size / 1GB, 2)) GB)"
+        } else {
+            Write-Host "Failed to remap ${bestOldLetter}: to D:"
+        }
+
+        exit 0
+    continueOnError: true
+    condition: always()
