@@ -103,6 +103,11 @@ jobs:
       filename: 'C:\Program Files\Git\bin\git.exe'
       arguments: 'clean -xdff'
 
+  - template: get_machine_information.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
+
   # Setup VS environment - use discovered vsPath for correct VS version
   - task: PowerShell@2
     displayName: 'Setup VS Vars'

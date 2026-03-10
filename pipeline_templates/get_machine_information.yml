@@ -1,4 +1,5 @@
-# prints some machine information to the console
+# Prints comprehensive machine information to the console including
+# hardware, OS, drive mapping (with NVMe details), and software versions.
 
 parameters:
  - name: repo_root
@@ -8,13 +9,7 @@ steps:
   - task: PowerShell@2
     displayName: 'Machine Information'
     inputs:
-      targetType: 'inline'
-      script: |
-        #get information about the machine
-        systeminfo
-        
-        #get information about the processor
-        Get-WmiObject -class win32_processor | Select * 
-
+      targetType: 'filePath'
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/get_machine_information.ps1'
     continueOnError: true
     condition: always()
