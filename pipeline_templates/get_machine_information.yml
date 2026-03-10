@@ -120,11 +120,17 @@ steps:
         # --- Logical Volumes ---
         Write-Host "--- Logical Volumes ---"
         try {
-            Get-CimInstance -ClassName Win32_LogicalDisk | Where-Object { $_.Size -gt 0 } | ForEach-Object {
-                $totalGB = [math]::Round($_.Size / 1GB, 2)
-                $freeGB = [math]::Round($_.FreeSpace / 1GB, 2)
-                $usedPct = if ($_.Size -gt 0) { [math]::Round((1 - $_.FreeSpace / $_.Size) * 100, 1) } else { 0 }
-                Write-Host "  $($_.DeviceID) | Total: ${totalGB} GB | Free: ${freeGB} GB | Used: ${usedPct}%"
+            Get-CimInstance -ClassName Win32_LogicalDisk | ForEach-Object {
+                $driveTypes = @{ 0='Unknown'; 1='No Root'; 2='Removable'; 3='Local'; 4='Network'; 5='CD-ROM'; 6='RAM Disk' }
+                $typeName = $driveTypes[[int]$_.DriveType]
+                if ($_.Size -gt 0) {
+                    $totalGB = [math]::Round($_.Size / 1GB, 2)
+                    $freeGB = [math]::Round($_.FreeSpace / 1GB, 2)
+                    $usedPct = [math]::Round((1 - $_.FreeSpace / $_.Size) * 100, 1)
+                    Write-Host "  $($_.DeviceID) | Type: $typeName | Total: ${totalGB} GB | Free: ${freeGB} GB | Used: ${usedPct}%"
+                } else {
+                    Write-Host "  $($_.DeviceID) | Type: $typeName | Size: 0 (empty/no media)"
+                }
             }
         } catch {
             Write-Host "Failed to get logical volume information: $_"

@@ -14,7 +14,24 @@ steps:
         # --- Check if D: already exists ---
         $dDrive = Get-Volume -DriveLetter D -ErrorAction SilentlyContinue
         if ($dDrive) {
-            Write-Host "D: already exists (Size: $([math]::Round($dDrive.Size / 1GB, 2)) GB). Nothing to do."
+            $dSizeGB = [math]::Round($dDrive.Size / 1GB, 2)
+            Write-Host "D: already exists:"
+            Write-Host "  Size          : ${dSizeGB} GB"
+            Write-Host "  FileSystem    : $($dDrive.FileSystemType)"
+            Write-Host "  DriveType     : $($dDrive.DriveType)"
+            Write-Host "  HealthStatus  : $($dDrive.HealthStatus)"
+            Write-Host "  FileSystemLabel: $($dDrive.FileSystemLabel)"
+
+            # Also check via WMI for drive type
+            $wmiDisk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='D:'" -ErrorAction SilentlyContinue
+            if ($wmiDisk) {
+                $driveTypes = @{ 0='Unknown'; 1='No Root'; 2='Removable'; 3='Local'; 4='Network'; 5='CD-ROM'; 6='RAM Disk' }
+                Write-Host "  WMI DriveType : $($driveTypes[[int]$wmiDisk.DriveType]) ($($wmiDisk.DriveType))"
+                Write-Host "  VolumeName    : $($wmiDisk.VolumeName)"
+                Write-Host "  Description   : $($wmiDisk.Description)"
+            }
+
+            Write-Host "Nothing to do."
             exit 0
         }
 
