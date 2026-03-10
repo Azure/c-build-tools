@@ -28,6 +28,8 @@ jobs:
     clean: all
 
   steps:
+  - template: remap_nvme_drive.yml
+
   - template: get_machine_information.yml
 
   - task: BatchScript@1

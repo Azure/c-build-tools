@@ -65,6 +65,8 @@ jobs:
     clean: all
 
   steps:
+  - template: remap_nvme_drive.yml
+
   - template: get_machine_information.yml
 
   - checkout: self
