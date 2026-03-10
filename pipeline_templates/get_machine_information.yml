@@ -190,6 +190,31 @@ steps:
         }
         Write-Host ""
 
+        # --- Agent Configuration ---
+        Write-Host "--- Agent Configuration ---"
+        $agentPaths = @(
+            "C:\a", "C:\Agent", "C:\vss-agent", "C:\azagent",
+            "D:\a", "D:\Agent", "D:\vss-agent", "D:\azagent"
+        )
+        $found = $false
+        foreach ($basePath in $agentPaths) {
+            $agentFiles = Get-ChildItem -Path $basePath -Recurse -Filter ".agent" -ErrorAction SilentlyContinue
+            foreach ($f in $agentFiles) {
+                $found = $true
+                Write-Host "  Found: $($f.FullName)"
+                try {
+                    $content = Get-Content $f.FullName -Raw
+                    Write-Host $content
+                } catch {
+                    Write-Host "  (could not read)"
+                }
+            }
+        }
+        if (-not $found) {
+            Write-Host "  No .agent config files found in known paths"
+        }
+        Write-Host ""
+
         Write-Host "=============================================="
         Write-Host "  End of Machine Information Report"
         Write-Host "=============================================="
