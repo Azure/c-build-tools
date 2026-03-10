@@ -11,5 +11,6 @@ steps:
     inputs:
       targetType: 'filePath'
       filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/get_machine_information.ps1'
+      errorActionPreference: 'SilentlyContinue'
     continueOnError: true
     condition: always()

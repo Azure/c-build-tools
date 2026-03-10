@@ -1,6 +1,9 @@
 # Copyright (C) Microsoft Corporation. All rights reserved.
 # Comprehensive machine information diagnostic script for Azure DevOps pipelines.
 # Collects hardware, OS, drive (with NVMe mapping), and software details.
+# This script is best-effort and must never fail the pipeline.
+
+$ErrorActionPreference = 'SilentlyContinue'
 
 Write-Host "=============================================="
 Write-Host "  Machine Information Diagnostic Report"
@@ -188,3 +191,5 @@ Write-Host ""
 Write-Host "=============================================="
 Write-Host "  End of Machine Information Report"
 Write-Host "=============================================="
+
+exit 0
