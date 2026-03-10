@@ -69,6 +69,11 @@ jobs:
     submodules: true
     clean: false
 
+  - template: get_machine_information.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
+
   # ARM64: Verify agent architecture and discover native tools
   - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
     - template: verify_agent_architecture.yml
@@ -102,11 +107,6 @@ jobs:
     inputs:
       filename: 'C:\Program Files\Git\bin\git.exe'
       arguments: 'clean -xdff'
-
-  - template: get_machine_information.yml
-    parameters:
-      ${{ if ne(parameters.repo_root_override, '') }}:
-        repo_root: ${{ parameters.repo_root_override }}
 
   # Setup VS environment - use discovered vsPath for correct VS version
   - task: PowerShell@2
