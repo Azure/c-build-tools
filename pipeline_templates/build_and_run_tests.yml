@@ -65,6 +65,8 @@ jobs:
     clean: all
 
   steps:
+  - template: map_nvme_drives.yml
+
   - checkout: self
     submodules: true
     clean: false

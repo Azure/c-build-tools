@@ -1,0 +1,131 @@
+# Redirects the pipeline source and binaries directories to the best available
+# NVMe drive using NTFS junctions. This is transparent to all downstream steps.
+# Must run BEFORE checkout: self.
+#
+# How it works:
+#   1. Finds all healthy NVMe drives and picks the one with the most free space
+#   2. Creates target directories on the NVMe drive mirroring the agent work paths
+#   3. Replaces the default source/binaries directories with NTFS junctions
+#
+# If no NVMe drives are found or anything fails, the pipeline continues with
+# default paths. This step never fails the pipeline.
+
+steps:
+  - task: PowerShell@2
+    displayName: 'Map NVMe drives'
+    inputs:
+      targetType: 'inline'
+      errorActionPreference: 'SilentlyContinue'
+      script: |
+        $ErrorActionPreference = 'SilentlyContinue'
+
+        # --- Find the best NVMe drive ---
+        $nvmeDisks = Get-PhysicalDisk | Where-Object { $_.BusType -eq 'NVMe' -and $_.HealthStatus -eq 'Healthy' }
+
+        if (-not $nvmeDisks -or @($nvmeDisks).Count -eq 0) {
+            Write-Host "No healthy NVMe drives found, using default paths"
+            exit 0
+        }
+
+        $bestDriveLetter = $null
+        $bestFreeSpace = 0
+
+        foreach ($disk in $nvmeDisks) {
+            $partitions = Get-Partition -DiskNumber $disk.DeviceId -ErrorAction SilentlyContinue
+            foreach ($part in $partitions) {
+                if (-not $part.DriveLetter) { continue }
+                $vol = Get-Volume -DriveLetter $part.DriveLetter -ErrorAction SilentlyContinue
+                if ($vol -and $vol.SizeRemaining -gt $bestFreeSpace) {
+                    $bestDriveLetter = $part.DriveLetter
+                    $bestFreeSpace = $vol.SizeRemaining
+                }
+            }
+        }
+
+        if (-not $bestDriveLetter) {
+            Write-Host "Could not map NVMe drives to drive letters, using default paths"
+            exit 0
+        }
+
+        $freeGB = [math]::Round($bestFreeSpace / 1GB, 2)
+        Write-Host "Selected NVMe drive: ${bestDriveLetter}: (Free: ${freeGB} GB)"
+
+        # --- Build target paths on NVMe mirroring the agent layout ---
+        # e.g. D:\a\_work\1\s -> E:\a\_work\1\s
+        $sourcesDir = $env:BUILD_SOURCESDIRECTORY
+        $binariesDir = $env:BUILD_BINARIESDIRECTORY
+
+        if (-not $sourcesDir -or -not $binariesDir) {
+            Write-Host "BUILD_SOURCESDIRECTORY or BUILD_BINARIESDIRECTORY not set, using default paths"
+            exit 0
+        }
+
+        function Set-NvmeJunction {
+            param (
+                [string]$CurrentPath,
+                [string]$NvmeDriveLetter,
+                [string]$Label
+            )
+
+            # Derive target path: replace drive letter with NVMe drive
+            # D:\a\_work\1\s -> E:\a\_work\1\s
+            $relativePath = $CurrentPath.Substring(2)  # strip "D:"
+            $targetPath = "${NvmeDriveLetter}:${relativePath}"
+
+            Write-Host "${Label}: $CurrentPath -> $targetPath"
+
+            # Create target directory on NVMe
+            if (-not (Test-Path $targetPath)) {
+                New-Item -ItemType Directory -Path $targetPath -Force | Out-Null
+                if (-not (Test-Path $targetPath)) {
+                    Write-Host "  Failed to create target directory: $targetPath"
+                    return $false
+                }
+            }
+
+            # Remove existing path (junction, directory, or whatever it is)
+            if (Test-Path $CurrentPath) {
+                $item = Get-Item $CurrentPath -Force
+                if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                    # Already a junction/symlink - remove it
+                    Write-Host "  Removing existing junction"
+                    cmd /c rmdir "$CurrentPath" 2>&1 | Out-Null
+                } else {
+                    # Regular directory - remove it
+                    Write-Host "  Removing existing directory"
+                    Remove-Item -Path $CurrentPath -Recurse -Force 2>&1 | Out-Null
+                }
+            }
+
+            # Ensure parent directory exists
+            $parentDir = Split-Path -Parent $CurrentPath
+            if (-not (Test-Path $parentDir)) {
+                New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+            }
+
+            # Create the junction
+            cmd /c mklink /J "$CurrentPath" "$targetPath" 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  Failed to create junction, restoring original directory"
+                New-Item -ItemType Directory -Path $CurrentPath -Force | Out-Null
+                return $false
+            }
+
+            Write-Host "  Junction created successfully"
+            return $true
+        }
+
+        $sourceOk = Set-NvmeJunction -CurrentPath $sourcesDir -NvmeDriveLetter $bestDriveLetter -Label "Sources"
+        $binariesOk = Set-NvmeJunction -CurrentPath $binariesDir -NvmeDriveLetter $bestDriveLetter -Label "Binaries"
+
+        if ($sourceOk -and $binariesOk) {
+            Write-Host "Both directories mapped to NVMe drive ${bestDriveLetter}:"
+        } elseif ($sourceOk -or $binariesOk) {
+            Write-Host "Partial NVMe mapping (some directories mapped, some using defaults)"
+        } else {
+            Write-Host "NVMe mapping failed, using default paths"
+        }
+
+        exit 0
+    continueOnError: true
+    condition: always()
