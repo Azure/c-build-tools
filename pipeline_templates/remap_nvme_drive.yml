@@ -15,24 +15,42 @@ steps:
         $dDrive = Get-Volume -DriveLetter D -ErrorAction SilentlyContinue
         if ($dDrive) {
             $dSizeGB = [math]::Round($dDrive.Size / 1GB, 2)
+            $wmiDisk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='D:'" -ErrorAction SilentlyContinue
+            $wmiDriveType = if ($wmiDisk) { [int]$wmiDisk.DriveType } else { -1 }
+            $driveTypes = @{ 0='Unknown'; 1='No Root'; 2='Removable'; 3='Local'; 4='Network'; 5='CD-ROM'; 6='RAM Disk' }
+            $typeName = if ($driveTypes.ContainsKey($wmiDriveType)) { $driveTypes[$wmiDriveType] } else { "Unknown" }
+
             Write-Host "D: already exists:"
             Write-Host "  Size          : ${dSizeGB} GB"
             Write-Host "  FileSystem    : $($dDrive.FileSystemType)"
-            Write-Host "  DriveType     : $($dDrive.DriveType)"
+            Write-Host "  DriveType     : $typeName ($wmiDriveType)"
             Write-Host "  HealthStatus  : $($dDrive.HealthStatus)"
-            Write-Host "  FileSystemLabel: $($dDrive.FileSystemLabel)"
 
-            # Also check via WMI for drive type
-            $wmiDisk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='D:'" -ErrorAction SilentlyContinue
-            if ($wmiDisk) {
-                $driveTypes = @{ 0='Unknown'; 1='No Root'; 2='Removable'; 3='Local'; 4='Network'; 5='CD-ROM'; 6='RAM Disk' }
-                Write-Host "  WMI DriveType : $($driveTypes[[int]$wmiDisk.DriveType]) ($($wmiDisk.DriveType))"
-                Write-Host "  VolumeName    : $($wmiDisk.VolumeName)"
-                Write-Host "  Description   : $($wmiDisk.Description)"
+            # If D: is a real local disk with data, leave it alone
+            if ($wmiDriveType -eq 3 -and $dDrive.Size -gt 0) {
+                Write-Host "D: is a local disk with data. Nothing to do."
+                exit 0
             }
 
-            Write-Host "Nothing to do."
-            exit 0
+            # D: is a CD-ROM, empty, or non-local — free the letter
+            Write-Host "D: is not a usable local disk ($typeName, ${dSizeGB} GB). Freeing letter..."
+            $dPartition = Get-Partition | Where-Object { $_.DriveLetter -eq 'D' } -ErrorAction SilentlyContinue
+            if ($dPartition) {
+                $dPartition | Remove-PartitionAccessPath -AccessPath "D:\" -ErrorAction SilentlyContinue
+                Write-Host "Removed D: from partition on Disk $($dPartition.DiskNumber)"
+            } else {
+                # Might be a CD-ROM — use mountvol to remove
+                mountvol D: /D 2>&1
+                Write-Host "Removed D: via mountvol"
+            }
+
+            # Verify D: is gone
+            $check = Get-Volume -DriveLetter D -ErrorAction SilentlyContinue
+            if ($check) {
+                Write-Host "Could not free D: letter. Giving up."
+                exit 0
+            }
+            Write-Host "D: is now free."
         }
 
         # --- Find all healthy NVMe physical disks ---
