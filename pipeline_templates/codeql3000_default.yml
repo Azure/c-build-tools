@@ -3,7 +3,7 @@
 parameters:
 - name: 'cmake_command'
   type: string
-  default: '.. -G "Visual Studio 17 2022" -A x64'
+  default: '..'
 - name: 'configuration'
   type: string
   default: 'RelWithDebInfo'
@@ -20,7 +20,6 @@ jobs:
     name: ${{ parameters.pool_name }}
     demands:
     - Cmd
-    - msbuild
     - visualstudio
     - build
 
@@ -29,6 +28,10 @@ jobs:
 
   steps:
   - template: get_machine_information.yml
+
+  - template: discover_native_tools.yml
+    parameters:
+      architecture: 'x64'
 
   - task: BatchScript@1
     displayName: 'Git submodule update'
@@ -54,30 +57,98 @@ jobs:
       sourceFolder: $(Build.BinariesDirectory)
       contents: \*
 
-  - task: BatchScript@1
+  # Setup VS environment - use discovered vsPath for correct VS version
+  - task: PowerShell@2
     displayName: 'Setup VS Vars'
     inputs:
-      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
-      modifyEnvironment: true
+      targetType: 'inline'
+      script: |
+        # Find VS using vswhere (works for any VS version)
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+          $vsPath = & $vswhere -latest -products * -property installationPath
+          if ($vsPath) {
+            $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
+            if (Test-Path $vsDevCmd) {
+              Write-Host "Running VsDevCmd with x64 architecture: $vsDevCmd -arch=amd64"
+              cmd /c "`"$vsDevCmd`" -arch=amd64 && set" | ForEach-Object {
+                if ($_ -match "^([^=]+)=(.*)$") {
+                  [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+                }
+              }
+            } else {
+              Write-Host "##[warning]VsDevCmd.bat not found at $vsDevCmd"
+            }
+          }
+        } else {
+          Write-Host "##[warning]vswhere not found"
+        }
 
   - template: codeql3000_init.yml
     parameters:
       repo_root: ${{ parameters.repo_root }}
 
-  - task: CMake@1
-    displayName: 'CMake ${{parameters.cmake_command}} -DCMAKE_BUILD_TYPE=${{parameters.configuration}}'
+  # Use discovered cmake - cmake_command contains the source dir and extra options
+  # Generator, architecture, and build type are appended automatically
+  - task: PowerShell@2
+    displayName: 'CMake ${{parameters.cmake_command}} -G "$(cmakeGenerator)" -A x64'
     inputs:
-      workingDirectory: 'build_x64'
-      cmakeArgs: '${{parameters.cmake_command}} -DCMAKE_BUILD_TYPE=${{parameters.configuration}}'
+      targetType: 'inline'
+      script: |
+        $buildDir = "build_x64"
+        if (-not (Test-Path $buildDir)) {
+          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+        }
+        Push-Location $buildDir
+        try {
+          $argList = @()
+          # Parse cmake_command preserving quoted strings
+          $raw = "${{ parameters.cmake_command }}"
+          $argList += ($raw -split ' ' | Where-Object { $_ -ne '' })
+          $argList += '-G'
+          $argList += "$(cmakeGenerator)"
+          $argList += '-A'
+          $argList += 'x64'
+          $argList += "-DCMAKE_BUILD_TYPE=${{ parameters.configuration }}"
+          Write-Host "Executing: `"$(cmakePath)`" $($argList -join ' ')"
+          & "$(cmakePath)" @argList
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "CMake failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+        }
+        finally {
+          Pop-Location
+        }
 
-  - task: VSBuild@1
+  # Use discovered msbuild
+  - task: PowerShell@2
     displayName: 'Build solution build_x64\*.sln'
     inputs:
-      solution: 'build_x64\*.sln'
-      msbuildArgs: '/t:restore /t:build'
-      platform: x64
-      configuration: ${{parameters.configuration}}
-      maximumCpuCount: true
+      targetType: 'inline'
+      script: |
+        $solutions = Get-ChildItem -Path "build_x64\*.sln" -ErrorAction SilentlyContinue
+        if ($null -eq $solutions -or $solutions.Count -eq 0) {
+          Write-Error "No solution files found in build_x64\"
+          exit 1
+        }
+        foreach ($sln in $solutions) {
+          Write-Host "Building: $($sln.FullName)"
+          $args = @(
+            $sln.FullName,
+            "/t:restore",
+            "/t:build",
+            "/p:Platform=x64",
+            "/p:Configuration=${{ parameters.configuration }}",
+            "/m"
+          )
+          Write-Host "Executing: `"$(msbuildPath)`" $($args -join ' ')"
+          & "$(msbuildPath)" @args
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "MSBuild failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+        }
 
   - template: codeql3000_finalize.yml
     parameters:

@@ -58,7 +58,6 @@ jobs:
     name: ${{ parameters.pool_name }}
     demands:
     - msbuild
-    - cmake
     - visualstudio
 
   workspace:
