@@ -80,19 +80,26 @@ steps:
         Write-Host "Args:          $msbuildArgs"
         Write-Host "============================================================"
         
-        # Find solution file(s)
+        # Find solution file(s) - support both .sln and .slnx (VS 2026+)
         $solutions = Get-ChildItem -Path $solutionPattern -ErrorAction SilentlyContinue
+        # If pattern ends with *.sln, also search for *.slnx
+        if ($solutionPattern -like '*.sln') {
+          $solutions = @($solutions) + @(Get-ChildItem -Path "${solutionPattern}x" -ErrorAction SilentlyContinue)
+        }
         if ($null -eq $solutions -or $solutions.Count -eq 0) {
           # Try to resolve as a glob pattern
           $parentDir = Split-Path -Parent $solutionPattern
           $pattern = Split-Path -Leaf $solutionPattern
           if ($parentDir -and (Test-Path $parentDir)) {
             $solutions = Get-ChildItem -Path $parentDir -Filter $pattern -ErrorAction SilentlyContinue
+            if ($pattern -like '*.sln') {
+              $solutions = @($solutions) + @(Get-ChildItem -Path $parentDir -Filter "${pattern}x" -ErrorAction SilentlyContinue)
+            }
           }
         }
         
         if ($null -eq $solutions -or $solutions.Count -eq 0) {
-          Write-Error "No solution files found matching: $solutionPattern"
+          Write-Error "No solution files found matching: $solutionPattern (also tried .slnx)"
           exit 1
         }
         

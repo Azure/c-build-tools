@@ -123,13 +123,14 @@ jobs:
 
   # Use discovered msbuild
   - task: PowerShell@2
-    displayName: 'Build solution build_x64\*.sln'
+    displayName: 'Build solution build_x64'
     inputs:
       targetType: 'inline'
       script: |
-        $solutions = Get-ChildItem -Path "build_x64\*.sln" -ErrorAction SilentlyContinue
+        $solutions = Get-ChildItem -Path "build_x64" -Filter "*.sln" -ErrorAction SilentlyContinue
+        $solutions += Get-ChildItem -Path "build_x64" -Filter "*.slnx" -ErrorAction SilentlyContinue
         if ($null -eq $solutions -or $solutions.Count -eq 0) {
-          Write-Error "No solution files found in build_x64\"
+          Write-Error "No solution files (.sln or .slnx) found in build_x64\"
           exit 1
         }
         foreach ($sln in $solutions) {

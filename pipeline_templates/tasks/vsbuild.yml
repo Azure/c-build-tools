@@ -87,11 +87,14 @@ steps:
         Write-Host "Args:          $msbuildArgs"
         Write-Host "============================================================"
         
-        # Find solution file(s) - VSBuild supports wildcards
+        # Find solution file(s) - VSBuild supports wildcards, also check .slnx (VS 2026+)
         $solutions = @()
         if ($solutionPattern -match '\*') {
           # Glob pattern
-          $solutions = Get-ChildItem -Path $solutionPattern -Recurse -ErrorAction SilentlyContinue
+          $solutions = @(Get-ChildItem -Path $solutionPattern -Recurse -ErrorAction SilentlyContinue)
+          if ($solutionPattern -like '*.sln') {
+            $solutions += @(Get-ChildItem -Path "${solutionPattern}x" -Recurse -ErrorAction SilentlyContinue)
+          }
         } else {
           # Direct path
           if (Test-Path $solutionPattern) {
@@ -100,7 +103,7 @@ steps:
         }
         
         if ($solutions.Count -eq 0) {
-          Write-Error "No solution files found matching: $solutionPattern"
+          Write-Error "No solution files found matching: $solutionPattern (also tried .slnx)"
           exit 1
         }
         

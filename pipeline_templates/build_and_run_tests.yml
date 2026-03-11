@@ -157,7 +157,7 @@ jobs:
   - template: tasks/msbuild.yml
     parameters:
       architecture: ${{ parameters.ARCH_TYPE }}
-      solution: '$(Build.BinariesDirectory)/c/*.sln'
+      solution: '$(Build.BinariesDirectory)/c/*.sln*'
       configuration: '${{ parameters.build_configuration }}'
       msbuildArgs: '/t:restore /t:build'
 
