@@ -192,13 +192,18 @@ steps:
 
         # --- Agent Configuration ---
         Write-Host "--- Agent Configuration ---"
+        # Known agent root directories. The .agent config file lives at
+        # <root>/<version>/.agent (e.g. C:\vss-agent\4.269.0\.agent), so we
+        # only need to search one level deep - NOT recurse into bin/, externals/
+        # etc. which contain thousands of files and take minutes on ARM64.
         $agentPaths = @(
             "C:\a", "C:\Agent", "C:\vss-agent", "C:\azagent",
             "D:\a", "D:\Agent", "D:\vss-agent", "D:\azagent"
         )
         $found = $false
         foreach ($basePath in $agentPaths) {
-            $agentFiles = Get-ChildItem -Path $basePath -Recurse -Filter ".agent" -ErrorAction SilentlyContinue
+            if (-not (Test-Path $basePath)) { continue }
+            $agentFiles = Get-ChildItem -Path $basePath -Depth 1 -Filter ".agent" -ErrorAction SilentlyContinue
             foreach ($f in $agentFiles) {
                 $found = $true
                 Write-Host "  Found: $($f.FullName)"
