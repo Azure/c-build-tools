@@ -91,7 +91,7 @@ jobs:
   # Use discovered cmake - cmake_command contains the source dir and extra options
   # Generator, architecture, and build type are appended automatically
   - task: PowerShell@2
-    displayName: 'CMake ${{parameters.cmake_command}} -G "$(cmakeGenerator)" -A x64'
+    displayName: 'CMake Generate (x64 ${{ parameters.configuration }})'
     inputs:
       targetType: 'inline'
       script: |
