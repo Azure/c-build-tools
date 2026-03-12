@@ -93,8 +93,13 @@ steps:
       
       $testAssemblies = Get-ChildItem -Path "$(Build.BinariesDirectory)" -Recurse -Filter "*_ut_*.dll" | Where-Object { $_.FullName -notmatch '\\ref\\' }
       if ($testAssemblies.Count -eq 0) {
-        Write-Error "No test assemblies found matching pattern"
-        exit 1
+        if ('${{ parameters.failOnMinTestsNotRun }}' -eq 'true') {
+          Write-Error "No test assemblies found matching pattern"
+          exit 1
+        } else {
+          Write-Warning "No test assemblies found matching pattern, but failOnMinTestsNotRun is false - skipping"
+          exit 0
+        }
       }
       
       $args = @()
