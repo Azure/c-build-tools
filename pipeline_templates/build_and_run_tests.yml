@@ -41,7 +41,7 @@ parameters:
     default: false
   - name: pool_name
     type: string
-    default: "Azure-MessagingStore-WinBuildPoolVS2022_0"
+    default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -58,7 +58,6 @@ jobs:
     name: ${{ parameters.pool_name }}
     demands:
     - msbuild
-    - cmake
     - visualstudio
 
   workspace:
@@ -158,7 +157,7 @@ jobs:
   - template: tasks/msbuild.yml
     parameters:
       architecture: ${{ parameters.ARCH_TYPE }}
-      solution: '$(Build.BinariesDirectory)/c/*.sln'
+      solution: '$(Build.BinariesDirectory)/c/*.sln*'
       configuration: '${{ parameters.build_configuration }}'
       msbuildArgs: '/t:restore /t:build'
 

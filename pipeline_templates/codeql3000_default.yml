@@ -1,9 +1,12 @@
 # This is the job template for running CodeQL on a repository
 
 parameters:
-- name: 'cmake_command'
+- name: sourceDirectory
   type: string
-  default: '.. -G "Visual Studio 17 2022" -A x64'
+  default: '$(Build.SourcesDirectory)'
+- name: cmakeArgs
+  type: string
+  default: ''
 - name: 'configuration'
   type: string
   default: 'RelWithDebInfo'
@@ -11,7 +14,7 @@ parameters:
   default: $(Build.SourcesDirectory)/deps/c-build-tools
 - name: pool_name
   type: string
-  default: 'Azure-MessagingStore-WinBuildPoolVS2022_0'
+  default: 'Azure-MessagingStore-Win-x64-Dadsv5-v19'
 
 jobs:
 - job: codeql
@@ -20,7 +23,6 @@ jobs:
     name: ${{ parameters.pool_name }}
     demands:
     - Cmd
-    - msbuild
     - visualstudio
     - build
 
@@ -29,6 +31,10 @@ jobs:
 
   steps:
   - template: get_machine_information.yml
+
+  - template: discover_native_tools.yml
+    parameters:
+      architecture: 'x64'
 
   - task: BatchScript@1
     displayName: 'Git submodule update'
@@ -54,30 +60,23 @@ jobs:
       sourceFolder: $(Build.BinariesDirectory)
       contents: \*
 
-  - task: BatchScript@1
-    displayName: 'Setup VS Vars'
-    inputs:
-      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
-      modifyEnvironment: true
-
   - template: codeql3000_init.yml
     parameters:
       repo_root: ${{ parameters.repo_root }}
 
-  - task: CMake@1
-    displayName: 'CMake ${{parameters.cmake_command}} -DCMAKE_BUILD_TYPE=${{parameters.configuration}}'
-    inputs:
-      workingDirectory: 'build_x64'
-      cmakeArgs: '${{parameters.cmake_command}} -DCMAKE_BUILD_TYPE=${{parameters.configuration}}'
+  - template: tasks/cmake.yml
+    parameters:
+      architecture: 'x64'
+      sourceDirectory: ${{ parameters.sourceDirectory }}
+      buildDirectory: 'build_x64'
+      cmakeArgs: '-DCMAKE_BUILD_TYPE=${{ parameters.configuration }} ${{ parameters.cmakeArgs }}'
 
-  - task: VSBuild@1
-    displayName: 'Build solution build_x64\*.sln'
-    inputs:
-      solution: 'build_x64\*.sln'
+  - template: tasks/msbuild.yml
+    parameters:
+      architecture: 'x64'
+      solution: 'build_x64/*.sln'
+      configuration: ${{ parameters.configuration }}
       msbuildArgs: '/t:restore /t:build'
-      platform: x64
-      configuration: ${{parameters.configuration}}
-      maximumCpuCount: true
 
   - template: codeql3000_finalize.yml
     parameters:
