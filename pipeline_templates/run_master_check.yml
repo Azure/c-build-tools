@@ -11,7 +11,7 @@ parameters:
     type: string
   - name: pool_name
     type: string
-    default: "Azure-MessagingStore-WinBuildPoolVS2022_0"
+    default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
 
 jobs:
 - job: run_master_check
