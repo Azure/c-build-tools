@@ -1,9 +1,12 @@
 # This is the job template for running CodeQL on a repository
 
 parameters:
-- name: 'cmake_command'
+- name: sourceDirectory
   type: string
-  default: '..'
+  default: '$(Build.SourcesDirectory)'
+- name: cmakeArgs
+  type: string
+  default: ''
 - name: 'configuration'
   type: string
   default: 'RelWithDebInfo'
@@ -57,99 +60,23 @@ jobs:
       sourceFolder: $(Build.BinariesDirectory)
       contents: \*
 
-  # Setup VS environment - use discovered vsPath for correct VS version
-  - task: PowerShell@2
-    displayName: 'Setup VS Vars'
-    inputs:
-      targetType: 'inline'
-      script: |
-        # Find VS using vswhere (works for any VS version)
-        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-        if (Test-Path $vswhere) {
-          $vsPath = & $vswhere -latest -products * -property installationPath
-          if ($vsPath) {
-            $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
-            if (Test-Path $vsDevCmd) {
-              Write-Host "Running VsDevCmd with x64 architecture: $vsDevCmd -arch=amd64"
-              cmd /c "`"$vsDevCmd`" -arch=amd64 && set" | ForEach-Object {
-                if ($_ -match "^([^=]+)=(.*)$") {
-                  [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
-                }
-              }
-            } else {
-              Write-Host "##[warning]VsDevCmd.bat not found at $vsDevCmd"
-            }
-          }
-        } else {
-          Write-Host "##[warning]vswhere not found"
-        }
-
   - template: codeql3000_init.yml
     parameters:
       repo_root: ${{ parameters.repo_root }}
 
-  # Use discovered cmake - cmake_command contains the source dir and extra options
-  # Generator, architecture, and build type are appended automatically
-  - task: PowerShell@2
-    displayName: 'CMake Generate (x64 ${{ parameters.configuration }})'
-    inputs:
-      targetType: 'inline'
-      script: |
-        $buildDir = "build_x64"
-        if (-not (Test-Path $buildDir)) {
-          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
-        }
-        Push-Location $buildDir
-        try {
-          $argList = @()
-          # Parse cmake_command preserving quoted strings
-          $raw = "${{ parameters.cmake_command }}"
-          $argList += ($raw -split ' ' | Where-Object { $_ -ne '' })
-          $argList += '-G'
-          $argList += "$(cmakeGenerator)"
-          $argList += '-A'
-          $argList += 'x64'
-          $argList += "-DCMAKE_BUILD_TYPE=${{ parameters.configuration }}"
-          Write-Host "Executing: `"$(cmakePath)`" $($argList -join ' ')"
-          & "$(cmakePath)" @argList
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "CMake failed with exit code $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
-        }
-        finally {
-          Pop-Location
-        }
+  - template: tasks/cmake.yml
+    parameters:
+      architecture: 'x64'
+      sourceDirectory: ${{ parameters.sourceDirectory }}
+      buildDirectory: 'build_x64'
+      cmakeArgs: '-DCMAKE_BUILD_TYPE=${{ parameters.configuration }} ${{ parameters.cmakeArgs }}'
 
-  # Use discovered msbuild
-  - task: PowerShell@2
-    displayName: 'Build solution build_x64'
-    inputs:
-      targetType: 'inline'
-      script: |
-        $solutions = @(Get-ChildItem -Path "build_x64" -Filter "*.sln" -ErrorAction SilentlyContinue)
-        $solutions += @(Get-ChildItem -Path "build_x64" -Filter "*.slnx" -ErrorAction SilentlyContinue)
-        if ($null -eq $solutions -or $solutions.Count -eq 0) {
-          Write-Error "No solution files (.sln or .slnx) found in build_x64\"
-          exit 1
-        }
-        foreach ($sln in $solutions) {
-          Write-Host "Building: $($sln.FullName)"
-          $args = @(
-            $sln.FullName,
-            "/t:restore",
-            "/t:build",
-            "/p:Platform=x64",
-            "/p:Configuration=${{ parameters.configuration }}",
-            "/m"
-          )
-          Write-Host "Executing: `"$(msbuildPath)`" $($args -join ' ')"
-          & "$(msbuildPath)" @args
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "MSBuild failed with exit code $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
-        }
+  - template: tasks/msbuild.yml
+    parameters:
+      architecture: 'x64'
+      solution: 'build_x64/*.sln'
+      configuration: ${{ parameters.configuration }}
+      msbuildArgs: '/t:restore /t:build'
 
   - template: codeql3000_finalize.yml
     parameters:
