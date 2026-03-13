@@ -3,6 +3,11 @@
 
 cmake_minimum_required(VERSION 3.18)
 
+# Build the repo_validator executable when validation is enabled
+if(run_repo_validation)
+    add_subdirectory(src)
+endif()
+
 # Function to add repository validation target
 # This function creates a custom target that runs validation scripts on the repository
 # ONLY when called from a top-level repository (not from submodules/dependencies).
@@ -19,8 +24,9 @@ cmake_minimum_required(VERSION 3.18)
 #   fix_repo_validation_errors - Set to ON to automatically fix validation errors (default is OFF)
 #
 # The function will create a target named <project_name>_repo_validation that runs
-# all validation scripts located in the repo_validation/scripts directory.
-# If fix_repo_validation_errors is ON, scripts will be called with -Fix argument.
+# the compiled repo_validator tool or falls back to PowerShell validation scripts
+# for checks not yet migrated to the C tool.
+# If fix_repo_validation_errors is ON, the tool will be called with --fix argument.
 #
 # Note: 
 #   - The validation target is only created when this function is called from the top-level
@@ -64,20 +70,52 @@ function(add_repo_validation project_name)
     
     # Determine if we should fix errors
     set(FIX_ARG "")
+    set(FIX_ARG_C "")
     if(fix_repo_validation_errors)
         set(FIX_ARG "-Fix")
+        set(FIX_ARG_C "--fix")
         message(STATUS "Repository validation will attempt to fix errors (fix_repo_validation_errors=ON)")
     endif()
     
     # Build the exclude folders argument as comma-separated list
     string(REPLACE ";" "," EXCLUDE_FOLDERS_LIST "${REPO_VAL_EXCLUDE_FOLDERS}")
-    
-    # Find all PowerShell validation scripts
+
+    # Checks migrated to compiled C tool (Phase 1 + Phase 2)
+    set(C_CHECKS "no_tabs;file_endings;requirements_naming;srs_uniqueness;enable_mocks;no_vld_include;no_backticks_in_srs;test_spec_tags")
+
+    # Add compiled validator command for migrated checks
+    list(APPEND VALIDATION_COMMANDS
+        COMMAND ${CMAKE_COMMAND} -E echo "Running compiled validator (${C_CHECKS})"
+        COMMAND repo_validator --repo-root "${REPO_ROOT}" --exclude-folders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG_C}
+            --check no_tabs --check file_endings --check requirements_naming --check srs_uniqueness
+            --check enable_mocks --check no_vld_include --check no_backticks_in_srs --check test_spec_tags
+    )
+
+    # Find PowerShell validation scripts that have NOT been migrated
     file(GLOB VALIDATION_SCRIPTS "${VALIDATION_SCRIPTS_DIR}/*.ps1")
-    
-    # Build the command list
+
+    # Scripts migrated to C - exclude from PowerShell execution
+    set(MIGRATED_SCRIPTS
+        "validate_no_tabs.ps1"
+        "validate_file_endings.ps1"
+        "validate_requirements_naming.ps1"
+        "validate_srs_uniqueness.ps1"
+        "validate_enable_mocks_pattern.ps1"
+        "validate_no_vld_include.ps1"
+        "validate_no_backticks_in_srs.ps1"
+        "validate_test_spec_tags.ps1"
+    )
+
+    # Build the command list for remaining PowerShell scripts
     foreach(SCRIPT ${VALIDATION_SCRIPTS})
         get_filename_component(SCRIPT_NAME ${SCRIPT} NAME)
+        
+        # Skip scripts that have been migrated to C
+        list(FIND MIGRATED_SCRIPTS "${SCRIPT_NAME}" MIGRATED_INDEX)
+        if(MIGRATED_INDEX GREATER -1)
+            continue()
+        endif()
+
         list(APPEND VALIDATION_COMMANDS
             COMMAND ${CMAKE_COMMAND} -E echo "Running validation: ${SCRIPT_NAME}"
             COMMAND powershell -ExecutionPolicy Bypass -File "${SCRIPT}" -RepoRoot "${REPO_ROOT}" -ExcludeFolders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG}
@@ -89,6 +127,7 @@ function(add_repo_validation project_name)
         ${VALIDATION_COMMANDS}
         WORKING_DIRECTORY ${REPO_ROOT}
         COMMENT "Running repository validation for ${project_name}"
+        DEPENDS repo_validator
         VERBATIM
     )
     
