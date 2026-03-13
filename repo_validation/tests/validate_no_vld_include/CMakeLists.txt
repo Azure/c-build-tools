@@ -4,26 +4,24 @@
 #
 # VLD Include Validation Tests
 #
-# Tests the validate_no_vld_include.ps1 script to ensure it correctly detects
+# Tests the repo_validator no_vld_include check to ensure it correctly detects
 # explicit vld.h includes and validates the fix functionality works properly.
 #
 
-set(VALIDATE_NO_VLD_INCLUDE_SCRIPT "${VALIDATION_SCRIPTS_DIR}/validate_no_vld_include.ps1")
-
-# Test 1: Verify script detects vld.h includes in files that have them
+# Test 1: Verify tool detects vld.h includes in files that have them
 add_custom_target(test_validate_no_vld_include_detection
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_NO_VLD_INCLUDE_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/has_vld_include"
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_vld_include" --check no_vld_include
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing vld.h include detection on files with vld.h includes"
+    DEPENDS repo_validator
 )
 
-# Test 2: Verify script passes on files without vld.h includes
+# Test 2: Verify tool passes on files without vld.h includes
 add_custom_target(test_validate_no_vld_include_clean
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_NO_VLD_INCLUDE_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/no_vld_include"
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/no_vld_include" --check no_vld_include
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing vld.h include validation on clean files"
+    DEPENDS repo_validator
 )
 
 # Test 3: Verify fix functionality works (copy test files to temp directory first)
@@ -33,15 +31,13 @@ add_custom_target(test_validate_no_vld_include_fix
     COMMAND ${CMAKE_COMMAND} -E copy_directory 
         "${CMAKE_CURRENT_SOURCE_DIR}/has_vld_include" 
         "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-    # Run the script with fix mode
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_NO_VLD_INCLUDE_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-        -Fix
-    # Verify vld.h includes were removed (script should pass now)
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_NO_VLD_INCLUDE_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
+    # Run the tool with fix mode
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check no_vld_include --fix
+    # Verify vld.h includes were removed (tool should pass now)
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check no_vld_include
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing vld.h include fix functionality"
+    DEPENDS repo_validator
 )
 
 # Test 4: Verify that #ifdef blocks with other code are preserved correctly
@@ -51,16 +47,15 @@ add_custom_target(test_validate_no_vld_include_fix_preserves_other_code
     COMMAND ${CMAKE_COMMAND} -E copy 
         "${CMAKE_CURRENT_SOURCE_DIR}/has_vld_include/sample_with_ifdef_other_code.c" 
         "${CMAKE_CURRENT_BINARY_DIR}/temp_preserve_test/"
-    # Run the script with fix mode
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_NO_VLD_INCLUDE_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_preserve_test"
-        -Fix
+    # Run the tool with fix mode
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_preserve_test" --check no_vld_include --fix
     # Compare the result with the expected file
     COMMAND ${CMAKE_COMMAND} -E compare_files
         "${CMAKE_CURRENT_BINARY_DIR}/temp_preserve_test/sample_with_ifdef_other_code.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/has_vld_include/sample_with_ifdef_other_code_expected.c"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing that #ifdef blocks with other code are preserved"
+    DEPENDS repo_validator
 )
 
 # Master target for all vld include validation tests
