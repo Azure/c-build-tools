@@ -92,7 +92,7 @@ jobs:
       parameters:
         architecture: ${{ parameters.ARCH_TYPE }}
 
-  # Setup VS environment- use discovered vsPath for correct VS version
+  # Setup VS environment - use discovered vsPath for correct VS version
   - task: PowerShell@2
     displayName: 'Setup VS Vars'
     inputs:
