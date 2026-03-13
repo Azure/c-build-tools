@@ -66,9 +66,15 @@ jobs:
   steps:
   - template: get_machine_information.yml
 
+  # Shallow clone - only need the code at this commit, not full history
   - checkout: self
-    submodules: true
+    submodules: false
     clean: false
+    fetchDepth: 1
+
+  # Shallow submodules - only need the pinned commit, not full history
+  - script: git submodule update --init --depth 1
+    displayName: 'Shallow checkout submodules'
 
   # ARM64: Verify agent architecture and discover native tools
   - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
@@ -85,24 +91,6 @@ jobs:
     - template: discover_native_tools.yml
       parameters:
         architecture: ${{ parameters.ARCH_TYPE }}
-
-  - task: BatchScript@1
-    displayName: 'Git submodule update'
-    inputs:
-      filename: 'C:\Program Files\Git\bin\git.exe'
-      arguments: 'submodule update --init --force'
-
-  - task: BatchScript@1
-    displayName: 'Git submodule clean'
-    inputs:
-      filename: 'C:\Program Files\Git\bin\git.exe'
-      arguments: 'submodule foreach --recursive "git clean -xdff"'
-
-  - task: BatchScript@1
-    displayName: 'Git clean'
-    inputs:
-      filename: 'C:\Program Files\Git\bin\git.exe'
-      arguments: 'clean -xdff'
 
   # Setup VS environment - use discovered vsPath for correct VS version
   - task: PowerShell@2
