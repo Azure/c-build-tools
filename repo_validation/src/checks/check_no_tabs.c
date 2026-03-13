@@ -11,13 +11,16 @@ static int no_tabs_violations;
 
 static int no_tabs_init(const VALIDATOR_CONFIG* config)
 {
+    int result;
     (void)config;
     no_tabs_violations = 0;
-    return 0;
+    result = 0;
+    return result;
 }
 
 static int no_tabs_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* config)
 {
+    int result;
     int tab_count = 0;
     int first_tab_line = -1;
     int current_line = 1;
@@ -31,10 +34,22 @@ static int no_tabs_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* con
             {
                 first_tab_line = current_line;
             }
+            else
+            {
+                /* do nothing */
+            }
+        }
+        else
+        {
+            /* do nothing */
         }
         if (file->content[i] == '\n')
         {
             current_line++;
+        }
+        else
+        {
+            /* do nothing */
         }
     }
 
@@ -43,15 +58,25 @@ static int no_tabs_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* con
         if (config->fix_mode)
         {
             // Replace tabs with 4 spaces
-            // Count total size needed
             size_t new_size = file->content_length;
             for (size_t i = 0; i < file->content_length; i++)
             {
-                if (file->content[i] == '\t') new_size += 3; // tab -> 4 spaces = 3 extra
+                if (file->content[i] == '\t')
+                {
+                    new_size += 3; // tab -> 4 spaces = 3 extra
+                }
+                else
+                {
+                    /* do nothing */
+                }
             }
 
             char* new_content = (char*)malloc(new_size + 1);
-            if (new_content)
+            if (!new_content)
+            {
+                /* do nothing */
+            }
+            else
             {
                 size_t j = 0;
                 for (size_t i = 0; i < file->content_length; i++)
@@ -71,11 +96,15 @@ static int no_tabs_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* con
                 new_content[j] = '\0';
 
                 FILE* f = fopen(file->path, "wb");
-                if (f)
+                if (!f)
                 {
-                    fwrite(new_content, 1, j, f);
-                    fclose(f);
-                    printf("  [FIXED] %s - replaced %d tab(s) with spaces\n", file->relative_path, tab_count);
+                    /* do nothing */
+                }
+                else
+                {
+                    (void)fwrite(new_content, 1, j, f);
+                    (void)fclose(f);
+                    (void)printf("  [FIXED] %s - replaced %d tab(s) with spaces\n", file->relative_path, tab_count);
                 }
 
                 free(new_content);
@@ -83,19 +112,25 @@ static int no_tabs_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* con
         }
         else
         {
-            printf("  [ERROR] %s - contains %d tab(s), first at line %d\n", file->relative_path, tab_count, first_tab_line);
+            (void)printf("  [ERROR] %s - contains %d tab(s), first at line %d\n", file->relative_path, tab_count, first_tab_line);
             no_tabs_violations++;
         }
-        return 1;
+        result = 1;
+    }
+    else
+    {
+        result = 0;
     }
 
-    return 0;
+    return result;
 }
 
 static int no_tabs_finalize(const VALIDATOR_CONFIG* config)
 {
+    int result;
     (void)config;
-    return no_tabs_violations;
+    result = no_tabs_violations;
+    return result;
 }
 
 static void no_tabs_cleanup(void)

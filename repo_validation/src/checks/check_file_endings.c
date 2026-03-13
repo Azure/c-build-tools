@@ -11,108 +11,130 @@ static int file_endings_violations;
 
 static int file_endings_init(const VALIDATOR_CONFIG* config)
 {
+    int result;
     (void)config;
     file_endings_violations = 0;
-    return 0;
+    result = 0;
+    return result;
 }
 
 static int file_endings_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* config)
 {
-    if (file->content_length == 0) return 0;
+    int result;
 
-    // Check the last bytes
-    unsigned char last_byte = (unsigned char)file->content[file->content_length - 1];
-    unsigned char second_last = (file->content_length >= 2) ? (unsigned char)file->content[file->content_length - 2] : 0;
-
-    int is_valid = 0;
-    const char* issue = NULL;
-
-    if (last_byte == '\n' && second_last == '\r')
+    if (file->content_length == 0)
     {
-        // Proper CRLF ending
-        is_valid = 1;
-    }
-    else if (last_byte == '\n')
-    {
-        issue = "ends with LF only (expected CRLF)";
-    }
-    else if (last_byte == '\r')
-    {
-        issue = "ends with CR only (expected CRLF)";
+        result = 0;
     }
     else
     {
-        issue = "missing newline at end of file";
-    }
+        unsigned char last_byte = (unsigned char)file->content[file->content_length - 1];
+        unsigned char second_last = (file->content_length >= 2) ? (unsigned char)file->content[file->content_length - 2] : 0;
 
-    if (!is_valid)
-    {
-        if (config->fix_mode)
+        int is_valid = 0;
+        const char* issue = NULL;
+
+        if (last_byte == '\n' && second_last == '\r')
         {
-            FILE* f = fopen(file->path, "ab");
-            if (f)
+            // Proper CRLF ending
+            is_valid = 1;
+        }
+        else if (last_byte == '\n')
+        {
+            issue = "ends with LF only (expected CRLF)";
+        }
+        else if (last_byte == '\r')
+        {
+            issue = "ends with CR only (expected CRLF)";
+        }
+        else
+        {
+            issue = "missing newline at end of file";
+        }
+
+        if (!is_valid)
+        {
+            if (config->fix_mode)
             {
-                if (last_byte == '\n')
+                FILE* f = fopen(file->path, "ab");
+                if (!f)
                 {
-                    // LF only - need to insert CR before LF
-                    // Re-read, replace last byte
-                    fclose(f);
+                    /* do nothing */
+                }
+                else if (last_byte == '\n')
+                {
+                    // LF only - need to insert CR before LF; re-read, replace last byte
+                    (void)fclose(f);
                     f = fopen(file->path, "rb");
-                    if (f)
+                    if (!f)
+                    {
+                        /* do nothing */
+                    }
+                    else
                     {
                         char* content = (char*)malloc(file->content_length);
-                        if (content)
+                        if (!content)
                         {
-                            size_t read_count = fread(content, 1, file->content_length, f);
-                            fclose(f);
-                            f = fopen(file->path, "wb");
-                            if (f)
-                            {
-                                // Write everything except last byte, then CRLF
-                                fwrite(content, 1, read_count - 1, f);
-                                fwrite("\r\n", 1, 2, f);
-                                fclose(f);
-                                printf("  [FIXED] %s - converted LF to CRLF at end of file\n", file->relative_path);
-                            }
-                            free(content);
+                            (void)fclose(f);
                         }
                         else
                         {
-                            fclose(f);
+                            size_t read_count = fread(content, 1, file->content_length, f);
+                            (void)fclose(f);
+                            f = fopen(file->path, "wb");
+                            if (!f)
+                            {
+                                /* do nothing */
+                            }
+                            else
+                            {
+                                // Write everything except last byte, then CRLF
+                                (void)fwrite(content, 1, read_count - 1, f);
+                                (void)fwrite("\r\n", 1, 2, f);
+                                (void)fclose(f);
+                                (void)printf("  [FIXED] %s - converted LF to CRLF at end of file\n", file->relative_path);
+                            }
+                            free(content);
                         }
                     }
                 }
                 else if (last_byte == '\r')
                 {
                     // CR only - append LF
-                    fwrite("\n", 1, 1, f);
-                    fclose(f);
-                    printf("  [FIXED] %s - appended LF after CR at end of file\n", file->relative_path);
+                    (void)fwrite("\n", 1, 1, f);
+                    (void)fclose(f);
+                    (void)printf("  [FIXED] %s - appended LF after CR at end of file\n", file->relative_path);
                 }
                 else
                 {
                     // No newline - append CRLF
-                    fwrite("\r\n", 1, 2, f);
-                    fclose(f);
-                    printf("  [FIXED] %s - appended CRLF at end of file\n", file->relative_path);
+                    (void)fwrite("\r\n", 1, 2, f);
+                    (void)fclose(f);
+                    (void)printf("  [FIXED] %s - appended CRLF at end of file\n", file->relative_path);
                 }
             }
+            else
+            {
+                (void)printf("  [ERROR] %s - %s\n", file->relative_path, issue);
+                file_endings_violations++;
+            }
+            result = 1;
         }
         else
         {
-            printf("  [ERROR] %s - %s\n", file->relative_path, issue);
-            file_endings_violations++;
+            result = 0;
         }
-        return 1;
     }
 
-    return 0;
+    return result;
 }
 
 static int file_endings_finalize(const VALIDATOR_CONFIG* config)
 {
+    int result;
     (void)config;
-    return file_endings_violations;
+    result = file_endings_violations;
+    return result;
 }
 
 static void file_endings_cleanup(void)

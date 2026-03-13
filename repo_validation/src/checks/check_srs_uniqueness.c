@@ -38,172 +38,226 @@ static SRS_ENTRY* find_srs_tag(const char* tag)
 {
     unsigned int idx = hash_srs_tag(tag);
     SRS_ENTRY* e = srs_hash_table[idx];
-    while (e)
+    while (e != NULL && strcmp(e->tag, tag) != 0)
     {
-        if (strcmp(e->tag, tag) == 0) return e;
         e = e->next;
     }
-    return NULL;
+    return e;
 }
 
 static void insert_srs_tag(const char* tag, const char* file_path, int line)
 {
     unsigned int idx = hash_srs_tag(tag);
     SRS_ENTRY* e = (SRS_ENTRY*)malloc(sizeof(SRS_ENTRY));
-    if (!e) return;
-
-    strncpy(e->tag, tag, MAX_SRS_TAG_LEN - 1);
-    e->tag[MAX_SRS_TAG_LEN - 1] = '\0';
-    strncpy(e->file_path, file_path, MAX_PATH_LENGTH - 1);
-    e->file_path[MAX_PATH_LENGTH - 1] = '\0';
-    e->line_number = line;
-    e->next = srs_hash_table[idx];
-    srs_hash_table[idx] = e;
+    if (!e)
+    {
+        /* do nothing */
+    }
+    else
+    {
+        (void)strncpy(e->tag, tag, MAX_SRS_TAG_LEN - 1);
+        e->tag[MAX_SRS_TAG_LEN - 1] = '\0';
+        (void)strncpy(e->file_path, file_path, MAX_PATH_LENGTH - 1);
+        e->file_path[MAX_PATH_LENGTH - 1] = '\0';
+        e->line_number = line;
+        e->next = srs_hash_table[idx];
+        srs_hash_table[idx] = e;
+    }
 }
 
 static int is_srs_module_char(char c)
 {
-    return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    int result;
+    result = (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    return result;
 }
 
 static int srs_uniqueness_init(const VALIDATOR_CONFIG* config)
 {
+    int result;
     (void)config;
-    memset(srs_hash_table, 0, sizeof(srs_hash_table));
+    (void)memset(srs_hash_table, 0, sizeof(srs_hash_table));
     srs_total_tags = 0;
     srs_duplicate_found = 0;
     srs_files_scanned = 0;
-    return 0;
+    result = 0;
+    return result;
 }
 
 static int srs_uniqueness_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* config)
 {
+    int result;
     (void)config;
 
-    // Only process .md files in devdoc directories
-    if (!(file->type_flags & FILE_TYPE_MD)) return 0;
-    if (!(file->type_flags & FILE_FLAG_IN_DEVDOC)) return 0;
-
-    srs_files_scanned++;
-
-    const char* p = file->content;
-    const char* end = file->content + file->content_length;
-
-    while (p < end - 6)
+    if (!(file->type_flags & FILE_TYPE_MD))
     {
-        // Find "**SRS_"
-        const char* star = (const char*)memchr(p, '*', (size_t)(end - p));
-        if (!star || star >= end - 6) break;
+        result = 0;
+    }
+    else if (!(file->type_flags & FILE_FLAG_IN_DEVDOC))
+    {
+        result = 0;
+    }
+    else
+    {
+        srs_files_scanned++;
 
-        if (star[1] == '*' && star[2] == 'S' && star[3] == 'R' && star[4] == 'S' && star[5] == '_')
+        const char* p = file->content;
+        const char* end = file->content + file->content_length;
+
+        while (p < end - 6)
         {
-            const char* tag_start = star + 2; // 'S' of SRS
-            const char* q = star + 6; // after "**SRS_"
-
-            // Scan forward to find ':' (end of tag)
-            const char* colon = q;
-            while (colon < end && *colon != ':' && *colon != '\n' && *colon != '\r')
+            // Find "**SRS_"
+            const char* star = (const char*)memchr(p, '*', (size_t)(end - p));
+            if (!star || star >= end - 6)
             {
-                if (is_srs_module_char(*colon))
-                {
-                    colon++;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            if (colon >= end || *colon != ':')
-            {
-                p = star + 2;
-                continue;
-            }
-
-            // Validate tag ends with _DD_DDD by checking backwards from colon
-            size_t tag_len = (size_t)(colon - tag_start);
-            if (tag_len < 11) // minimum: SRS_X_DD_DDD
-            {
-                p = star + 2;
-                continue;
-            }
-
-            if (!isdigit((unsigned char)colon[-1]) || !isdigit((unsigned char)colon[-2]) || !isdigit((unsigned char)colon[-3]) ||
-                colon[-4] != '_' ||
-                !isdigit((unsigned char)colon[-5]) || !isdigit((unsigned char)colon[-6]) ||
-                colon[-7] != '_')
-            {
-                p = star + 2;
-                continue;
-            }
-
-            // Ensure there's at least one module char before _DD_DDD
-            if (colon - 7 <= q)
-            {
-                p = star + 2;
-                continue;
-            }
-
-            if (tag_len >= MAX_SRS_TAG_LEN)
-            {
-                p = star + 2;
-                continue;
-            }
-
-            char tag[MAX_SRS_TAG_LEN];
-            memcpy(tag, tag_start, tag_len);
-            tag[tag_len] = '\0';
-
-            int line = compute_line_number(file->content, (size_t)(star - file->content));
-            srs_total_tags++;
-
-            SRS_ENTRY* existing = find_srs_tag(tag);
-            if (existing)
-            {
-                srs_duplicate_found = 1;
-
-                const char* fname1 = strrchr(existing->file_path, PATH_SEP);
-#ifdef _WIN32
-                if (!fname1) fname1 = strrchr(existing->file_path, '/');
-#endif
-                if (fname1) fname1++;
-                else fname1 = existing->file_path;
-
-                const char* fname2 = strrchr(file->path, PATH_SEP);
-#ifdef _WIN32
-                if (!fname2) fname2 = strrchr(file->path, '/');
-#endif
-                if (fname2) fname2++;
-                else fname2 = file->path;
-
-                printf("  [ERROR] Duplicate SRS tag: %s\n", tag);
-                printf("          First occurrence: %s:%d\n", fname1, existing->line_number);
-                printf("          Duplicate found in: %s:%d\n", fname2, line);
+                break;
             }
             else
             {
-                insert_srs_tag(tag, file->path, line);
-            }
+                if (star[1] == '*' && star[2] == 'S' && star[3] == 'R' && star[4] == 'S' && star[5] == '_')
+                {
+                    const char* tag_start = star + 2; // 'S' of SRS
+                    const char* q = star + 6;         // after "**SRS_"
 
-            p = colon + 1;
+                    // Scan forward to find ':' (end of tag)
+                    const char* colon = q;
+                    while (colon < end && *colon != ':' && *colon != '\n' && *colon != '\r')
+                    {
+                        if (!is_srs_module_char(*colon))
+                        {
+                            break;
+                        }
+                        else
+                        {
+                            colon++;
+                        }
+                    }
+
+                    if (colon >= end || *colon != ':')
+                    {
+                        p = star + 2;
+                    }
+                    else
+                    {
+                        // Validate tag ends with _DD_DDD by checking backwards from colon
+                        size_t tag_len = (size_t)(colon - tag_start);
+                        if (tag_len < 11) // minimum: SRS_X_DD_DDD
+                        {
+                            p = star + 2;
+                        }
+                        else if (!isdigit((unsigned char)colon[-1]) || !isdigit((unsigned char)colon[-2]) || !isdigit((unsigned char)colon[-3]) ||
+                                 colon[-4] != '_' ||
+                                 !isdigit((unsigned char)colon[-5]) || !isdigit((unsigned char)colon[-6]) ||
+                                 colon[-7] != '_')
+                        {
+                            p = star + 2;
+                        }
+                        else if (colon - 7 <= q)
+                        {
+                            p = star + 2;
+                        }
+                        else if (tag_len >= MAX_SRS_TAG_LEN)
+                        {
+                            p = star + 2;
+                        }
+                        else
+                        {
+                            char tag[MAX_SRS_TAG_LEN];
+                            (void)memcpy(tag, tag_start, tag_len);
+                            tag[tag_len] = '\0';
+
+                            int line = compute_line_number(file->content, (size_t)(star - file->content));
+                            srs_total_tags++;
+
+                            SRS_ENTRY* existing = find_srs_tag(tag);
+                            if (existing)
+                            {
+                                srs_duplicate_found = 1;
+
+                                const char* fname1 = strrchr(existing->file_path, PATH_SEP);
+#ifdef _WIN32
+                                if (!fname1)
+                                {
+                                    fname1 = strrchr(existing->file_path, '/');
+                                }
+                                else
+                                {
+                                    /* do nothing */
+                                }
+#endif
+                                if (fname1)
+                                {
+                                    fname1++;
+                                }
+                                else
+                                {
+                                    fname1 = existing->file_path;
+                                }
+
+                                const char* fname2 = strrchr(file->path, PATH_SEP);
+#ifdef _WIN32
+                                if (!fname2)
+                                {
+                                    fname2 = strrchr(file->path, '/');
+                                }
+                                else
+                                {
+                                    /* do nothing */
+                                }
+#endif
+                                if (fname2)
+                                {
+                                    fname2++;
+                                }
+                                else
+                                {
+                                    fname2 = file->path;
+                                }
+
+                                (void)printf("  [ERROR] Duplicate SRS tag: %s\n", tag);
+                                (void)printf("          First occurrence: %s:%d\n", fname1, existing->line_number);
+                                (void)printf("          Duplicate found in: %s:%d\n", fname2, line);
+                            }
+                            else
+                            {
+                                insert_srs_tag(tag, file->path, line);
+                            }
+
+                            p = colon + 1;
+                        }
+                    }
+                }
+                else
+                {
+                    p = star + 1;
+                }
+            }
         }
-        else
-        {
-            p = star + 1;
-        }
+
+        result = 0;
     }
 
-    return 0;
+    return result;
 }
 
 static int srs_uniqueness_finalize(const VALIDATOR_CONFIG* config)
 {
+    int result;
     (void)config;
 
-    printf("\n  Requirement documents scanned: %d\n", srs_files_scanned);
-    printf("  Total SRS tags found: %d\n", srs_total_tags);
+    (void)printf("\n  Requirement documents scanned: %d\n", srs_files_scanned);
+    (void)printf("  Total SRS tags found: %d\n", srs_total_tags);
 
-    return srs_duplicate_found ? 1 : 0;
+    if (srs_duplicate_found)
+    {
+        result = 1;
+    }
+    else
+    {
+        result = 0;
+    }
+
+    return result;
 }
 
 static void srs_uniqueness_cleanup(void)
