@@ -4,26 +4,24 @@
 #
 # Requirements Naming Validation Tests
 #
-# Tests the validate_requirements_naming.ps1 script to ensure it correctly detects
+# Tests the repo_validator requirements_naming check to ensure it correctly detects
 # improperly named requirement documents and validates the fix functionality.
 #
 
-set(VALIDATE_REQUIREMENTS_NAMING_SCRIPT "${VALIDATION_SCRIPTS_DIR}/validate_requirements_naming.ps1")
-
-# Test 1: Verify script detects incorrectly named requirements
+# Test 1: Verify tool detects incorrectly named requirements
 add_custom_target(test_validate_requirements_naming_detection
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_REQUIREMENTS_NAMING_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/incorrect_naming"
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/incorrect_naming" --check requirements_naming
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing requirements naming detection on incorrectly named files"
+    DEPENDS repo_validator
 )
 
-# Test 2: Verify script passes on correctly named requirements
+# Test 2: Verify tool passes on correctly named requirements
 add_custom_target(test_validate_requirements_naming_clean
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_REQUIREMENTS_NAMING_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/correct_naming"
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/correct_naming" --check requirements_naming
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing requirements naming validation on correctly named files"
+    DEPENDS repo_validator
 )
 
 # Test 3: Verify fix functionality works
@@ -34,15 +32,13 @@ add_custom_target(test_validate_requirements_naming_fix
     COMMAND ${CMAKE_COMMAND} -E copy_directory 
         "${CMAKE_CURRENT_SOURCE_DIR}/incorrect_naming" 
         "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-    # Run the script with fix mode
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_REQUIREMENTS_NAMING_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-        -Fix
-    # Verify files were renamed correctly (script should pass now)
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_REQUIREMENTS_NAMING_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
+    # Run the tool with fix mode
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check requirements_naming --fix
+    # Verify files were renamed correctly (tool should pass now)
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check requirements_naming
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing requirements naming fix functionality"
+    DEPENDS repo_validator
 )
 
 # Master target for all requirements naming validation tests

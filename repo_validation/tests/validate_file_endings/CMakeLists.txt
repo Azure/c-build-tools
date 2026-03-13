@@ -4,26 +4,24 @@
 #
 # File Endings Validation Tests
 #
-# Tests the validate_file_endings.ps1 script to ensure it correctly detects files
+# Tests the repo_validator file_endings check to ensure it correctly detects files
 # without proper CRLF endings and validates the fix functionality works properly.
 #
 
-set(VALIDATE_FILE_ENDINGS_SCRIPT "${VALIDATION_SCRIPTS_DIR}/validate_file_endings.ps1")
-
-# Test 1: Verify script detects missing CRLF endings
+# Test 1: Verify tool detects missing CRLF endings
 add_custom_target(test_validate_file_endings_detection
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_FILE_ENDINGS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/missing_crlf"
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_crlf" --check file_endings
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing file ending detection on files missing CRLF"
+    DEPENDS repo_validator
 )
 
-# Test 2: Verify script passes on files with proper endings
+# Test 2: Verify tool passes on files with proper endings
 add_custom_target(test_validate_file_endings_clean
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_FILE_ENDINGS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/proper_crlf"
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/proper_crlf" --check file_endings
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing file ending validation on files with proper CRLF"
+    DEPENDS repo_validator
 )
 
 # Test 3: Verify fix functionality works
@@ -33,15 +31,13 @@ add_custom_target(test_validate_file_endings_fix
     COMMAND ${CMAKE_COMMAND} -E copy_directory 
         "${CMAKE_CURRENT_SOURCE_DIR}/missing_crlf" 
         "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-    # Run the script with fix mode
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_FILE_ENDINGS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-        -Fix
-    # Verify CRLF endings were added (script should pass now)
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_FILE_ENDINGS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
+    # Run the tool with fix mode
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check file_endings --fix
+    # Verify CRLF endings were added (tool should pass now)
+    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check file_endings
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing file ending fix functionality"
+    DEPENDS repo_validator
 )
 
 # Master target for all file ending validation tests
