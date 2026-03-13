@@ -12,108 +12,159 @@ static int requirements_naming_violations;
 
 static int requirements_naming_init(const VALIDATOR_CONFIG* config)
 {
+    int result;
     (void)config;
     requirements_naming_violations = 0;
-    return 0;
+    result = 0;
+    return result;
 }
 
 // Check if content contains an SRS tag pattern: SRS_XXXXXX_DD_DDD
 static int content_has_srs_tag(const char* content, size_t length)
 {
-    for (size_t i = 0; i + 15 < length; i++)
+    int result;
+    result = 0;
+
+    for (size_t i = 0; i + 15 < length && result == 0; i++)
     {
         if (content[i] == 'S' && content[i + 1] == 'R' && content[i + 2] == 'S' && content[i + 3] == '_')
         {
-            // Found SRS_, now look for _DD_DDD pattern after module name
             const char* p = content + i + 4;
             const char* end = content + length;
-
-            // Skip module name (A-Z, 0-9, _)
-            while (p < end && ((*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_')) p++;
-
-            // Backtrack: the last 7 chars before current position should be _DD_DDD
-            // Actually, we need to find the pattern where it ends with _DD_DDD
-            // Let's just scan from SRS_ to find the pattern with regex-like logic
-            p = content + i + 4;
-            // Scan to find at least one uppercase letter, then _DD_DDD
             int found_upper = 0;
+
             while (p < end - 6)
             {
-                if (*p >= 'A' && *p <= 'Z') found_upper = 1;
+                if (*p >= 'A' && *p <= 'Z')
+                {
+                    found_upper = 1;
+                }
+                else
+                {
+                    /* do nothing */
+                }
                 if (found_upper && *p == '_' && isdigit((unsigned char)p[1]) && isdigit((unsigned char)p[2]) &&
                     p[3] == '_' && isdigit((unsigned char)p[4]) && isdigit((unsigned char)p[5]) && isdigit((unsigned char)p[6]))
                 {
-                    return 1;
+                    result = 1;
+                    break;
                 }
-                if (!(*p >= 'A' && *p <= 'Z') && !(*p >= '0' && *p <= '9') && *p != '_') break;
-                p++;
+                else
+                {
+                    if (!(*p >= 'A' && *p <= 'Z') && !(*p >= '0' && *p <= '9') && *p != '_')
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        p++;
+                    }
+                }
             }
         }
+        else
+        {
+            /* do nothing */
+        }
     }
-    return 0;
+
+    return result;
 }
 
 static int requirements_naming_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* config)
 {
-    // Only process .md files in devdoc directories
-    if (!(file->type_flags & FILE_TYPE_MD)) return 0;
-    if (!(file->type_flags & FILE_FLAG_IN_DEVDOC)) return 0;
+    int result;
 
-    // Check if file contains SRS tags
-    if (!content_has_srs_tag(file->content, file->content_length)) return 0;
-
-    // Check if filename ends with _requirements.md
-    const char* filename = strrchr(file->path, PATH_SEP);
-#ifdef _WIN32
-    if (!filename) filename = strrchr(file->path, '/');
-#endif
-    if (filename) filename++;
-    else filename = file->path;
-
-    size_t name_len = strlen(filename);
-    const char* suffix = "_requirements.md";
-    size_t suffix_len = strlen(suffix);
-
-    if (name_len >= suffix_len && strcmp(filename + name_len - suffix_len, suffix) == 0)
+    if (!(file->type_flags & FILE_TYPE_MD))
     {
-        return 0; // Already has correct naming
+        result = 0;
     }
-
-    if (config->fix_mode)
+    else if (!(file->type_flags & FILE_FLAG_IN_DEVDOC))
     {
-        // Rename: strip .md, append _requirements.md
-        char new_path[MAX_PATH_LENGTH];
-        size_t path_len = strlen(file->path);
-        if (path_len < 3 || path_len >= MAX_PATH_LENGTH - 20) return 1;
-
-        // Remove .md extension
-        strncpy(new_path, file->path, path_len - 3);
-        new_path[path_len - 3] = '\0';
-        strcat(new_path, "_requirements.md");
-
-        if (rename(file->path, new_path) == 0)
-        {
-            printf("  [FIXED] %s -> %s\n", file->relative_path, strrchr(new_path, PATH_SEP) + 1);
-        }
-        else
-        {
-            printf("  [ERROR] Failed to rename %s\n", file->relative_path);
-            requirements_naming_violations++;
-        }
+        result = 0;
+    }
+    else if (!content_has_srs_tag(file->content, file->content_length))
+    {
+        result = 0;
     }
     else
     {
-        printf("  [ERROR] %s - requirement file should be named with '_requirements.md' suffix\n", file->relative_path);
-        requirements_naming_violations++;
+        // Check if filename ends with _requirements.md
+        const char* filename = strrchr(file->path, PATH_SEP);
+#ifdef _WIN32
+        if (!filename)
+        {
+            filename = strrchr(file->path, '/');
+        }
+        else
+        {
+            /* do nothing */
+        }
+#endif
+        if (filename)
+        {
+            filename++;
+        }
+        else
+        {
+            filename = file->path;
+        }
+
+        size_t name_len = strlen(filename);
+        const char* suffix = "_requirements.md";
+        size_t suffix_len = strlen(suffix);
+
+        if (name_len >= suffix_len && strcmp(filename + name_len - suffix_len, suffix) == 0)
+        {
+            result = 0; // Already has correct naming
+        }
+        else
+        {
+            if (config->fix_mode)
+            {
+                // Rename: strip .md, append _requirements.md
+                char new_path[MAX_PATH_LENGTH];
+                size_t path_len = strlen(file->path);
+                if (path_len < 3 || path_len >= MAX_PATH_LENGTH - 20)
+                {
+                    result = 1;
+                }
+                else
+                {
+                    (void)strncpy(new_path, file->path, path_len - 3);
+                    new_path[path_len - 3] = '\0';
+                    (void)strcat(new_path, "_requirements.md");
+
+                    if (rename(file->path, new_path) == 0)
+                    {
+                        (void)printf("  [FIXED] %s -> %s\n", file->relative_path, strrchr(new_path, PATH_SEP) + 1);
+                    }
+                    else
+                    {
+                        (void)printf("  [ERROR] Failed to rename %s\n", file->relative_path);
+                        requirements_naming_violations++;
+                    }
+                    result = 1;
+                }
+            }
+            else
+            {
+                (void)printf("  [ERROR] %s - requirement file should be named with '_requirements.md' suffix\n", file->relative_path);
+                requirements_naming_violations++;
+                result = 1;
+            }
+        }
     }
 
-    return 1;
+    return result;
 }
 
 static int requirements_naming_finalize(const VALIDATOR_CONFIG* config)
 {
+    int result;
     (void)config;
-    return requirements_naming_violations;
+    result = requirements_naming_violations;
+    return result;
 }
 
 static void requirements_naming_cleanup(void)
