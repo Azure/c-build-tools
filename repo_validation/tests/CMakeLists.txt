@@ -23,6 +23,7 @@ add_subdirectory(validate_enable_mocks_pattern)
 add_subdirectory(validate_test_spec_tags)
 add_subdirectory(validate_aaa_comments)
 add_subdirectory(validate_no_backticks_in_srs)
+add_subdirectory(validate_c_build_tools_ref)
 
 if(run_unittests)
     enable_testing()
@@ -66,5 +67,9 @@ if(run_unittests)
 
     add_test(NAME validate_no_backticks_in_srs_test
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target test_validate_no_backticks_in_srs
+    )
+
+    add_test(NAME validate_c_build_tools_ref_test
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target test_validate_c_build_tools_ref
     )
 endif()

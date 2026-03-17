@@ -1,0 +1,12 @@
+name: $(BuildID)_$(BuildDefinitionName)_docs
+
+resources:
+  repositories:
+  - repository: c_build_tools
+    type: github
+    name: azure/c-build-tools
+    endpoint: github.com_azure
+    ref: aabbccdd00112233445566778899aabbccddeeff
+
+jobs:
+- template: /pipeline_templates/build_docs.yml@c_build_tools
