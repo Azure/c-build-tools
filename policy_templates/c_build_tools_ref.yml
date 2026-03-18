@@ -1,0 +1,23 @@
+# c-build-tools ref variable template
+#
+# This file stores the c-build-tools commit SHA used by pipeline YAML files.
+# It is automatically updated by the propagation script (propagate_updates.ps1)
+# when c-build-tools changes are propagated across the repo tree.
+#
+# Usage in pipeline YAML:
+#   variables:
+#   - template: ../c_build_tools_ref.yml    # adjust path as needed
+#
+#   resources:
+#     repositories:
+#     - repository: c_build_tools
+#       type: github
+#       name: azure/c-build-tools
+#       endpoint: github.com_azure
+#       ref: ${{ variables.c_build_tools_ref }}
+#
+# The validate_c_build_tools_ref.ps1 validation script checks that this SHA
+# matches the c-build-tools git submodule commit.
+
+variables:
+  c_build_tools_ref: 'REPLACE_WITH_SUBMODULE_SHA'

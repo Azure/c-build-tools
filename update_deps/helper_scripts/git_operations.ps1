@@ -157,6 +157,200 @@ function update-submodules-to-fixed-commits
     }
 }
 
+# Update c-build-tools YAML refs to match the current submodule SHA.
+# After update-submodules-to-fixed-commits has checked out the new c-build-tools commit,
+# this function updates:
+# 1. c_build_tools_ref.yml (variable template file) if present
+# 2. Legacy inline ref: fields in YAML files with "repository: c_build_tools" blocks
+# This prevents validate_c_build_tools_ref from failing on propagation PRs.
+function update-c-build-tools-yaml-refs
+{
+    if (-not (Test-Path ".gitmodules"))
+    {
+        # no .gitmodules file, nothing to update
+        return
+    }
+
+    # Find c-build-tools submodule path from .gitmodules
+    $submodule_path = ""
+    $current_path = ""
+    $found_c_build_tools = $false
+
+    foreach ($line in (Get-Content ".gitmodules"))
+    {
+        if ($line -match '^\[submodule\s+"([^"]+)"\]')
+        {
+            $current_path = ""
+            $found_c_build_tools = $false
+        }
+        if ($line -match '^\s*path\s*=\s*(.+)$')
+        {
+            $current_path = $Matches[1].Trim()
+        }
+        if ($line -match '^\s*url\s*=\s*.*c-build-tools')
+        {
+            $found_c_build_tools = $true
+        }
+        if ($found_c_build_tools -and $current_path -ne "")
+        {
+            $submodule_path = $current_path
+            break
+        }
+    }
+
+    if ($submodule_path -eq "")
+    {
+        # no c-build-tools submodule found
+        return
+    }
+
+    # Get the current submodule SHA
+    $ls_tree_output = git ls-tree HEAD $submodule_path 2>&1
+    if ($LASTEXITCODE -ne 0)
+    {
+        Write-Host "  Warning: Could not get c-build-tools submodule SHA" -ForegroundColor Yellow
+        return
+    }
+
+    $new_sha = ""
+    if ($ls_tree_output -match '160000\s+commit\s+([0-9a-f]{40})')
+    {
+        $new_sha = $Matches[1]
+    }
+    else
+    {
+        Write-Host "  Warning: Could not parse c-build-tools submodule SHA" -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host "  c-build-tools submodule SHA: $($new_sha.Substring(0, 12))..."
+
+    # 1. Update c_build_tools_ref.yml if present
+    $ref_file = "c_build_tools_ref.yml"
+    if (Test-Path $ref_file)
+    {
+        $ref_content = Get-Content $ref_file -Raw
+        if ($ref_content -match "c_build_tools_ref:\s*'?([0-9a-f]{40})'?")
+        {
+            $old_ref_sha = $Matches[1]
+            if ($old_ref_sha -ne $new_sha)
+            {
+                $updated_content = $ref_content -replace "c_build_tools_ref:\s*'?[0-9a-f]{40}'?", "c_build_tools_ref: '$new_sha'"
+                $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                [System.IO.File]::WriteAllText((Resolve-Path $ref_file).Path, $updated_content, $utf8NoBom)
+                Write-Host "  Updated $ref_file ref: $($old_ref_sha.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+            }
+            else
+            {
+                Write-Host "  $ref_file already up to date" -ForegroundColor Gray
+            }
+        }
+        else
+        {
+            Write-Host "  Warning: Could not parse SHA from $ref_file" -ForegroundColor Yellow
+        }
+    }
+    else
+    {
+        # no c_build_tools_ref.yml, skip
+    }
+
+    # 2. Update legacy inline refs in YAML files
+    $yml_files = Get-ChildItem -Path "." -Recurse -Filter "*.yml" -ErrorAction SilentlyContinue
+    foreach ($file in $yml_files)
+    {
+        $relative_path = $file.FullName.Substring((Get-Location).Path.Length).TrimStart('\', '/')
+
+        # Skip files in deps/ and cmake/ directories
+        if ($relative_path -like "deps\*" -or $relative_path -like "deps/*" -or
+            $relative_path -like "cmake\*" -or $relative_path -like "cmake/*")
+        {
+            continue
+        }
+
+        $content = $null
+        try
+        {
+            $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
+        }
+        catch
+        {
+            continue
+        }
+
+        # Check if this file references c_build_tools repository
+        if ($content -notmatch 'repository:\s*c_build_tools')
+        {
+            continue
+        }
+
+        # Parse lines to find the ref in the c_build_tools block
+        $lines = Get-Content -Path $file.FullName
+        $in_c_build_tools_block = $false
+        $ref_line_index = -1
+        $ref_value = ""
+
+        for ($i = 0; $i -lt $lines.Count; $i++)
+        {
+            $line = $lines[$i]
+
+            if ($line -match '^\s*-?\s*repository:\s*c_build_tools\s*$')
+            {
+                $in_c_build_tools_block = $true
+                continue
+            }
+
+            if ($in_c_build_tools_block)
+            {
+                # Exit block on next repository definition or non-indented line
+                if ($line -match '^\s*-\s*repository:' -or ($line -match '^\S' -and $line -notmatch '^\s*$'))
+                {
+                    $in_c_build_tools_block = $false
+                    continue
+                }
+
+                if ($line -match '^\s*ref:\s*(.+)$')
+                {
+                    $ref_value = $Matches[1].Trim()
+                    $ref_line_index = $i
+                    $in_c_build_tools_block = $false
+                }
+            }
+        }
+
+        if ($ref_line_index -eq -1)
+        {
+            # no ref found
+            continue
+        }
+
+        # Skip refs/heads/master (acceptable transitional state)
+        if ($ref_value -eq "refs/heads/master")
+        {
+            continue
+        }
+
+        # Skip template expressions (handled by c_build_tools_ref.yml)
+        if ($ref_value -match '\$\{\{')
+        {
+            continue
+        }
+
+        # Update SHA refs that don't match the submodule
+        if ($ref_value -match '^[0-9a-f]{40}$' -and $ref_value -ne $new_sha)
+        {
+            $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
+            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
+            Write-Host "  Updated $relative_path ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+        }
+        else
+        {
+            # ref already matches or is not a SHA
+        }
+    }
+}
+
 # After a repo's PR is merged, fetch the new master HEAD and update fixed_commits
 # so that downstream repos use the commit created by this propagation.
 function update-fixed-commit
@@ -533,6 +727,8 @@ function update-local-repo
     git submodule update --init
     # update all submodules to their fixed commits (or latest master as fallback)
     update-submodules-to-fixed-commits
+    # Update c-build-tools YAML refs to match new submodule SHA
+    update-c-build-tools-yaml-refs
     # create new branch
     git checkout -B $new_branch_name
     Write-Host "`e[0m" -NoNewline

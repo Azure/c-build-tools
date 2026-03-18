@@ -154,7 +154,42 @@ $excludeDirs = $ExcludeFolders -split "," | ForEach-Object { $_.Trim() } | Where
 Write-Host "Excluded directories: $($excludeDirs -join ', ')" -ForegroundColor White
 Write-Host ""
 
-# Step 4: Find all YAML files and check for c-build-tools refs
+# Step 4: Validate c_build_tools_ref.yml variable template if present
+$refFilePath = Join-Path $RepoRoot "c_build_tools_ref.yml"
+$refFileChecked = $false
+$refFileValid = $true
+
+if (Test-Path $refFilePath) {
+    $refFileChecked = $true
+    $refFileContent = Get-Content -Path $refFilePath -Raw
+    if ($refFileContent -match "c_build_tools_ref:\s*'?([0-9a-f]{40})'?") {
+        $refFileSha = $Matches[1]
+        if ($refFileSha -eq $expectedSha) {
+            Write-Host "  [OK]   c_build_tools_ref.yml (SHA: $($refFileSha.Substring(0, 12))... matches submodule)" -ForegroundColor Green
+        } else {
+            Write-Host "  [FAIL] c_build_tools_ref.yml" -ForegroundColor Red
+            Write-Host "         SHA mismatch: file has $($refFileSha.Substring(0, 12))..., submodule is $($expectedSha.Substring(0, 12))..." -ForegroundColor Yellow
+            $refFileValid = $false
+
+            if ($Fix) {
+                try {
+                    $updatedContent = $refFileContent -replace "c_build_tools_ref:\s*'?[0-9a-f]{40}'?", "c_build_tools_ref: '$expectedSha'"
+                    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                    [System.IO.File]::WriteAllText($refFilePath, $updatedContent, $utf8NoBom)
+                    Write-Host "         [FIXED] Updated c_build_tools_ref.yml to $($expectedSha.Substring(0, 12))..." -ForegroundColor Green
+                    $refFileValid = $true
+                }
+                catch {
+                    Write-Host "         [ERROR] Failed to fix c_build_tools_ref.yml: $_" -ForegroundColor Red
+                }
+            }
+        }
+    } else {
+        Write-Host "  [WARN] c_build_tools_ref.yml exists but could not parse SHA" -ForegroundColor Yellow
+    }
+}
+
+# Step 5: Find all YAML files and check for c-build-tools refs
 $allYmlFiles = Get-ChildItem -Path $RepoRoot -Recurse -Filter "*.yml" -ErrorAction SilentlyContinue
 
 $totalFiles = 0
@@ -234,6 +269,11 @@ foreach ($file in $allYmlFiles) {
         $isValid = $true
         Write-Host "  [OK]   $relativePath (ref: refs/heads/master)" -ForegroundColor Green
     }
+    elseif ($refValue -match '\$\{\{') {
+        # Template expression (e.g., ${{ variables.c_build_tools_ref }}) — validated via c_build_tools_ref.yml
+        $isValid = $true
+        Write-Host "  [OK]   $relativePath (ref: template expression)" -ForegroundColor Green
+    }
     elseif ($refValue -match '^[0-9a-f]{40}$') {
         # It's a SHA - check if it matches the submodule
         if ($refValue -eq $expectedSha) {
@@ -282,6 +322,10 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Total YAML files scanned: $totalFiles" -ForegroundColor White
 Write-Host "Files with c_build_tools ref: $checkedFiles" -ForegroundColor White
 
+if ($refFileChecked) {
+    Write-Host "c_build_tools_ref.yml: $(if ($refFileValid) { 'valid' } else { 'INVALID' })" -ForegroundColor $(if ($refFileValid) { 'White' } else { 'Red' })
+}
+
 if ($Fix -and $fixedFiles.Count -gt 0) {
     Write-Host "Files fixed successfully: $($fixedFiles.Count)" -ForegroundColor Green
 }
@@ -298,8 +342,9 @@ if ($invalidFiles.Count -gt 0 -and -not $Fix) {
 }
 
 $unfixedFiles = $invalidFiles.Count - $fixedFiles.Count
+$refFileFailed = ($refFileChecked -and -not $refFileValid)
 
-if ($unfixedFiles -eq 0) {
+if ($unfixedFiles -eq 0 -and -not $refFileFailed) {
     Write-Host "[VALIDATION PASSED]" -ForegroundColor Green
     exit 0
 } else {
