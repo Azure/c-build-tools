@@ -113,7 +113,7 @@ function update-submodules-to-fixed-commits
                         Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
                         git fetch origin
                         git checkout $target_sha
-                        # Reset console color — git checkout may leave ANSI color codes active
+                        # Reset console color ΓÇö git checkout may leave ANSI color codes active
                         Write-Host "`e[0m" -NoNewline
 
                         # Warn if remote master has moved ahead of the fixed commit
@@ -154,6 +154,133 @@ function update-submodules-to-fixed-commits
     else
     {
         # no .gitmodules file
+    }
+}
+
+# Update c-build-tools YAML refs to match the current submodule SHA.
+# After update-submodules-to-fixed-commits has checked out the new c-build-tools commit,
+# this function updates inline ref: fields in build/*.yml files with "repository: c_build_tools"
+# blocks. This prevents validate_c_build_tools_ref from failing on propagation PRs.
+#
+# TODO Task 37156556: All repos should use c-build-tools ref from a fixed yml file
+# instead of hardcoded inline refs. Once that migration is complete, this function
+# can be simplified to only update the ref file.
+function update-c-build-tools-yaml-refs
+{
+    # Parse .gitmodules to find the c-build-tools submodule path
+    $submodule_path = ""
+    $current_path = ""
+    $found_c_build_tools = $false
+
+    foreach ($line in (Get-Content ".gitmodules"))
+    {
+        if ($line -match '^\[submodule\s+"([^"]+)"\]')
+        {
+            $current_path = ""
+            $found_c_build_tools = $false
+        }
+        if ($line -match '^\s*path\s*=\s*(.+)$')
+        {
+            $current_path = $Matches[1].Trim()
+        }
+        if ($line -match '^\s*url\s*=\s*.*c-build-tools')
+        {
+            $found_c_build_tools = $true
+        }
+        if ($found_c_build_tools -and $current_path -ne "")
+        {
+            $submodule_path = $current_path
+            break
+        }
+    }
+
+    if ($submodule_path -ne "")
+    {
+        # Get the current c-build-tools submodule commit SHA
+        $ls_tree_output = git ls-tree HEAD $submodule_path 2>&1
+        $new_sha = ""
+        if ($LASTEXITCODE -eq 0 -and $ls_tree_output -match '160000\s+commit\s+([0-9a-f]{40})')
+        {
+            $new_sha = $Matches[1]
+        }
+        else
+        {
+            Write-Host "  Warning: Could not get c-build-tools submodule SHA" -ForegroundColor Yellow
+        }
+
+        if ($new_sha -ne "")
+        {
+            Write-Host "  c-build-tools submodule SHA: $($new_sha.Substring(0, 12))..."
+
+            # Find pipeline YAML files in build/ that reference c_build_tools
+            $yml_files = Get-ChildItem -Path "build" -Filter "*.yml" -ErrorAction SilentlyContinue
+            foreach ($file in $yml_files)
+            {
+                $content = Get-Content -Path $file.FullName -Raw -ErrorAction SilentlyContinue
+                if (-not $content -or $content -notmatch 'repository:\s*c_build_tools')
+                {
+                    continue
+                }
+
+                # Parse lines to find the ref: value inside the c_build_tools repository block
+                $lines = Get-Content -Path $file.FullName
+                $in_c_build_tools_block = $false
+                $ref_line_index = -1
+                $ref_value = ""
+
+                for ($i = 0; $i -lt $lines.Count; $i++)
+                {
+                    $line = $lines[$i]
+
+                    if ($line -match '^\s*-?\s*repository:\s*c_build_tools\s*$')
+                    {
+                        $in_c_build_tools_block = $true
+                        continue
+                    }
+
+                    if ($in_c_build_tools_block)
+                    {
+                        # Exit block on next repository definition or non-indented line
+                        if ($line -match '^\s*-\s*repository:' -or ($line -match '^\S' -and $line -notmatch '^\s*$'))
+                        {
+                            $in_c_build_tools_block = $false
+                            continue
+                        }
+
+                        if ($line -match '^\s*ref:\s*(.+)$')
+                        {
+                            $ref_value = $Matches[1].Trim()
+                            $ref_line_index = $i
+                            $in_c_build_tools_block = $false
+                        }
+                    }
+                }
+
+                # Update SHA refs that don't match the submodule
+                if ($ref_line_index -ne -1 -and
+                    $ref_value -ne "refs/heads/master" -and
+                    $ref_value -match '^[0-9a-f]{40}$' -and
+                    $ref_value -ne $new_sha)
+                {
+                    $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
+                    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                    [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
+                    Write-Host "  Updated $($file.Name) ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+                }
+                else
+                {
+                    # ref already matches, is refs/heads/master, or not found
+                }
+            }
+        }
+        else
+        {
+            # could not determine SHA, skip YAML updates
+        }
+    }
+    else
+    {
+        # no c-build-tools submodule found, nothing to update
     }
 }
 
@@ -475,7 +602,7 @@ function build-propagation-description
         }
         $result.CommitBody = $body_lines -join "`n"
 
-        # Build PR title — only include repo names, not commit subjects
+        # Build PR title ΓÇö only include repo names, not commit subjects
         $pr_title = "[autogenerated] update deps: " + ($repo_names -join ", ")
         if ($pr_title.Length -gt 120)
         {
@@ -533,6 +660,8 @@ function update-local-repo
     git submodule update --init
     # update all submodules to their fixed commits (or latest master as fallback)
     update-submodules-to-fixed-commits
+    # Update c-build-tools YAML refs to match new submodule SHA
+    update-c-build-tools-yaml-refs
     # create new branch
     git checkout -B $new_branch_name
     Write-Host "`e[0m" -NoNewline

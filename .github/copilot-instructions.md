@@ -214,6 +214,13 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
   # .frame N  - Switch to frame N in the call stack
   # dt variable  - Display type and value of a variable
   ```
+  **Start with the assumption new code is at fault**: When making changes, it's more likely that the new code is causing test failures.
+   - **NEVER assume a bug is "pre-existing" or "external" without proof.** If a test crashes after your changes, your
+  changes are the most likely cause until proven otherwise.
+   - **Do not disable failing tests as a workaround** without exhausting debugging options and getting explicit user
+  approval.
+   - When a test fails, investigate root cause systematically — binary search, isolation, minimal repro — before
+  concluding it's unrelated.
 
 ### Linux Development
 
