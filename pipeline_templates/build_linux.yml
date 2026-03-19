@@ -5,6 +5,9 @@ parameters:
   - name: ctest_exclude_regex
     type: string
     default: ''
+  - name: pool_name
+    type: string
+    default: 'Azure-MsgStore-Linux2204BuildMachinePool'
 
 jobs:
 - job: linuxubuntu
@@ -13,20 +16,21 @@ jobs:
     Codeql.Enabled: false
     crash_reports_directory: $(Build.ArtifactStagingDirectory)/crash_reports
   pool:
-    name: Azure-MsgStore-Linux2204BuildMachinePool
+    name: ${{ parameters.pool_name }}
     demands:
       - linux
   workspace:
     clean: all
   steps:
-  - bash: |
-      pushd $(Build.Repository.LocalPath)
-      git submodule update --init
-      git submodule foreach --recursive "git clean -xdff"
-      git clean -xdff
-      popd
-    workingDirectory: '$(Build.Repository.LocalPath)'
-    displayName: 'git submodule update and clean'
+  # Shallow clone - only need the code at this commit, not full history
+  - checkout: self
+    submodules: false
+    clean: false
+    fetchDepth: 1
+
+  # Shallow submodules - only need the pinned commit, not full history
+  - bash: git submodule update --init --depth 1
+    displayName: 'Shallow checkout submodules'
 
   # Enable crash reports
   - bash: |

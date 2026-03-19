@@ -1,28 +1,26 @@
 # Task Wrapper Templates
 
-This folder contains wrapper templates for common Azure DevOps tasks that provide **transparent ARM64 native support**.
+This folder contains wrapper templates for common Azure DevOps build tasks that use **native tools discovered by `discover_native_tools.yml`**.
 
 ## Problem
 
-On ARM64 1ES build pools, Azure DevOps agent and many built-in tasks run under x86 emulation (WoW64). This causes:
-- **Performance degradation**: x86 emulated processes are significantly slower
-- **Tool version mismatches**: Tasks may invoke x64/x86 tools instead of native ARM64 tools
-- **Failures**: Some tasks (like VSTest@2) don't support ARM64 at all
+Azure DevOps built-in tasks (`CMake@1`, `MSBuild@1`, `VSBuild@1`, `VSTest@2`) rely on tools being in the system PATH or use their own discovery logic that may not work across all pool images and Visual Studio versions. This causes:
+- **Missing tools on newer images**: Pool images with VS 2026 may not have cmake in PATH
+- **Version-specific failures**: `VSTest@2` only supports VS [17.0, 18.0) and fails on VS 2026
+- **Hardcoded paths**: Some templates hardcode VS installation paths that break on new versions
 
 ## Solution
 
-These wrapper templates:
-1. **Detect the target architecture** at template expansion time
-2. **x64/x86**: Pass through to the original Azure DevOps task (unchanged behavior)
-3. **ARM64**: Use PowerShell to invoke native ARM64 tools directly, bypassing emulation
+These wrapper templates use `discover_native_tools.yml` to find the correct tool paths at runtime, then invoke them directly via PowerShell. This works consistently across all architectures (x64, x86, ARM64) and VS versions.
 
 ## Prerequisites
 
 All wrappers require the `discover_native_tools.yml` template to be called first, which sets:
-- `$(cmakePath)` - Native cmake.exe
-- `$(ctestPath)` - Native ctest.exe
-- `$(msbuildPath)` - Native MSBuild.exe
-- `$(cmakeGenerator)` - CMake generator string (e.g., "Visual Studio 17 2022")
+- `$(cmakePath)` - cmake.exe from the VS installation
+- `$(ctestPath)` - ctest.exe from the VS installation
+- `$(msbuildPath)` - MSBuild.exe (architecture-specific)
+- `$(vstestPath)` - vstest.console.exe (architecture-specific)
+- `$(cmakeGenerator)` - CMake generator string (e.g., "Visual Studio 18 2026")
 - `$(cmakeArch)` - CMake architecture flag (x64, Win32, ARM64)
 - `$(targetPlatform)` - MSBuild platform (x64, Win32, ARM64)
 
@@ -149,6 +147,7 @@ steps:
 
 ## Notes
 
-- Wrappers preserve all functionality of the original tasks for x64/x86 builds
-- ARM64 paths use native tools discovered by `discover_native_tools.yml`
-- Some features (like VSTest code coverage on ARM64) may have limitations until ADO tasks add native support
+- All architectures use discovered native tool paths via PowerShell
+- Tools are found inside the Visual Studio installation by `discover_native_tools.yml`
+- No dependency on cmake, msbuild, or vstest being in the system PATH
+- Code coverage via vstest uses `/collect:"Code Coverage"` in `otherConsoleOptions`

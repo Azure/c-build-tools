@@ -34,8 +34,8 @@ steps:
     targetPath: '$(Build.BinariesDirectory)'
     artifactName: 'tttracer_recordings'
     parallel: true
-    #our pool Azure-MessagingStore-WinBuildPoolVS2022_0 has machines of size Standard D32as v4, so using a parallelCount of 32 here
-    parallelCount: 32
+    #parallelCount is for parallel upload threads, 8 is the ADO default
+    parallelCount: 8
   condition: always()
 #it seems that tttracer cannot be stopped from recording until next reboot (or its folder removed!), so let's schedule now that
 - script: | 

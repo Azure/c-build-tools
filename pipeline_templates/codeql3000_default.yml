@@ -1,23 +1,28 @@
 # This is the job template for running CodeQL on a repository
 
 parameters:
-- name: 'cmake_command'
+- name: sourceDirectory
   type: string
-  default: '.. -G "Visual Studio 17 2022" -A x64'
+  default: '$(Build.SourcesDirectory)'
+- name: cmakeArgs
+  type: string
+  default: ''
 - name: 'configuration'
   type: string
   default: 'RelWithDebInfo'
 - name: repo_root
   default: $(Build.SourcesDirectory)/deps/c-build-tools
+- name: pool_name
+  type: string
+  default: 'Azure-MessagingStore-Win-x64-Dadsv5-v19'
 
 jobs:
 - job: codeql
   displayName: 'Run CodeQL on production code'
   pool:
-    name: Azure-MessagingStore-WinBuildPoolVS2022_0
+    name: ${{ parameters.pool_name }}
     demands:
     - Cmd
-    - msbuild
     - visualstudio
     - build
 
@@ -25,23 +30,21 @@ jobs:
     clean: all
 
   steps:
-  - task: BatchScript@1
-    displayName: 'Git submodule update'
-    inputs:
-      filename: 'C:\Program Files\Git\bin\git.exe'
-      arguments: 'submodule update --init --force'
+  - template: get_machine_information.yml
 
-  - task: BatchScript@1
-    displayName: 'Git submodule clean'
-    inputs:
-      filename: 'C:\Program Files\Git\bin\git.exe'
-      arguments: 'submodule foreach --recursive "git clean -xdff"'
+  - template: discover_native_tools.yml
+    parameters:
+      architecture: 'x64'
 
-  - task: BatchScript@1
-    displayName: 'Git clean'
-    inputs:
-      filename: 'C:\Program Files\Git\bin\git.exe'
-      arguments: 'clean -xdff'
+  # Shallow clone - only need the code at this commit, not full history
+  - checkout: self
+    submodules: false
+    clean: false
+    fetchDepth: 1
+
+  # Shallow submodules - only need the pinned commit, not full history
+  - script: git submodule update --init --depth 1
+    displayName: 'Shallow checkout submodules'
 
   - task: DeleteFiles@1
     displayName: 'Clean build binaries directory'
@@ -49,30 +52,23 @@ jobs:
       sourceFolder: $(Build.BinariesDirectory)
       contents: \*
 
-  - task: BatchScript@1
-    displayName: 'Setup VS Vars'
-    inputs:
-      filename: '"c:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"'
-      modifyEnvironment: true
-
   - template: codeql3000_init.yml
     parameters:
       repo_root: ${{ parameters.repo_root }}
 
-  - task: CMake@1
-    displayName: 'CMake ${{parameters.cmake_command}} -DCMAKE_BUILD_TYPE=${{parameters.configuration}}'
-    inputs:
-      workingDirectory: 'build_x64'
-      cmakeArgs: '${{parameters.cmake_command}} -DCMAKE_BUILD_TYPE=${{parameters.configuration}}'
+  - template: tasks/cmake.yml
+    parameters:
+      architecture: 'x64'
+      sourceDirectory: ${{ parameters.sourceDirectory }}
+      buildDirectory: 'build_x64'
+      cmakeArgs: '-DCMAKE_BUILD_TYPE=${{ parameters.configuration }} ${{ parameters.cmakeArgs }}'
 
-  - task: VSBuild@1
-    displayName: 'Build solution build_x64\*.sln'
-    inputs:
-      solution: 'build_x64\*.sln'
+  - template: tasks/msbuild.yml
+    parameters:
+      architecture: 'x64'
+      solution: 'build_x64/*.sln'
+      configuration: ${{ parameters.configuration }}
       msbuildArgs: '/t:restore /t:build'
-      platform: x64
-      configuration: ${{parameters.configuration}}
-      maximumCpuCount: true
 
   - template: codeql3000_finalize.yml
     parameters:

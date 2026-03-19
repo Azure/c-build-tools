@@ -1,11 +1,10 @@
 # Template: VSBuild Wrapper
-# Wraps VSBuild@1 task with ARM64 native support
+# Uses native MSBuild.exe discovered by discover_native_tools.yml
 #
-# On x64/x86: Uses the standard VSBuild@1 task
-# On ARM64: Uses native MSBuild.exe via PowerShell to avoid x86 emulation
+# All architectures use the discovered $(msbuildPath) directly via PowerShell,
+# eliminating dependency on VSBuild/MSBuild being discoverable by the ADO task.
 #
-# Note: VSBuild@1 is essentially MSBuild with VS-specific defaults.
-#       On ARM64 we redirect to native MSBuild.
+# Note: VSBuild is essentially MSBuild with VS-specific defaults.
 #
 # Prerequisites:
 #   - discover_native_tools.yml must be called first to set $(msbuildPath), $(targetPlatform)
@@ -63,99 +62,86 @@ parameters:
     default: false
 
 steps:
-  # x64/x86: Use standard VSBuild@1 task
-  - ${{ if ne(parameters.architecture, 'ARM64') }}:
-    - task: VSBuild@1
-      displayName: ${{ coalesce(parameters.displayName, format('VSBuild ({0} {1})', parameters.architecture, parameters.configuration)) }}
-      condition: ${{ parameters.condition }}
-      continueOnError: ${{ parameters.continueOnError }}
-      inputs:
-        solution: '${{ parameters.solution }}'
-        platform: '$(targetPlatform)'
-        configuration: '${{ parameters.configuration }}'
-        msbuildArgs: '${{ parameters.msbuildArgs }}'
-        maximumCpuCount: ${{ parameters.maximumCpuCount }}
-        restoreNugetPackages: ${{ parameters.restoreNuGetPackages }}
-        clean: ${{ parameters.clean }}
-
-  # ARM64: Use native MSBuild.exe via PowerShell
-  - ${{ if eq(parameters.architecture, 'ARM64') }}:
-    - task: PowerShell@2
-      displayName: ${{ coalesce(parameters.displayName, format('VSBuild ({0} {1})', parameters.architecture, parameters.configuration)) }}
-      condition: ${{ parameters.condition }}
-      continueOnError: ${{ parameters.continueOnError }}
-      inputs:
-        targetType: 'inline'
-        script: |
-          $solutionPattern = "${{ parameters.solution }}"
-          $configuration = "${{ parameters.configuration }}"
-          $msbuildArgs = "${{ parameters.msbuildArgs }}"
-          $maxCpuCount = [bool]::Parse("${{ parameters.maximumCpuCount }}")
-          $restoreNuget = [bool]::Parse("${{ parameters.restoreNuGetPackages }}")
-          $clean = [bool]::Parse("${{ parameters.clean }}")
-          
-          Write-Host "============================================================"
-          Write-Host "VSBuild (ARM64 Native via MSBuild)"
-          Write-Host "============================================================"
-          Write-Host "MSBuild:       $(msbuildPath)"
-          Write-Host "Platform:      $(targetPlatform)"
-          Write-Host "Configuration: $configuration"
-          Write-Host "Solution:      $solutionPattern"
-          Write-Host "Args:          $msbuildArgs"
-          Write-Host "============================================================"
-          
-          # Find solution file(s) - VSBuild supports wildcards
-          $solutions = @()
-          if ($solutionPattern -match '\*') {
-            # Glob pattern
-            $solutions = Get-ChildItem -Path $solutionPattern -Recurse -ErrorAction SilentlyContinue
-          } else {
-            # Direct path
-            if (Test-Path $solutionPattern) {
-              $solutions = @(Get-Item $solutionPattern)
-            }
+  # All architectures: Use native MSBuild.exe discovered by discover_native_tools.yml
+  - task: PowerShell@2
+    displayName: ${{ coalesce(parameters.displayName, format('VSBuild ({0} {1})', parameters.architecture, parameters.configuration)) }}
+    condition: ${{ parameters.condition }}
+    continueOnError: ${{ parameters.continueOnError }}
+    inputs:
+      targetType: 'inline'
+      script: |
+        $solutionPattern = "${{ parameters.solution }}"
+        $configuration = "${{ parameters.configuration }}"
+        $msbuildArgs = "${{ parameters.msbuildArgs }}"
+        $maxCpuCount = [bool]::Parse("${{ parameters.maximumCpuCount }}")
+        $restoreNuget = [bool]::Parse("${{ parameters.restoreNuGetPackages }}")
+        $clean = [bool]::Parse("${{ parameters.clean }}")
+        
+        Write-Host "============================================================"
+        Write-Host "VSBuild (${{ parameters.architecture }} via MSBuild)"
+        Write-Host "============================================================"
+        Write-Host "MSBuild:       $(msbuildPath)"
+        Write-Host "Platform:      $(targetPlatform)"
+        Write-Host "Configuration: $configuration"
+        Write-Host "Solution:      $solutionPattern"
+        Write-Host "Args:          $msbuildArgs"
+        Write-Host "============================================================"
+        
+        # Find solution file(s) - VSBuild supports wildcards, also check .slnx (VS 2026+)
+        $solutions = @()
+        if ($solutionPattern -match '\*') {
+          # Glob pattern
+          $solutions = @(Get-ChildItem -Path $solutionPattern -Recurse -ErrorAction SilentlyContinue)
+          if ($solutionPattern -like '*.sln') {
+            $solutions += @(Get-ChildItem -Path "${solutionPattern}x" -Recurse -ErrorAction SilentlyContinue)
           }
-          
-          if ($solutions.Count -eq 0) {
-            Write-Error "No solution files found matching: $solutionPattern"
-            exit 1
+        } else {
+          # Direct path
+          if (Test-Path $solutionPattern) {
+            $solutions = @(Get-Item $solutionPattern)
           }
-          
-          foreach ($sln in $solutions) {
-            Write-Host ""
-            Write-Host "Building: $($sln.FullName)"
-            
-            $args = @($sln.FullName)
-            $args += "/p:Configuration=$configuration"
-            $args += "/p:Platform=$(targetPlatform)"
-            
-            if ($maxCpuCount) {
-              $args += "/m"
-            }
-            
-            if ($restoreNuget) {
-              $args += "/restore"
-            }
-            
-            if ($clean) {
-              # Clean before build
-              Write-Host "Cleaning..."
-              $cleanArgs = @($sln.FullName, "/t:Clean", "/p:Configuration=$configuration", "/p:Platform=$(targetPlatform)")
-              & "$(msbuildPath)" @cleanArgs
-            }
-            
-            if ($msbuildArgs) {
-              $args += ($msbuildArgs -split ' ' | Where-Object { $_ -ne '' })
-            }
-            
-            Write-Host "Executing: `"$(msbuildPath)`" $($args -join ' ')"
-            & "$(msbuildPath)" @args
-            
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "VSBuild (MSBuild) failed with exit code $LASTEXITCODE"
-              exit $LASTEXITCODE
-            }
-          }
-          
+        }
+        
+        if ($solutions.Count -eq 0) {
+          Write-Error "No solution files found matching: $solutionPattern (also tried .slnx)"
+          exit 1
+        }
+        
+        foreach ($sln in $solutions) {
           Write-Host ""
-          Write-Host "VSBuild completed successfully"
+          Write-Host "Building: $($sln.FullName)"
+          
+          $args = @($sln.FullName)
+          $args += "/p:Configuration=$configuration"
+          $args += "/p:Platform=$(targetPlatform)"
+          
+          if ($maxCpuCount) {
+            $args += "/m"
+          }
+          
+          if ($restoreNuget) {
+            $args += "/restore"
+          }
+          
+          if ($clean) {
+            # Clean before build
+            Write-Host "Cleaning..."
+            $cleanArgs = @($sln.FullName, "/t:Clean", "/p:Configuration=$configuration", "/p:Platform=$(targetPlatform)")
+            & "$(msbuildPath)" @cleanArgs
+          }
+          
+          if ($msbuildArgs) {
+            $args += ($msbuildArgs -split ' ' | Where-Object { $_ -ne '' })
+          }
+          
+          Write-Host "Executing: `"$(msbuildPath)`" $($args -join ' ')"
+          & "$(msbuildPath)" @args
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "VSBuild (MSBuild) failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+        }
+        
+        Write-Host ""
+        Write-Host "VSBuild completed successfully"

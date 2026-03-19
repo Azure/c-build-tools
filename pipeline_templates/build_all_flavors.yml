@@ -26,6 +26,12 @@ parameters:
     type: string
     default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_traceability:BOOL=ON -Drun_repo_validation:BOOL=ON"
 
+  # additional_cmake_options is appended to cmake_options. Use this to add extra
+  # options without replacing the defaults (e.g. -Drun_perf_tests:BOOL=ON).
+  - name: additional_cmake_options
+    type: string
+    default: ""
+
   # If this parameter is specified the specified test suite will be run without invoking ctest
   - name: run_test_suite_without_ctest
     type: string
@@ -51,6 +57,12 @@ parameters:
   - name: failOnMinTestsNotRun
     type: boolean
     default: true
+  - name: pool_name_x64
+    type: string
+    default: "Azure-MessagingStore-WinBuildPoolVS2022_1"
+  - name: pool_name_arm64
+    type: string
+    default: "Azure-MessagingStore-Win-ARM64-Dpldsv6-v28"
 
 jobs:
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
@@ -67,13 +79,17 @@ jobs:
               build_configuration: ${{ BUILD_CONFIGURATION_TYPE }}
               FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
               ARCH_TYPE: ${{ ARCH_TYPE }}
-              cmake_options: ${{ parameters.cmake_options }}
+              cmake_options: ${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }}
               run_test_suite_without_ctest: ${{ parameters.run_test_suite_without_ctest }}
               with_app_verifier: ${{ parameters.with_app_verifier }}
               repo_root_override: ${{ parameters.repo_root_override }}
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
               failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
+              ${{ if eq(ARCH_TYPE, 'ARM64') }}:
+                pool_name: ${{ parameters.pool_name_arm64 }}
+              ${{ else }}:
+                pool_name: ${{ parameters.pool_name_x64 }}
               # ARM64 builds are optional (non-blocking)
               ${{ if eq(ARCH_TYPE, 'ARM64') }}:
                 is_optional: true
