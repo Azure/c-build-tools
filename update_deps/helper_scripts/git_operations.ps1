@@ -200,15 +200,27 @@ function update-c-build-tools-yaml-refs
 
     if ($submodule_path -ne "")
     {
-        # Get the current c-build-tools submodule commit SHA
-        $ls_tree_output = git ls-tree HEAD $submodule_path 2>&1
+        # Get the c-build-tools submodule SHA from the working tree (not HEAD, since
+        # update-submodules-to-fixed-commits has already checked out the new commit)
         $new_sha = ""
-        # git ls-tree output format: "160000 commit <sha>\t<path>" for submodule entries
-        if ($LASTEXITCODE -eq 0 -and $ls_tree_output -match '160000\s+commit\s+([0-9a-f]{40})')
+        if (Test-Path $submodule_path)
         {
-            $new_sha = $Matches[1]
+            $new_sha = (git -C $submodule_path rev-parse HEAD 2>$null)
+            if ($LASTEXITCODE -ne 0)
+            {
+                $new_sha = ""
+            }
+            else
+            {
+                $new_sha = $new_sha.Trim()
+            }
         }
         else
+        {
+            # submodule path doesn't exist
+        }
+
+        if ($new_sha -eq "")
         {
             Write-Host "  Warning: Could not get c-build-tools submodule SHA" -ForegroundColor Yellow
         }
