@@ -113,7 +113,7 @@ function update-submodules-to-fixed-commits
                         Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
                         git fetch origin
                         git checkout $target_sha
-                        # Reset console color ΓÇö git checkout may leave ANSI color codes active
+                        # Reset console color — git checkout may leave ANSI color codes active
                         Write-Host "`e[0m" -NoNewline
 
                         # Warn if remote master has moved ahead of the fixed commit
@@ -161,10 +161,6 @@ function update-submodules-to-fixed-commits
 # After update-submodules-to-fixed-commits has checked out the new c-build-tools commit,
 # this function updates inline ref: fields in build/*.yml files with "repository: c_build_tools"
 # blocks. This prevents validate_c_build_tools_ref from failing on propagation PRs.
-#
-# TODO Task 37156556: All repos should use c-build-tools ref from a fixed yml file
-# instead of hardcoded inline refs. Once that migration is complete, this function
-# can be simplified to only update the ref file.
 function update-c-build-tools-yaml-refs
 {
     # Parse .gitmodules to find the c-build-tools submodule path
@@ -174,19 +170,23 @@ function update-c-build-tools-yaml-refs
 
     foreach ($line in (Get-Content ".gitmodules"))
     {
+        # Check for submodule section header
         if ($line -match '^\[submodule\s+"([^"]+)"\]')
         {
             $current_path = ""
             $found_c_build_tools = $false
         }
+        # Extract the submodule path
         if ($line -match '^\s*path\s*=\s*(.+)$')
         {
             $current_path = $Matches[1].Trim()
         }
+        # Check if this submodule's URL points to c-build-tools
         if ($line -match '^\s*url\s*=\s*.*c-build-tools')
         {
             $found_c_build_tools = $true
         }
+        # If we found the c-build-tools URL and have its path, we're done
         if ($found_c_build_tools -and $current_path -ne "")
         {
             $submodule_path = $current_path
@@ -199,6 +199,7 @@ function update-c-build-tools-yaml-refs
         # Get the current c-build-tools submodule commit SHA
         $ls_tree_output = git ls-tree HEAD $submodule_path 2>&1
         $new_sha = ""
+        # git ls-tree output format: "160000 commit <sha>\t<path>" for submodule entries
         if ($LASTEXITCODE -eq 0 -and $ls_tree_output -match '160000\s+commit\s+([0-9a-f]{40})')
         {
             $new_sha = $Matches[1]
@@ -216,60 +217,69 @@ function update-c-build-tools-yaml-refs
             $yml_files = Get-ChildItem -Path "build" -Filter "*.yml" -ErrorAction SilentlyContinue
             foreach ($file in $yml_files)
             {
+                # Skip files that don't reference c_build_tools
                 $content = Get-Content -Path $file.FullName -Raw -ErrorAction SilentlyContinue
                 if (-not $content -or $content -notmatch 'repository:\s*c_build_tools')
                 {
-                    continue
-                }
-
-                # Parse lines to find the ref: value inside the c_build_tools repository block
-                $lines = Get-Content -Path $file.FullName
-                $in_c_build_tools_block = $false
-                $ref_line_index = -1
-                $ref_value = ""
-
-                for ($i = 0; $i -lt $lines.Count; $i++)
-                {
-                    $line = $lines[$i]
-
-                    if ($line -match '^\s*-?\s*repository:\s*c_build_tools\s*$')
-                    {
-                        $in_c_build_tools_block = $true
-                        continue
-                    }
-
-                    if ($in_c_build_tools_block)
-                    {
-                        # Exit block on next repository definition or non-indented line
-                        if ($line -match '^\s*-\s*repository:' -or ($line -match '^\S' -and $line -notmatch '^\s*$'))
-                        {
-                            $in_c_build_tools_block = $false
-                            continue
-                        }
-
-                        if ($line -match '^\s*ref:\s*(.+)$')
-                        {
-                            $ref_value = $Matches[1].Trim()
-                            $ref_line_index = $i
-                            $in_c_build_tools_block = $false
-                        }
-                    }
-                }
-
-                # Update SHA refs that don't match the submodule
-                if ($ref_line_index -ne -1 -and
-                    $ref_value -ne "refs/heads/master" -and
-                    $ref_value -match '^[0-9a-f]{40}$' -and
-                    $ref_value -ne $new_sha)
-                {
-                    $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
-                    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-                    [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
-                    Write-Host "  Updated $($file.Name) ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+                    # file does not reference c_build_tools, skip
                 }
                 else
                 {
-                    # ref already matches, is refs/heads/master, or not found
+                    # Parse lines to find the ref: value inside the c_build_tools repository block
+                    $lines = Get-Content -Path $file.FullName
+                    $in_c_build_tools_block = $false
+                    $ref_line_index = -1
+                    $ref_value = ""
+
+                    for ($i = 0; $i -lt $lines.Count; $i++)
+                    {
+                        $line = $lines[$i]
+
+                        # Detect start of c_build_tools repository block
+                        if ($line -match '^\s*-?\s*repository:\s*c_build_tools\s*$')
+                        {
+                            $in_c_build_tools_block = $true
+                        }
+                        elseif ($in_c_build_tools_block)
+                        {
+                            # Exit block on next repository definition or non-indented line
+                            if ($line -match '^\s*-\s*repository:' -or ($line -match '^\S' -and $line -notmatch '^\s*$'))
+                            {
+                                $in_c_build_tools_block = $false
+                            }
+                            elseif ($line -match '^\s*ref:\s*(.+)$')
+                            {
+                                # Found the ref: line in the c_build_tools block
+                                $ref_value = $Matches[1].Trim()
+                                $ref_line_index = $i
+                                $in_c_build_tools_block = $false
+                            }
+                            else
+                            {
+                                # other line inside the block (type, name, endpoint), skip
+                            }
+                        }
+                        else
+                        {
+                            # not in c_build_tools block, skip line
+                        }
+                    }
+
+                    # Update SHA refs that don't match the submodule
+                    if ($ref_line_index -ne -1 -and
+                        $ref_value -ne "refs/heads/master" -and
+                        $ref_value -match '^[0-9a-f]{40}$' -and
+                        $ref_value -ne $new_sha)
+                    {
+                        $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
+                        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                        [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
+                        Write-Host "  Updated $($file.Name) ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+                    }
+                    else
+                    {
+                        # ref already matches, is refs/heads/master, or not found
+                    }
                 }
             }
         }
