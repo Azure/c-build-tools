@@ -159,7 +159,7 @@ function update-submodules-to-fixed-commits
 
 # Update c-build-tools YAML refs to match the current submodule SHA.
 # After update-submodules-to-fixed-commits has checked out the new c-build-tools commit,
-# this function updates inline ref: fields in YAML files with "repository: c_build_tools"
+# this function updates inline ref: fields in build/*.yml files with "repository: c_build_tools"
 # blocks. This prevents validate_c_build_tools_ref from failing on propagation PRs.
 #
 # TODO Task 37156556: All repos should use c-build-tools ref from a fixed yml file
@@ -167,13 +167,7 @@ function update-submodules-to-fixed-commits
 # can be simplified to only update the ref file.
 function update-c-build-tools-yaml-refs
 {
-    if (-not (Test-Path ".gitmodules"))
-    {
-        # no .gitmodules file, nothing to update
-        return
-    }
-
-    # Find c-build-tools submodule path from .gitmodules
+    # Parse .gitmodules to find the c-build-tools submodule path
     $submodule_path = ""
     $current_path = ""
     $found_c_build_tools = $false
@@ -200,120 +194,93 @@ function update-c-build-tools-yaml-refs
         }
     }
 
-    if ($submodule_path -eq "")
+    if ($submodule_path -ne "")
     {
-        # no c-build-tools submodule found
-        return
-    }
-
-    # Get the current submodule SHA
-    $ls_tree_output = git ls-tree HEAD $submodule_path 2>&1
-    if ($LASTEXITCODE -ne 0)
-    {
-        Write-Host "  Warning: Could not get c-build-tools submodule SHA" -ForegroundColor Yellow
-        return
-    }
-
-    $new_sha = ""
-    if ($ls_tree_output -match '160000\s+commit\s+([0-9a-f]{40})')
-    {
-        $new_sha = $Matches[1]
-    }
-    else
-    {
-        Write-Host "  Warning: Could not parse c-build-tools submodule SHA" -ForegroundColor Yellow
-        return
-    }
-
-    Write-Host "  c-build-tools submodule SHA: $($new_sha.Substring(0, 12))..."
-
-    # Update inline refs in YAML files
-    $yml_files = Get-ChildItem -Path "." -Recurse -Filter "*.yml" -ErrorAction SilentlyContinue
-    foreach ($file in $yml_files)
-    {
-        $relative_path = $file.FullName.Substring((Get-Location).Path.Length).TrimStart('\', '/')
-
-        # Skip files in deps/ and cmake/ directories
-        if ($relative_path -like "deps\*" -or $relative_path -like "deps/*" -or
-            $relative_path -like "cmake\*" -or $relative_path -like "cmake/*")
+        # Get the current c-build-tools submodule commit SHA
+        $ls_tree_output = git ls-tree HEAD $submodule_path 2>&1
+        $new_sha = ""
+        if ($LASTEXITCODE -eq 0 -and $ls_tree_output -match '160000\s+commit\s+([0-9a-f]{40})')
         {
-            continue
-        }
-
-        $content = $null
-        try
-        {
-            $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
-        }
-        catch
-        {
-            continue
-        }
-
-        # Check if this file references c_build_tools repository
-        if ($content -notmatch 'repository:\s*c_build_tools')
-        {
-            continue
-        }
-
-        # Parse lines to find the ref in the c_build_tools block
-        $lines = Get-Content -Path $file.FullName
-        $in_c_build_tools_block = $false
-        $ref_line_index = -1
-        $ref_value = ""
-
-        for ($i = 0; $i -lt $lines.Count; $i++)
-        {
-            $line = $lines[$i]
-
-            if ($line -match '^\s*-?\s*repository:\s*c_build_tools\s*$')
-            {
-                $in_c_build_tools_block = $true
-                continue
-            }
-
-            if ($in_c_build_tools_block)
-            {
-                # Exit block on next repository definition or non-indented line
-                if ($line -match '^\s*-\s*repository:' -or ($line -match '^\S' -and $line -notmatch '^\s*$'))
-                {
-                    $in_c_build_tools_block = $false
-                    continue
-                }
-
-                if ($line -match '^\s*ref:\s*(.+)$')
-                {
-                    $ref_value = $Matches[1].Trim()
-                    $ref_line_index = $i
-                    $in_c_build_tools_block = $false
-                }
-            }
-        }
-
-        if ($ref_line_index -eq -1)
-        {
-            # no ref found
-            continue
-        }
-
-        # Skip refs/heads/master (acceptable transitional state)
-        if ($ref_value -eq "refs/heads/master")
-        {
-            continue
-        }
-
-        # Update SHA refs that don't match the submodule
-        if ($ref_value -match '^[0-9a-f]{40}$' -and $ref_value -ne $new_sha)
-        {
-            $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
-            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-            [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
-            Write-Host "  Updated $relative_path ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+            $new_sha = $Matches[1]
         }
         else
         {
-            # ref already matches or is not a SHA
+            Write-Host "  Warning: Could not get c-build-tools submodule SHA" -ForegroundColor Yellow
         }
+
+        if ($new_sha -ne "")
+        {
+            Write-Host "  c-build-tools submodule SHA: $($new_sha.Substring(0, 12))..."
+
+            # Find pipeline YAML files in build/ that reference c_build_tools
+            $yml_files = Get-ChildItem -Path "build" -Filter "*.yml" -ErrorAction SilentlyContinue
+            foreach ($file in $yml_files)
+            {
+                $content = Get-Content -Path $file.FullName -Raw -ErrorAction SilentlyContinue
+                if (-not $content -or $content -notmatch 'repository:\s*c_build_tools')
+                {
+                    continue
+                }
+
+                # Parse lines to find the ref: value inside the c_build_tools repository block
+                $lines = Get-Content -Path $file.FullName
+                $in_c_build_tools_block = $false
+                $ref_line_index = -1
+                $ref_value = ""
+
+                for ($i = 0; $i -lt $lines.Count; $i++)
+                {
+                    $line = $lines[$i]
+
+                    if ($line -match '^\s*-?\s*repository:\s*c_build_tools\s*$')
+                    {
+                        $in_c_build_tools_block = $true
+                        continue
+                    }
+
+                    if ($in_c_build_tools_block)
+                    {
+                        # Exit block on next repository definition or non-indented line
+                        if ($line -match '^\s*-\s*repository:' -or ($line -match '^\S' -and $line -notmatch '^\s*$'))
+                        {
+                            $in_c_build_tools_block = $false
+                            continue
+                        }
+
+                        if ($line -match '^\s*ref:\s*(.+)$')
+                        {
+                            $ref_value = $Matches[1].Trim()
+                            $ref_line_index = $i
+                            $in_c_build_tools_block = $false
+                        }
+                    }
+                }
+
+                # Update SHA refs that don't match the submodule
+                if ($ref_line_index -ne -1 -and
+                    $ref_value -ne "refs/heads/master" -and
+                    $ref_value -match '^[0-9a-f]{40}$' -and
+                    $ref_value -ne $new_sha)
+                {
+                    $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
+                    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                    [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
+                    Write-Host "  Updated $($file.Name) ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+                }
+                else
+                {
+                    # ref already matches, is refs/heads/master, or not found
+                }
+            }
+        }
+        else
+        {
+            # could not determine SHA, skip YAML updates
+        }
+    }
+    else
+    {
+        # no c-build-tools submodule found, nothing to update
     }
 }
 
