@@ -12,7 +12,7 @@ configuration:
     - if:
       - payloadType: Pull_Request
       - filesMatchPattern:
-          pattern: (^deps/|c_build_tools_ref\.yml$)
+          pattern: ^deps/*
       - isOpen
       then:
       - approvePullRequest:
