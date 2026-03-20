@@ -48,4 +48,26 @@ TEST_FUNCTION(sample_test_with_multiple_tags)
     ASSERT_IS_TRUE(1);
 }
 
+/*Tests_SRS_SAMPLE_MODULE_01_005: [ parameterized test requirement. ]*/
+/*Tests_SRS_SAMPLE_MODULE_01_006: [ another requirement. ]*/
+PARAMETERIZED_TEST_FUNCTION(sample_parameterized_test_with_tags,
+    ARGS(int, value, int, expected),
+    CASE((1, 1), with_one),
+    CASE((2, 2), with_two),
+    CASE((0, 0), with_zero))
+{
+    // Test implementation
+    ASSERT_ARE_EQUAL(int, expected, value);
+}
+
+// Tests_SRS_SAMPLE_MODULE_01_007: [ parameterized test with cpp style tag. ]
+PARAMETERIZED_TEST_FUNCTION(sample_parameterized_with_cpp_tag,
+    ARGS(int, input),
+    CASE((42), with_42),
+    CASE((0), with_zero))
+{
+    // Test implementation
+    ASSERT_IS_TRUE(input >= 0);
+}
+
 END_TEST_SUITE(sample_module_ut)
