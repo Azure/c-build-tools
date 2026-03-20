@@ -159,10 +159,12 @@ function update-submodules-to-fixed-commits
 
 # Update c-build-tools YAML refs to match the current submodule SHA.
 # After update-submodules-to-fixed-commits has checked out the new c-build-tools commit,
-# this function updates:
-# 1. c_build_tools_ref.yml (variable template file) if present
-# 2. Legacy inline ref: fields in YAML files with "repository: c_build_tools" blocks
-# This prevents validate_c_build_tools_ref from failing on propagation PRs.
+# this function updates inline ref: fields in YAML files with "repository: c_build_tools"
+# blocks. This prevents validate_c_build_tools_ref from failing on propagation PRs.
+#
+# TODO Task 37156556: All repos should use c-build-tools ref from a fixed yml file
+# instead of hardcoded inline refs. Once that migration is complete, this function
+# can be simplified to only update the ref file.
 function update-c-build-tools-yaml-refs
 {
     if (-not (Test-Path ".gitmodules"))
@@ -225,37 +227,7 @@ function update-c-build-tools-yaml-refs
 
     Write-Host "  c-build-tools submodule SHA: $($new_sha.Substring(0, 12))..."
 
-    # 1. Update c_build_tools_ref.yml if present
-    $ref_file = "c_build_tools_ref.yml"
-    if (Test-Path $ref_file)
-    {
-        $ref_content = Get-Content $ref_file -Raw
-        if ($ref_content -match "c_build_tools_ref:\s*'?([0-9a-f]{40})'?")
-        {
-            $old_ref_sha = $Matches[1]
-            if ($old_ref_sha -ne $new_sha)
-            {
-                $updated_content = $ref_content -replace "c_build_tools_ref:\s*'?[0-9a-f]{40}'?", "c_build_tools_ref: '$new_sha'"
-                $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-                [System.IO.File]::WriteAllText((Resolve-Path $ref_file).Path, $updated_content, $utf8NoBom)
-                Write-Host "  Updated $ref_file ref: $($old_ref_sha.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
-            }
-            else
-            {
-                Write-Host "  $ref_file already up to date" -ForegroundColor Gray
-            }
-        }
-        else
-        {
-            Write-Host "  Warning: Could not parse SHA from $ref_file" -ForegroundColor Yellow
-        }
-    }
-    else
-    {
-        # no c_build_tools_ref.yml, skip
-    }
-
-    # 2. Update legacy inline refs in YAML files
+    # Update inline refs in YAML files
     $yml_files = Get-ChildItem -Path "." -Recurse -Filter "*.yml" -ErrorAction SilentlyContinue
     foreach ($file in $yml_files)
     {
@@ -326,12 +298,6 @@ function update-c-build-tools-yaml-refs
 
         # Skip refs/heads/master (acceptable transitional state)
         if ($ref_value -eq "refs/heads/master")
-        {
-            continue
-        }
-
-        # Skip template expressions (handled by c_build_tools_ref.yml)
-        if ($ref_value -match '\$\{\{')
         {
             continue
         }
