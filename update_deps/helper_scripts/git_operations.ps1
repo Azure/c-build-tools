@@ -192,6 +192,10 @@ function update-c-build-tools-yaml-refs
             $submodule_path = $current_path
             break
         }
+        else
+        {
+            # haven't found c-build-tools submodule yet, continue parsing
+        }
     }
 
     if ($submodule_path -ne "")
