@@ -167,7 +167,8 @@ foreach ($file in $allFiles) {
         $line = $content[$i]
         
         # Check for TEST_FUNCTION or PARAMETERIZED_TEST_FUNCTION declaration
-        if ($line -match '^\s*PARAMETERIZED_TEST_FUNCTION\s*\(' -or $line -match '^\s*TEST_FUNCTION\s*\(') {
+        # A single regex matches both since PARAMETERIZED_TEST_FUNCTION also ends with TEST_FUNCTION
+        if ($line -match '^\s*\w*TEST_FUNCTION\s*\(') {
             $totalTestFunctions++
             
             # Determine the macro type and extract the test function name for reporting
@@ -177,7 +178,7 @@ foreach ($file in $allFiles) {
                 $macroName = $matches[1].Trim()
                 $testName = $matches[2].Trim()
             }
-            elseif ($line -match 'TEST_FUNCTION\s*\(\s*([^\)]+)\s*\)') {
+            elseif ($line -match '^\s*TEST_FUNCTION\s*\(\s*([^\)]+)\s*\)') {
                 $testName = $matches[1].Trim()
             }
             

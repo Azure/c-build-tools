@@ -37,4 +37,14 @@ TEST_FUNCTION(another_exempt_test) /* no-srs */
     ASSERT_IS_TRUE(1);
 }
 
+// Parameterized test exempted from requiring spec tags
+PARAMETERIZED_TEST_FUNCTION(exempt_parameterized_test, // no-srs
+    ARGS(int, value),
+    CASE((1), with_one),
+    CASE((2), with_two))
+{
+    // Helper parameterized test
+    ASSERT_IS_TRUE(value > 0);
+}
+
 END_TEST_SUITE(exempt_module_ut)
