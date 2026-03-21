@@ -7,12 +7,18 @@
 
 .DESCRIPTION
     This script checks all unit test files (*_ut.c) to ensure that each TEST_FUNCTION
-    is tagged with at least one Tests_ specification tag in a comment preceding
-    the test function.
+    and PARAMETERIZED_TEST_FUNCTION is tagged with at least one Tests_ specification
+    tag in a comment preceding the test function.
     
     The expected pattern is:
       /*Tests_SRS_MODULE_XX_YYY: [ description ]*/
       TEST_FUNCTION(test_name)
+    
+    Or for parameterized tests:
+      /*Tests_SRS_MODULE_XX_YYY: [ description ]*/
+      PARAMETERIZED_TEST_FUNCTION(base_name,
+          ARGS(type, param),
+          CASE((value), suffix))
     
     Or for module-specific tags without SRS prefix:
       /*Tests_MODULE_XX_YYY: [ description ]*/
@@ -160,13 +166,19 @@ foreach ($file in $allFiles) {
     for ($i = 0; $i -lt $content.Count; $i++) {
         $line = $content[$i]
         
-        # Check for TEST_FUNCTION declaration
-        if ($line -match '^\s*TEST_FUNCTION\s*\(') {
+        # Check for TEST_FUNCTION or PARAMETERIZED_TEST_FUNCTION declaration
+        # A single regex matches both since PARAMETERIZED_TEST_FUNCTION also ends with TEST_FUNCTION
+        if ($line -match '^\s*\w*TEST_FUNCTION\s*\(') {
             $totalTestFunctions++
             
-            # Extract the test function name for reporting
+            # Determine the macro type and extract the test function name for reporting
             $testName = ""
-            if ($line -match 'TEST_FUNCTION\s*\(\s*([^\)]+)\s*\)') {
+            $macroName = "TEST_FUNCTION"
+            if ($line -match '^\s*(PARAMETERIZED_TEST_FUNCTION)\s*\(\s*([^,\)]+)') {
+                $macroName = $matches[1].Trim()
+                $testName = $matches[2].Trim()
+            }
+            elseif ($line -match '^\s*TEST_FUNCTION\s*\(\s*([^\)]+)\s*\)') {
                 $testName = $matches[1].Trim()
             }
             
@@ -251,6 +263,7 @@ foreach ($file in $allFiles) {
                     FullPath = $file.FullName
                     LineNumber = $lineNumber
                     TestName = $testName
+                    MacroName = $macroName
                 }
             }
         }
@@ -290,7 +303,7 @@ if ($testsWithoutTags.Count -gt 0) {
     
     foreach ($violation in $testsWithoutTags) {
         Write-Host "  $($violation.FilePath):$($violation.LineNumber)" -ForegroundColor Red
-        Write-Host "    TEST_FUNCTION($($violation.TestName))" -ForegroundColor White
+        Write-Host "    $($violation.MacroName)($($violation.TestName))" -ForegroundColor White
     }
     
     Write-Host ""
