@@ -224,8 +224,7 @@ function update-c-build-tools-yaml-refs
         {
             Write-Host "  Warning: Could not get c-build-tools submodule SHA" -ForegroundColor Yellow
         }
-
-        if ($new_sha -ne "")
+        else
         {
             Write-Host "  c-build-tools submodule SHA: $($new_sha.Substring(0, 12))..."
 
