@@ -623,13 +623,24 @@ else
 ## Additional Conventions {#additional-conventions}
 
 ### Initialize volatile_atomic Variables with interlocked_exchange
-Never use direct assignment for `volatile_atomic` fields. Always use `interlocked_exchange` or similar:
+Never use direct assignment for `volatile_atomic` fields. Always use `interlocked_exchange` or similar. Regular (non-atomic) fields use normal assignment:
 ```c
-// WRONG: Direct assignment
+typedef struct MY_CONTEXT_TAG
+{
+    uint16_t port;                      // regular field
+    volatile_atomic int32_t go;         // atomic field
+    volatile_atomic int32_t stop;       // atomic field
+} MY_CONTEXT;
+
+// WRONG: Direct assignment for volatile_atomic fields
+MY_CONTEXT ctx;
+ctx.port = 4242;
 ctx.go = 0;
 ctx.stop = 0;
 
-// CORRECT: Use interlocked_exchange
+// CORRECT: interlocked_exchange for volatile_atomic, direct for regular
+MY_CONTEXT ctx;
+ctx.port = 4242;
 (void)interlocked_exchange(&ctx.go, 0);
 (void)interlocked_exchange(&ctx.stop, 0);
 ```
