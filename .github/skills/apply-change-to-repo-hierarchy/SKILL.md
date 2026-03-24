@@ -173,23 +173,6 @@ Use the `ado-repo_create_pull_request` tool:
 
 **Wait for the PR to be reviewed and merged before proceeding to the next repository in the hierarchy.** This ensures that when parent repos update their submodule references, the new commits exist in the submodule's main branch.
 
-### Step 10: Monitor PR status
-
-After creating PRs, provide the user with a command to monitor all PRs in a live dashboard. Use the `watch_prs.ps1` script from c-build-tools, passing all PR URLs as a comma-separated list:
-
-```powershell
-pwsh <c-build-tools-path>/.github/scripts/watch_prs.ps1 -PRs "<comma-separated PR URLs>"
-```
-
-Build this command by collecting all PR URLs created during the workflow and joining them with commas. Present the full command to the user so they can copy-paste it into a separate terminal.
-
-**Example**:
-```
-pwsh C:\r\change-default-pool\c-build-tools\.github\scripts\watch_prs.ps1 -PRs "https://github.com/Azure/c-logging/pull/306,https://github.com/Azure/ctest/pull/298,https://msazure.visualstudio.com/One/_git/zrpc/pullrequest/15088625"
-```
-
-The dashboard refreshes every 30 seconds and shows color-coded status for each PR (green=passed, yellow=running, red=failed, magenta=merged).
-
 ## Example workflow
 
 ```powershell
