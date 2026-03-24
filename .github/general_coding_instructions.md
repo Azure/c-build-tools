@@ -622,6 +622,52 @@ else
 
 ## Additional Conventions {#additional-conventions}
 
+### Initialize volatile_atomic Variables with interlocked_exchange
+Never use direct assignment for `volatile_atomic` fields. Always use `interlocked_exchange` or similar:
+```c
+// WRONG: Direct assignment
+ctx.go = 0;
+ctx.stop = 0;
+
+// CORRECT: Use interlocked_exchange
+(void)interlocked_exchange(&ctx.go, 0);
+(void)interlocked_exchange(&ctx.stop, 0);
+```
+
+### Use InterlockedHL_SetAndWakeAll for Broadcast Signals
+When signaling multiple waiting threads, use `InterlockedHL_SetAndWakeAll` instead of separate set + wake calls:
+```c
+// WRONG: Separate set and wake
+(void)InterlockedHL_SetAndWake(&ctx.go, 1);
+wake_by_address_all(&ctx.go);
+
+// CORRECT: Combined function
+(void)InterlockedHL_SetAndWakeAll(&ctx.go, 1);
+```
+
+### Use Enums for State Tracking, Not Magic Integers
+Never use `-1`, `0`, `1` as state flags. Define proper enums with `INTERLOCKED_DEFINE_VOLATILE_STATE_ENUM`:
+```c
+// WRONG: Magic integers for state
+volatile_atomic int32_t open_result; // 0=pending, 1=OK, -1=failed
+(void)InterlockedHL_SetAndWake(&open_result, 1);
+
+// CORRECT: Named enum with INTERLOCKED_DEFINE_VOLATILE_STATE_ENUM
+#define MY_STATE_VALUES \
+    MY_STATE_PENDING, \
+    MY_STATE_OK, \
+    MY_STATE_FAILED
+
+MU_DEFINE_ENUM(MY_STATE, MY_STATE_VALUES)
+
+typedef struct MY_CONTEXT_TAG
+{
+    INTERLOCKED_DEFINE_VOLATILE_STATE_ENUM(MY_STATE, open_result);
+} MY_CONTEXT;
+
+(void)InterlockedHL_SetAndWake(&ctx->open_result, MY_STATE_OK);
+```
+
 ### Switch Statement Structure
 - **Always place `default:` case FIRST** in switch statements, before all named cases
 - This is consistent with the "error case first" convention used for `if` statements — handle the unexpected/error path first
@@ -1719,52 +1765,6 @@ THANDLE(RC_STRING) host_name = rc_string_create(TEST_HOST_NAME);
 ASSERT_IS_NOT_NULL(host_name);
 THANDLE(ZRPC_CLIENT_IO_CONFIG) client_io_config = zrpc_client_io_create_parameters(host_name, port, timeout);
 ASSERT_IS_NOT_NULL(client_io_config);
-```
-
-### Initialize volatile_atomic Variables with interlocked_exchange
-Never use direct assignment for `volatile_atomic` fields. Always use `interlocked_exchange` or similar:
-```c
-// WRONG: Direct assignment
-ctx.go = 0;
-ctx.stop = 0;
-
-// CORRECT: Use interlocked_exchange
-(void)interlocked_exchange(&ctx.go, 0);
-(void)interlocked_exchange(&ctx.stop, 0);
-```
-
-### Use InterlockedHL_SetAndWakeAll for Broadcast Signals
-When signaling multiple waiting threads, use `InterlockedHL_SetAndWakeAll` instead of separate set + wake calls:
-```c
-// WRONG: Separate set and wake
-(void)InterlockedHL_SetAndWake(&ctx.go, 1);
-wake_by_address_all(&ctx.go);
-
-// CORRECT: Combined function
-(void)InterlockedHL_SetAndWakeAll(&ctx.go, 1);
-```
-
-### Use Enums for State Tracking, Not Magic Integers
-Never use `-1`, `0`, `1` as state flags. Define proper enums with `INTERLOCKED_DEFINE_VOLATILE_STATE_ENUM`:
-```c
-// WRONG: Magic integers for state
-volatile_atomic int32_t open_result; // 0=pending, 1=OK, -1=failed
-(void)InterlockedHL_SetAndWake(&open_result, 1);
-
-// CORRECT: Named enum with INTERLOCKED_DEFINE_VOLATILE_STATE_ENUM
-#define MY_STATE_VALUES \
-    MY_STATE_PENDING, \
-    MY_STATE_OK, \
-    MY_STATE_FAILED
-
-MU_DEFINE_ENUM(MY_STATE, MY_STATE_VALUES)
-
-typedef struct MY_CONTEXT_TAG
-{
-    INTERLOCKED_DEFINE_VOLATILE_STATE_ENUM(MY_STATE, open_result);
-} MY_CONTEXT;
-
-(void)InterlockedHL_SetAndWake(&ctx->open_result, MY_STATE_OK);
 ```
 
 ### Use ASSERT_FAIL in Unexpected Error Callbacks
