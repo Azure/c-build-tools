@@ -132,6 +132,18 @@ callback_will_come:
 - **NEVER use camelCase, PascalCase, or any mixed-case naming**
 - Use descriptive names that clearly indicate purpose
 - Avoid single-letter variables except for loop counters (`i`, `j`, `k`)
+- **Never use abbreviated variable names** — use the full descriptive name, not shortened forms:
+  ```c
+  // WRONG: Abbreviated names
+  THANDLE(RC_STRING) hn = rc_string_create(host);
+  THANDLE(ZRPC_CLIENT_IO_CONFIG) cio = zrpc_client_io_create_parameters(hn, port, timeout);
+  THANDLE(ZRPC_IO_CONFIG_WRAPPER) tw = zrpc_io_config_wrapper_create_from_tcp_client(cio);
+
+  // CORRECT: Full descriptive names
+  THANDLE(RC_STRING) host_name = rc_string_create(host);
+  THANDLE(ZRPC_CLIENT_IO_CONFIG) client_io_config = zrpc_client_io_create_parameters(host_name, port, timeout);
+  THANDLE(ZRPC_IO_CONFIG_WRAPPER) client_io_config_wrapper = zrpc_io_config_wrapper_create_from_tcp_client(client_io_config);
+  ```
 
 ### Specific Patterns
 ```c
@@ -609,6 +621,63 @@ else
 ```
 
 ## Additional Conventions {#additional-conventions}
+
+### Initialize volatile_atomic Variables with interlocked_exchange
+Never use direct assignment for `volatile_atomic` fields. Always use `interlocked_exchange` or similar. Regular (non-atomic) fields use normal assignment:
+```c
+typedef struct MY_CONTEXT_TAG
+{
+    uint16_t port;                      // regular field
+    volatile_atomic int32_t go;         // atomic field
+    volatile_atomic int32_t stop;       // atomic field
+} MY_CONTEXT;
+
+// WRONG: Direct assignment for volatile_atomic fields
+MY_CONTEXT ctx;
+ctx.port = 4242;
+ctx.go = 0;
+ctx.stop = 0;
+
+// CORRECT: interlocked_exchange for volatile_atomic, direct for regular
+MY_CONTEXT ctx;
+ctx.port = 4242;
+(void)interlocked_exchange(&ctx.go, 0);
+(void)interlocked_exchange(&ctx.stop, 0);
+```
+
+### Use InterlockedHL_SetAndWakeAll for Broadcast Signals
+When signaling multiple waiting threads, use `InterlockedHL_SetAndWakeAll` instead of separate set + wake calls:
+```c
+// WRONG: Separate set and wake
+(void)InterlockedHL_SetAndWake(&ctx.go, 1);
+wake_by_address_all(&ctx.go);
+
+// CORRECT: Combined function
+(void)InterlockedHL_SetAndWakeAll(&ctx.go, 1);
+```
+
+### Use Enums for State Tracking, Not Magic Integers
+Never use `-1`, `0`, `1` as state flags. Define proper enums with `INTERLOCKED_DEFINE_VOLATILE_STATE_ENUM`:
+```c
+// WRONG: Magic integers for state
+volatile_atomic int32_t open_result; // 0=pending, 1=OK, -1=failed
+(void)InterlockedHL_SetAndWake(&open_result, 1);
+
+// CORRECT: Named enum with INTERLOCKED_DEFINE_VOLATILE_STATE_ENUM
+#define MY_STATE_VALUES \
+    MY_STATE_PENDING, \
+    MY_STATE_OK, \
+    MY_STATE_FAILED
+
+MU_DEFINE_ENUM(MY_STATE, MY_STATE_VALUES)
+
+typedef struct MY_CONTEXT_TAG
+{
+    INTERLOCKED_DEFINE_VOLATILE_STATE_ENUM(MY_STATE, open_result);
+} MY_CONTEXT;
+
+(void)InterlockedHL_SetAndWake(&ctx->open_result, MY_STATE_OK);
+```
 
 ### Switch Statement Structure
 - **Always place `default:` case FIRST** in switch statements, before all named cases
@@ -1692,6 +1761,37 @@ TEST_FUNCTION(when_all_calls_succeed_then_operation_succeeds)
     ///assert
     ASSERT_ARE_EQUAL(int, 0, result);
     ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());  // REQUIRED
+}
+```
+
+### Assert NOT_NULL After Every Create Call
+Every `_create()` or `_create_parameters()` call in test code must be followed by `ASSERT_IS_NOT_NULL`:
+```c
+// WRONG: Missing assertion
+THANDLE(RC_STRING) host_name = rc_string_create(TEST_HOST_NAME);
+THANDLE(ZRPC_CLIENT_IO_CONFIG) client_io_config = zrpc_client_io_create_parameters(host_name, port, timeout);
+
+// CORRECT: Assert after each create
+THANDLE(RC_STRING) host_name = rc_string_create(TEST_HOST_NAME);
+ASSERT_IS_NOT_NULL(host_name);
+THANDLE(ZRPC_CLIENT_IO_CONFIG) client_io_config = zrpc_client_io_create_parameters(host_name, port, timeout);
+ASSERT_IS_NOT_NULL(client_io_config);
+```
+
+### Use ASSERT_FAIL in Unexpected Error Callbacks
+Test callbacks for events that should never happen (like `on_error` in a test that doesn't expect errors) should call `ASSERT_FAIL` instead of silently ignoring:
+```c
+// WRONG: Silently ignoring unexpected error
+static void on_server_error(void* context)
+{
+    (void)context;
+}
+
+// CORRECT: Fail the test on unexpected error
+static void on_server_error(void* context)
+{
+    (void)context;
+    ASSERT_FAIL("unexpected server error");
 }
 ```
 
