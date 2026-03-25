@@ -51,15 +51,18 @@ while ($true) {
         if ($p.Type -eq 'github') {
             try {
                 $label = "$($p.Repo)#$($p.Id)"
-                # Check if PR is merged or closed
-                $state = & { gh pr view $p.Id --repo $p.Repo --json state --jq '.state' } 2>$null
-                if ($state -eq 'MERGED') {
+                # Check if PR is merged, closed, or draft
+                $prInfo = & { gh pr view $p.Id --repo $p.Repo --json state,isDraft --jq '[.state,.isDraft] | @csv' } 2>$null
+                $ghState = ''; $ghDraft = $false
+                if ($prInfo -match '"?([^",]+)"?,\s*"?(true|false)"?') { $ghState = $Matches[1]; $ghDraft = $Matches[2] -eq 'true' }
+                if ($ghState -eq 'MERGED') {
                     Write-Host ("  M  {0,-40} MERGED  {1}" -f $label, $p.Url) -ForegroundColor Magenta
                     continue
-                } elseif ($state -eq 'CLOSED') {
+                } elseif ($ghState -eq 'CLOSED') {
                     Write-Host ("  X  {0,-40} CLOSED  {1}" -f $label, $p.Url) -ForegroundColor DarkGray
                     continue
                 }
+                $draftTag = if ($ghDraft) { " (DRAFT)" } else { "" }
                 # Get check status
                 $checks = $null
                 $checks = & { gh pr checks $p.Id --repo $p.Repo --json name,bucket } 2>$null
@@ -70,8 +73,8 @@ while ($true) {
                 $pend = ($c | Where-Object { $_.bucket -eq 'pending' }).Count
                 $t = $c.Count
                 $icon = if ($fail -gt 0) { "X" } elseif ($pend -gt 0) { "*" } else { [char]0x2713 }
-                $color = if ($fail -gt 0) { "Red" } elseif ($pend -gt 0) { "Yellow" } else { "Green" }
-                Write-Host ("  {0}  {1,-40} {2}/{3} pass  {4} fail  {5} pending  {6}" -f $icon, $label, $pass, $t, $fail, $pend, $p.Url) -ForegroundColor $color
+                $color = if ($ghDraft) { "Blue" } elseif ($fail -gt 0) { "Red" } elseif ($pend -gt 0) { "Yellow" } else { "Green" }
+                Write-Host ("  {0}  {1,-40} {2}/{3} pass  {4} fail  {5} pending{6}  {7}" -f $icon, $label, $pass, $t, $fail, $pend, $draftTag, $p.Url) -ForegroundColor $color
             } catch {
                 $label = "$($p.Repo)#$($p.Id)"
                 Write-Host ("  ?  {0,-40} fetch error  {1}" -f $label, $p.Url) -ForegroundColor Gray
@@ -80,15 +83,22 @@ while ($true) {
             try {
                 $label = "$($p.Repo)!$($p.Id)"
                 $org = "https://dev.azure.com/msazure"
-                # Check if PR is merged or abandoned
-                $prStatus = & { az repos pr show --id $p.Id --organization $org --query "status" -o tsv } 2>$null
-                if ($prStatus -eq 'completed') {
+                # Check if PR is merged, abandoned, or draft
+                $adoPrInfo = & { az repos pr show --id $p.Id --organization $org --query "{status:status,isDraft:isDraft}" -o json } 2>$null
+                $adoStatus = ''; $adoDraft = $false
+                if ($adoPrInfo) {
+                    $adoParsed = $adoPrInfo | ConvertFrom-Json
+                    $adoStatus = $adoParsed.status
+                    $adoDraft = $adoParsed.isDraft -eq $true
+                }
+                if ($adoStatus -eq 'completed') {
                     Write-Host ("  M  {0,-40} MERGED  {1}" -f $label, $p.Url) -ForegroundColor Magenta
                     continue
-                } elseif ($prStatus -eq 'abandoned') {
+                } elseif ($adoStatus -eq 'abandoned') {
                     Write-Host ("  X  {0,-40} ABANDONED  {1}" -f $label, $p.Url) -ForegroundColor DarkGray
                     continue
                 }
+                $draftTag = if ($adoDraft) { " (DRAFT)" } else { "" }
                 # Get build policy status (ignore non-build policies like reviewer approvals)
                 $pol = & { az repos pr policy list --id $p.Id --organization $org --query "[?configuration.isBlocking].{S:status,T:configuration.type.displayName}" -o json } 2>$null
                 if (-not $pol) { throw "empty" }
@@ -100,8 +110,8 @@ while ($true) {
                 $bTotal = $builds.Count
                 $oWait = ($c | Where-Object { $_.T -notlike '*Build*' -and $_.S -ne 'approved' }).Count
                 $icon = if ($bFail -gt 0) { "X" } elseif ($bRun -gt 0) { "*" } else { [char]0x2713 }
-                $color = if ($bFail -gt 0) { "Red" } elseif ($bRun -gt 0) { "Yellow" } else { "Green" }
-                Write-Host ("  {0}  {1,-40} builds: {2}/{3} pass {4} fail {5} run  |  {6} policies waiting  {7}" -f $icon, $label, $bPass, $bTotal, $bFail, $bRun, $oWait, $p.Url) -ForegroundColor $color
+                $color = if ($adoDraft) { "Blue" } elseif ($bFail -gt 0) { "Red" } elseif ($bRun -gt 0) { "Yellow" } else { "Green" }
+                Write-Host ("  {0}  {1,-40} builds: {2}/{3} pass {4} fail {5} run  |  {6} policies waiting{7}  {8}" -f $icon, $label, $bPass, $bTotal, $bFail, $bRun, $oWait, $draftTag, $p.Url) -ForegroundColor $color
             } catch {
                 $label = "$($p.Repo)!$($p.Id)"
                 Write-Host ("  ?  {0,-40} fetch error  {1}" -f $label, $p.Url) -ForegroundColor Gray
