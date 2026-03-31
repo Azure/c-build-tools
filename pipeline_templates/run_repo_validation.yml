@@ -1,0 +1,101 @@
+﻿# This is the job template for running repo validation and traceability checks.
+# These checks are architecture/configuration independent and only need to run once,
+# rather than for every build flavor.
+#
+# It performs:
+# - setup the machine
+# - cmake generate with repo validation and traceability enabled
+# - msbuild to execute the validation/traceability targets
+# - cleanup
+
+parameters:
+  - name: cmake_options
+    type: string
+    default: "-Drun_traceability:BOOL=ON -Drun_repo_validation:BOOL=ON"
+
+  - name: additional_cmake_options
+    type: string
+    default: ""
+
+  - name: validation_msbuild_target
+    type: string
+
+  - name: pool_name
+    type: string
+    default: "Azure-MessagingStore-WinBuildPoolVS2022_1"
+
+jobs:
+- job: run_repo_validation
+  displayName: 'Run repo validation and traceability'
+
+  pool:
+    name: ${{ parameters.pool_name }}
+    demands:
+    - msbuild
+    - visualstudio
+
+  workspace:
+    clean: all
+
+  steps:
+  - template: get_machine_information.yml
+
+  # Shallow clone - only need the code at this commit, not full history
+  - checkout: self
+    submodules: false
+    clean: false
+    fetchDepth: 1
+
+  # Shallow submodules - only need the pinned commit, not full history
+  - script: git submodule update --init --depth 1
+    displayName: 'Shallow checkout submodules'
+
+  - template: discover_native_tools.yml
+    parameters:
+      architecture: 'x64'
+
+  # Setup VS environment - use discovered vsPath for correct VS version
+  - task: PowerShell@2
+    displayName: 'Setup VS Vars'
+    inputs:
+      targetType: 'inline'
+      script: |
+        # Find VS using vswhere (works for any VS version)
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+          $vsPath = & $vswhere -latest -products * -property installationPath
+          if ($vsPath) {
+            $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
+            if (Test-Path $vsDevCmd) {
+              $archArgs = "-arch=amd64"
+              Write-Host "Running VsDevCmd with x64 architecture: $vsDevCmd $archArgs"
+              cmd /c "`"$vsDevCmd`" $archArgs && set" | ForEach-Object {
+                if ($_ -match "^([^=]+)=(.*)$") {
+                  [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+                }
+              }
+            } else {
+              Write-Host "##[warning]VsDevCmd.bat not found at $vsDevCmd"
+            }
+          }
+        } else {
+          Write-Host "##[warning]vswhere not found"
+        }
+
+  # CMake generate with repo validation and traceability enabled
+  - template: tasks/cmake.yml
+    parameters:
+      architecture: 'x64'
+      sourceDirectory: '$(Build.SourcesDirectory)'
+      buildDirectory: '$(Build.BinariesDirectory)/c'
+      cmakeArgs: '${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }} -DCMAKE_BUILD_TYPE=Debug'
+
+  # Build to execute the repo validation and traceability targets
+  - template: tasks/msbuild.yml
+    parameters:
+      architecture: 'x64'
+      solution: '$(Build.BinariesDirectory)/c/*.sln*'
+      configuration: 'Debug'
+      msbuildArgs: '/t:${{ parameters.validation_msbuild_target }}'
+
+  - template : clean_ado_folders.yml
