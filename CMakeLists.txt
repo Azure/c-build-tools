@@ -18,6 +18,8 @@ if(TARGET c_build_tools)
     return()
 endif()
 
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 add_custom_target(c_build_tools)
 
 project(c_build_tools)
