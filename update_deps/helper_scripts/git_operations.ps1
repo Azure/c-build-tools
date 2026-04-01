@@ -298,10 +298,6 @@ function update-c-build-tools-yaml-refs
                 }
             }
         }
-        else
-        {
-            # could not determine SHA, skip YAML updates
-        }
     }
     else
     {
