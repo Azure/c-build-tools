@@ -6,7 +6,7 @@ if(NOT DEFINED CMAKE_MINIMUM_REQUIRED_VERSION)
     #cmake_minimum_required(VERSION 3.24) #3.24 brings in support for WHOLE_ARCHIVE which is needed for vld
 endif()
 
-if(NOT CMAKE_VERSION VERSION_LESS "3.31")
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.31")
     cmake_policy(SET CMP0177 NEW) #cmake --help-policy CMP0177
 endif()
 
