@@ -163,13 +163,20 @@ function update-submodules-to-fixed-commits
 # blocks. This prevents validate_c_build_tools_ref from failing on propagation PRs.
 function update-c-build-tools-yaml-refs
 {
-    # Parse .gitmodules to find the c-build-tools submodule path
-    $submodule_path = ""
-    $current_path = ""
-    $found_c_build_tools = $false
-
-    foreach ($line in (Get-Content ".gitmodules"))
+    # Only repos with submodules have a .gitmodules file
+    if (-not (Test-Path ".gitmodules"))
     {
+        # no submodules, nothing to update
+    }
+    else
+    {
+        # Parse .gitmodules to find the c-build-tools submodule path
+        $submodule_path = ""
+        $current_path = ""
+        $found_c_build_tools = $false
+
+        foreach ($line in (Get-Content ".gitmodules"))
+        {
         # Check for submodule section header
         if ($line -match '^\[submodule\s+"([^"]+)"\]')
         {
@@ -306,6 +313,7 @@ function update-c-build-tools-yaml-refs
     else
     {
         # no c-build-tools submodule found, nothing to update
+    }
     }
 }
 
