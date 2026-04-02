@@ -744,7 +744,6 @@ function get-repo-type
     Push-Location $repo_name
     $repo_url = git config --get remote.origin.url
     Pop-Location
-    Write-Host $repo_url -NoNewline
     if($repo_url.Contains("github"))
     {
         $result = "github"
