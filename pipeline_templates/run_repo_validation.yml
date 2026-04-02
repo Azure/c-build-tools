@@ -17,9 +17,6 @@ parameters:
     type: string
     default: ""
 
-  - name: validation_msbuild_target
-    type: string
-
   - name: pool_name
     type: string
     default: "Azure-MessagingStore-WinBuildPoolVS2022_1"
@@ -90,12 +87,14 @@ jobs:
       buildDirectory: '$(Build.BinariesDirectory)/c'
       cmakeArgs: '${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }} -DCMAKE_BUILD_TYPE=Debug'
 
-  # Build to execute the repo validation and traceability targets
+  # Build the solution - repo validation and traceability targets are marked ALL
+  # so they execute as part of the default ALL_BUILD target without needing
+  # project-specific target names.
   - template: tasks/msbuild.yml
     parameters:
       architecture: 'x64'
       solution: '$(Build.BinariesDirectory)/c/*.sln*'
       configuration: 'Debug'
-      msbuildArgs: '/t:${{ parameters.validation_msbuild_target }}'
+      msbuildArgs: '/t:restore /t:build'
 
   - template : clean_ado_folders.yml
