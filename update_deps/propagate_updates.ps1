@@ -363,40 +363,72 @@ function propagate-updates
         Write-Host "$($i+1). $($repo_order[$i])"
     }
 
-    foreach ($repo in $repo_order)
-    {
-        # Skip repos that were already updated or skipped (for resume)
-        if ($global:repo_status.ContainsKey($repo) -and
-            ($global:repo_status[$repo].Status -eq "updated" -or $global:repo_status[$repo].Status -eq "skipped"))
-        {
-            Write-Host "`nSkipping $repo (already $($global:repo_status[$repo].Status))" -ForegroundColor Gray
-        }
-        else
-        {
-            update-repo $repo $new_branch_name
-        }
+    # Register Ctrl+C handler to prompt user about closing the current PR
+    $global:propagation_cancelled = $false
+    [Console]::TreatControlCAsInput = $true
 
-        # Save state after each repo so the run can be resumed
-        save-propagation-state -branch_name $new_branch_name -repo_order $repo_order -repo_urls $repo_urls -root_list $root_list -azure_work_item $azure_work_item
+    try
+    {
+        foreach ($repo in $repo_order)
+        {
+            # Check for Ctrl+C between repos
+            if ($global:propagation_cancelled)
+            {
+                break
+            }
+            else
+            {
+                # continue propagation
+            }
+
+            # Skip repos that were already updated or skipped (for resume)
+            if ($global:repo_status.ContainsKey($repo) -and
+                ($global:repo_status[$repo].Status -eq "updated" -or $global:repo_status[$repo].Status -eq "skipped"))
+            {
+                Write-Host "`nSkipping $repo (already $($global:repo_status[$repo].Status))" -ForegroundColor Gray
+            }
+            else
+            {
+                update-repo $repo $new_branch_name
+            }
+
+            # Save state after each repo so the run can be resumed
+            save-propagation-state -branch_name $new_branch_name -repo_order $repo_order -repo_urls $repo_urls -root_list $root_list -azure_work_item $azure_work_item
+        }
+    }
+    finally
+    {
+        # Restore normal Ctrl+C behavior
+        [Console]::TreatControlCAsInput = $false
     }
 
-    # Show final status and check if all succeeded
-    $success = show-propagation-status -Final
-
-    # Warn about any repos with newer commits that were not propagated
-    show-skipped-commits-summary
-
-    if ($success)
+    if ($global:propagation_cancelled)
     {
-        play-success-animation
+        show-propagation-status -Final
+        restore-original-directory
+        Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
+        exit 1
     }
     else
     {
-        Write-Host "Done updating repos (with some failures)" -ForegroundColor Yellow
-    }
+        # Show final status and check if all succeeded
+        $success = show-propagation-status -Final
 
-    # Restore original directory
-    restore-original-directory
+        # Warn about any repos with newer commits that were not propagated
+        show-skipped-commits-summary
+
+        if ($success)
+        {
+            play-success-animation
+        }
+        else
+        {
+            Write-Host "Done updating repos (with some failures)" -ForegroundColor Yellow
+        }
+
+        # Restore original directory
+        restore-original-directory
+    }
 }
 
 propagate-updates

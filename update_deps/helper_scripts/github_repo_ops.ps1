@@ -64,10 +64,13 @@ function update-repo-github
     }
 
     # Small wait to ensure PR is fully created before triggering pipeline
-    Start-Sleep -Seconds 30
+    Write-Host "Waiting 30s before triggering pipeline... (Press Ctrl+C to cancel)" -ForegroundColor Gray
+    $cancelled = wait-or-cancel -seconds 30
+    if ($cancelled) { $global:propagation_cancelled = $true; return $pr_url }
     $null = gh pr comment --body "/AzurePipelines run"
-    Write-Host "Waiting for checks to start"
-    Start-Sleep -Seconds 120
+    Write-Host "Waiting for checks to start (Press Ctrl+C to cancel)" -ForegroundColor Gray
+    $cancelled = wait-or-cancel -seconds 120
+    if ($cancelled) { $global:propagation_cancelled = $true; return $pr_url }
 
     Write-Host "Waiting for build to complete"
     $watch_result = watch-github-pr-checks -poll_interval 30 -timeout 120 -OnIteration { [void](show-propagation-status) }
@@ -108,7 +111,8 @@ function update-repo-github
             $waited = 0
             while($waited -lt $max_wait -and -not $merged)
             {
-                Start-Sleep -Seconds 15
+                $cancelled = wait-or-cancel -seconds 15
+                if ($cancelled) { $global:propagation_cancelled = $true; break }
                 $waited += 15
                 $pr_state = gh pr view --json state 2>&1
                 if($LASTEXITCODE -eq 0)

@@ -15,6 +15,117 @@ watch loop that can be used by both Azure DevOps and GitHub PR watching scripts.
 
 
 #
+# Ctrl+C aware sleep - checks for Ctrl+C keypress during the sleep interval.
+# If detected, prompts the user to close/abandon the current PR.
+# Returns $true if propagation should be cancelled, $false otherwise.
+#
+function global:wait-or-cancel
+{
+    param(
+        [int] $seconds
+    )
+    $cancelled = $false
+
+    for ($i = 0; $i -lt ($seconds * 10); $i++)
+    {
+        Start-Sleep -Milliseconds 100
+        if ([Console]::KeyAvailable)
+        {
+            $key = [Console]::ReadKey($true)
+            if ($key.Key -eq [ConsoleKey]::C -and $key.Modifiers -eq [ConsoleModifiers]::Control)
+            {
+                $cancelled = prompt-cancel-propagation
+                if ($cancelled)
+                {
+                    break
+                }
+                else
+                {
+                    # user chose to continue
+                }
+            }
+            else
+            {
+                # ignore other keys
+            }
+        }
+        else
+        {
+            # no key pressed
+        }
+    }
+
+    return $cancelled
+}
+
+
+#
+# Prompt user to close/abandon the current PR after Ctrl+C
+# Returns $true if user wants to cancel, $false to continue
+#
+function global:prompt-cancel-propagation
+{
+    $result = $false
+
+    Write-Host "`n`nCtrl+C detected." -ForegroundColor Yellow
+
+    $pr_url = $null
+    if ($global:current_repo -and $global:repo_status.ContainsKey($global:current_repo))
+    {
+        $pr_url = $global:repo_status[$global:current_repo].PrUrl
+    }
+    else
+    {
+        # no current repo
+    }
+
+    if ($pr_url)
+    {
+        Write-Host "A pull request is currently open for '$($global:current_repo)':" -ForegroundColor Yellow
+        Write-Host "  $pr_url" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "Close/abandon this PR? (y/n): " -ForegroundColor Yellow -NoNewline
+
+        # Restore normal input for the prompt
+        [Console]::TreatControlCAsInput = $false
+        $response = Read-Host
+        [Console]::TreatControlCAsInput = $true
+
+        if ($response -eq 'y' -or $response -eq 'Y')
+        {
+            close-pr -repo_name $global:current_repo -pr_url $pr_url
+            set-repo-status -repo_name $global:current_repo -status "failed" -message "Cancelled by user"
+        }
+        else
+        {
+            Write-Host "PR left open." -ForegroundColor Cyan
+            set-repo-status -repo_name $global:current_repo -status "failed" -message "Cancelled by user (PR left open)"
+        }
+        $result = $true
+    }
+    else
+    {
+        Write-Host "No PR is currently open. Exit propagation? (y/n): " -ForegroundColor Yellow -NoNewline
+
+        [Console]::TreatControlCAsInput = $false
+        $response = Read-Host
+        [Console]::TreatControlCAsInput = $true
+
+        if ($response -eq 'y' -or $response -eq 'Y')
+        {
+            $result = $true
+        }
+        else
+        {
+            Write-Host "Continuing..." -ForegroundColor Cyan
+        }
+    }
+
+    return $result
+}
+
+
+#
 # Normalized Status Enum
 #
 # Maps platform-specific statuses to a common set of values for consistent display.
@@ -555,8 +666,16 @@ function global:watch-pr-status
             if(-not $display_data)
             {
                 Write-Host "Failed to get checks status, retrying..." -ForegroundColor Yellow
-                Start-Sleep -Seconds $poll_interval
-                # continue loop with fn_result still null
+                $cancelled = wait-or-cancel -seconds $poll_interval
+                if ($cancelled)
+                {
+                    $global:propagation_cancelled = $true
+                    $fn_result = @{ Success = $false; Message = "Cancelled by user" }
+                }
+                else
+                {
+                    # continue loop with fn_result still null
+                }
             }
             else
             {
@@ -584,7 +703,16 @@ function global:watch-pr-status
                 }
                 else
                 {
-                    Start-Sleep -Seconds $poll_interval
+                    $cancelled = wait-or-cancel -seconds $poll_interval
+                    if ($cancelled)
+                    {
+                        $global:propagation_cancelled = $true
+                        $fn_result = @{ Success = $false; Message = "Cancelled by user" }
+                    }
+                    else
+                    {
+                        # continue polling
+                    }
                 }
             }
         }
