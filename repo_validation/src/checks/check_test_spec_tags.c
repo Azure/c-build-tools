@@ -125,7 +125,8 @@ static void free_line_index(LINE_INDEX* idx)
     }
 }
 
-// Check if line starts with TEST_FUNCTION(
+// Check if line starts with TEST_FUNCTION( or PARAMETERIZED_TEST_FUNCTION(
+// Returns: 0 = not a test function, 1 = TEST_FUNCTION, 2 = PARAMETERIZED_TEST_FUNCTION
 static int is_test_function_line(const char* line, size_t len)
 {
     int result;
@@ -133,20 +134,30 @@ static int is_test_function_line(const char* line, size_t len)
     const char* end = line + len;
 
     while (p < end && (*p == ' ' || *p == '\t')) p++;
-    if (end - p < 14)
+
+    if ((size_t)(end - p) >= 31 &&
+        strncmp(p, "PARAMETERIZED_TEST_FUNCTION", 27) == 0 &&
+        (p[27] == '(' || p[27] == ' ' || p[27] == '\t'))
     {
-        result = 0;
+        result = 2;
+    }
+    else if ((size_t)(end - p) >= 14 &&
+        strncmp(p, "TEST_FUNCTION", 13) == 0 &&
+        (p[13] == '(' || p[13] == ' ' || p[13] == '\t'))
+    {
+        result = 1;
     }
     else
     {
-        result = (strncmp(p, "TEST_FUNCTION", 13) == 0 && (p[13] == '(' || p[13] == ' ' || p[13] == '\t'));
+        result = 0;
     }
 
     return result;
 }
 
-// Extract test function name from TEST_FUNCTION(name) line
-static void extract_test_name(const char* line, size_t len, char* name_buf, size_t buf_size)
+// Extract test function name from TEST_FUNCTION(name) or PARAMETERIZED_TEST_FUNCTION(name, ...) line
+// For PARAMETERIZED_TEST_FUNCTION, extract up to the first comma (not closing paren)
+static void extract_test_name(const char* line, size_t len, char* name_buf, size_t buf_size, int macro_type)
 {
     name_buf[0] = '\0';
     const char* open = (const char*)memchr(line, '(', len);
@@ -157,18 +168,36 @@ static void extract_test_name(const char* line, size_t len, char* name_buf, size
     else
     {
         open++;
-        const char* close = (const char*)memchr(open, ')', (size_t)((line + len) - open));
-        if (!close)
+        const char* end_delim;
+        if (macro_type == 2)
+        {
+            // PARAMETERIZED_TEST_FUNCTION: name ends at first comma
+            end_delim = (const char*)memchr(open, ',', (size_t)((line + len) - open));
+            if (!end_delim)
+            {
+                end_delim = (const char*)memchr(open, ')', (size_t)((line + len) - open));
+            }
+            else
+            {
+                /* do nothing */
+            }
+        }
+        else
+        {
+            end_delim = (const char*)memchr(open, ')', (size_t)((line + len) - open));
+        }
+
+        if (!end_delim)
         {
             /* do nothing */
         }
         else
         {
             // Trim whitespace
-            while (open < close && (*open == ' ' || *open == '\t')) open++;
-            while (close > open && (close[-1] == ' ' || close[-1] == '\t')) close--;
+            while (open < end_delim && (*open == ' ' || *open == '\t')) open++;
+            while (end_delim > open && (end_delim[-1] == ' ' || end_delim[-1] == '\t')) end_delim--;
 
-            size_t name_len = (size_t)(close - open);
+            size_t name_len = (size_t)(end_delim - open);
             if (name_len >= buf_size)
             {
                 name_len = buf_size - 1;
@@ -415,7 +444,8 @@ static int test_spec_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* c
                     const char* line = lines->starts[i];
                     size_t line_len = lines->lengths[i];
 
-                    if (is_test_function_line(line, line_len))
+                    int macro_type = is_test_function_line(line, line_len);
+                    if (macro_type != 0)
                     {
                         total_test_functions++;
 
@@ -517,9 +547,10 @@ static int test_spec_check_file(const FILE_INFO* file, const VALIDATOR_CONFIG* c
                             else
                             {
                                 char test_name[256];
-                                extract_test_name(line, line_len, test_name, sizeof(test_name));
-                                (void)printf("  [ERROR] %s:%d TEST_FUNCTION(%s) - missing spec tag\n",
-                                       file->relative_path, i + 1, test_name);
+                                const char* macro_name = (macro_type == 2) ? "PARAMETERIZED_TEST_FUNCTION" : "TEST_FUNCTION";
+                                extract_test_name(line, line_len, test_name, sizeof(test_name), macro_type);
+                                (void)printf("  [ERROR] %s:%d %s(%s) - missing spec tag\n",
+                                       file->relative_path, i + 1, macro_name, test_name);
                                 file_violations++;
                                 test_spec_violations++;
                             }
