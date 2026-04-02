@@ -254,7 +254,7 @@ jobs:
     displayName: 'Publish ${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration}} Artifacts'
     inputs:
       targetPath: $(Build.BinariesDirectory)
-      artifactName: ${{ parameters.build_configuration}}_${{ parameters.ARCH_TYPE }}${{ parameters.BUILD_SUFFIX }}_artifacts
+      artifactName: ${{ parameters.BUILD_SUFFIX }}_artifacts
       parallel: true
     condition: failed()
 
