@@ -52,28 +52,51 @@ fn get_line<'a>(content: &'a [u8], index: &LineIndex, i: usize) -> &'a [u8] {
     &content[index.starts[i]..index.starts[i] + index.lengths[i]]
 }
 
-/// Check if line starts with TEST_FUNCTION(
-fn is_test_function_line(line: &[u8]) -> bool {
+/// Check if line starts with TEST_FUNCTION( or PARAMETERIZED_TEST_FUNCTION(
+/// Returns: 0 = not a test function, 1 = TEST_FUNCTION, 2 = PARAMETERIZED_TEST_FUNCTION
+fn is_test_function_line(line: &[u8]) -> u8 {
     let len = line.len();
     let mut p = 0;
     while p < len && (line[p] == b' ' || line[p] == b'\t') {
         p += 1;
     }
-    if len - p < 14 {
-        return false;
-    }
-    &line[p..p + 13] == b"TEST_FUNCTION"
+
+    if len - p >= 28
+        && &line[p..p + 27] == b"PARAMETERIZED_TEST_FUNCTION"
+        && (line[p + 27] == b'(' || line[p + 27] == b' ' || line[p + 27] == b'\t')
+    {
+        2
+    } else if len - p >= 14
+        && &line[p..p + 13] == b"TEST_FUNCTION"
         && (line[p + 13] == b'(' || line[p + 13] == b' ' || line[p + 13] == b'\t')
+    {
+        1
+    } else {
+        0
+    }
 }
 
-/// Extract test function name from TEST_FUNCTION(name) line
-fn extract_test_name(line: &[u8]) -> String {
+/// Extract test function name from TEST_FUNCTION(name) or PARAMETERIZED_TEST_FUNCTION(name, ...) line
+/// For PARAMETERIZED_TEST_FUNCTION, extract up to the first comma (not closing paren)
+fn extract_test_name(line: &[u8], macro_type: u8) -> String {
     let open = match line.iter().position(|&b| b == b'(') {
         Some(p) => p + 1,
         None => return String::new(),
     };
-    let close = match line[open..].iter().position(|&b| b == b')') {
-        Some(p) => open + p,
+
+    let end_delim = if macro_type == 2 {
+        // PARAMETERIZED_TEST_FUNCTION: name ends at first comma
+        line[open..]
+            .iter()
+            .position(|&b| b == b',')
+            .map(|p| open + p)
+            .or_else(|| line[open..].iter().position(|&b| b == b')').map(|p| open + p))
+    } else {
+        line[open..].iter().position(|&b| b == b')').map(|p| open + p)
+    };
+
+    let close = match end_delim {
+        Some(p) => p,
         None => return String::new(),
     };
 
@@ -258,7 +281,9 @@ impl Check for TestSpecTags {
         for i in 0..line_count {
             let line = get_line(&file.content, &index, i);
 
-            if is_test_function_line(line) {
+            let macro_type = is_test_function_line(line);
+
+            if macro_type != 0 {
                 self.total_test_functions += 1;
 
                 if has_no_srs_exemption(line) {
@@ -314,11 +339,13 @@ impl Check for TestSpecTags {
                     if found_tag {
                         self.tests_with_tags += 1;
                     } else {
-                        let test_name = extract_test_name(line);
+                        let macro_name = if macro_type == 2 { "PARAMETERIZED_TEST_FUNCTION" } else { "TEST_FUNCTION" };
+                        let test_name = extract_test_name(line, macro_type);
                         println!(
-                            "  [ERROR] {}:{} TEST_FUNCTION({}) - missing spec tag",
+                            "  [ERROR] {}:{} {}({}) - missing spec tag",
                             file.relative_path,
                             i + 1,
+                            macro_name,
                             test_name
                         );
                         self.violations += 1;
