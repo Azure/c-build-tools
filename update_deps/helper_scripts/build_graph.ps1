@@ -141,41 +141,42 @@ function get-submodules
 }
 
 
-# dictionary to store mapping from repo name to level in dependency graph
-# root repo is level 0 and leaf repo is maximum level
-$repo_levels = New-Object -TypeName "System.Collections.Generic.Dictionary[string, int]"
+# dictionary to store dependency edges: repo_name -> list of submodule names
+$repo_edges = New-Object -TypeName "System.Collections.Generic.Dictionary[string, System.Collections.ArrayList]"
 # dictionary to store mapping from repo name to URL
 $repo_urls = New-Object -TypeName "System.Collections.Generic.Dictionary[string, string]"
-# queue to perform breadth-first search
+# set of repo names already cloned and enumerated
+$visited = New-Object -TypeName "System.Collections.Generic.HashSet[string]"
+# queue for BFS
 $queue = New-Object -TypeName "System.Collections.Queue"
-# get list of repos to ignore  while building graph from ignores.json
+# get list of repos to ignore while building graph from ignores.json
 $path_to_ignores = Join-Path $PSScriptRoot "..\ignores.json"
 $repos_to_ignore = (Get-Content -Path $path_to_ignores) | ConvertFrom-Json
-# counter for progress tracking
-$script:repos_processed = 0
 
-# perform breadth-first search on dependency graph
-function Build-Graph
+# Phase 1: Discovery - BFS with visited set, clone each repo once and collect dependency edges
+foreach ($root in $root_list)
 {
-    # get front of queue
+    $queue.Enqueue($root)
+}
+
+while ($queue.Count -ne 0)
+{
     $repo_url = $queue.Dequeue()
     $repo_name = get-name-from-url -url $repo_url
 
-    # Update progress
-    $script:repos_processed++
-    Write-Progress -Activity "Building dependency graph" -Status "Processing: $repo_name" -CurrentOperation "Repos discovered: $($repo_levels.Count) | Queue: $($queue.Count)"
-
-    # set repo level to 0 if not seen before
-    if(-not $repo_levels.ContainsKey($repo_name))
+    # skip if already discovered
+    if ($visited.Contains($repo_name))
     {
-        $repo_levels[$repo_name] = 0
+        continue
     }
     else
     {
-        # already tracked
+        # first time seeing this repo
     }
+    [void]$visited.Add($repo_name)
+
     # store repo URL
-    if(-not $repo_urls.ContainsKey($repo_name))
+    if (-not $repo_urls.ContainsKey($repo_name))
     {
         $repo_urls[$repo_name] = $repo_url
     }
@@ -183,29 +184,31 @@ function Build-Graph
     {
         # already stored
     }
-    # clone repo if not already present
-    if(-not (Test-Path -Path $repo_name))
+
+    Write-Progress -Activity "Building dependency graph" -Status "Discovering: $repo_name" -CurrentOperation "Repos discovered: $($visited.Count) | Queue: $($queue.Count)"
+
+    # clone repo if not already present (shallow clone - only .gitmodules is needed)
+    if (-not (Test-Path -Path $repo_name))
     {
         # Hide progress bar during clone to avoid output conflicts
         Write-Progress -Activity "Building dependency graph" -Completed
         Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
-        git clone $repo_url
+        git clone --depth 1 $repo_url
         Write-Host ""
     }
     else
     {
         # already cloned
     }
-    # $repo_level is the length of the path in the graph from the root to the current repo
-    $repo_level = $repo_levels[$repo_name]
-    # get list for submodules URLs
+
+    # get submodules and record edges
     $submodules = get-submodules $repo_url
-    # iterate of list of submodules
-    foreach($submodule in $submodules)
+    $children = New-Object -TypeName "System.Collections.ArrayList"
+    foreach ($submodule in $submodules)
     {
-        $submodule_name = get-name-from-url -url $submodule
+        $sub_name = get-name-from-url -url $submodule
         # ignore submodule if it is in $repos_to_ignore
-        if ($submodule_name -in $repos_to_ignore)
+        if ($sub_name -in $repos_to_ignore)
         {
             continue
         }
@@ -213,33 +216,71 @@ function Build-Graph
         {
             # process this submodule
         }
-        # $level is the length of the longest path in the graph from the root to the submodule seen so far
-        $level = 0
-        [void]$repo_levels.TryGetValue($submodule_name, [ref]$level)
-        # update repo level of submodule if path from root to submodule via current repo is longer
-        if (($repo_level+1) -gt $level)
+        [void]$children.Add($sub_name)
+        # store URL for this submodule
+        if (-not $repo_urls.ContainsKey($sub_name))
         {
-            $repo_levels[$submodule_name] = $repo_level+1
+            $repo_urls[$sub_name] = $submodule
         }
         else
         {
-            # existing level is sufficient
+            # already stored
         }
-        # add submodule to queue
-        $queue.Enqueue($submodule)
+        # enqueue for discovery if not yet visited
+        if (-not $visited.Contains($sub_name))
+        {
+            $queue.Enqueue($submodule)
+        }
+        else
+        {
+            # already discovered
+        }
     }
+    $repo_edges[$repo_name] = $children
 }
 
-# seed queue with given arguments
+# Phase 2: Compute levels (longest path from roots) using cached edges - no I/O
+# dictionary to store mapping from repo name to level in dependency graph
+# root repo is level 0 and leaf repo is maximum level
+$repo_levels = New-Object -TypeName "System.Collections.Generic.Dictionary[string, int]"
+$level_queue = New-Object -TypeName "System.Collections.Queue"
+
+# seed roots at level 0
 foreach ($root in $root_list)
 {
-    $queue.Enqueue($root)
+    $name = get-name-from-url -url $root
+    $repo_levels[$name] = 0
+    $level_queue.Enqueue($name)
 }
 
-# build dependency graph
-while ( $queue.Count -ne 0)
+while ($level_queue.Count -ne 0)
 {
-    Build-Graph
+    $repo_name = $level_queue.Dequeue()
+    $repo_level = $repo_levels[$repo_name]
+
+    if ($repo_edges.ContainsKey($repo_name))
+    {
+        foreach ($child_name in $repo_edges[$repo_name])
+        {
+            # $current_level is the longest path from root to child seen so far
+            $current_level = 0
+            [void]$repo_levels.TryGetValue($child_name, [ref]$current_level)
+            # update level if path via current repo is longer
+            if (($repo_level + 1) -gt $current_level)
+            {
+                $repo_levels[$child_name] = $repo_level + 1
+                $level_queue.Enqueue($child_name)
+            }
+            else
+            {
+                # existing level is sufficient
+            }
+        }
+    }
+    else
+    {
+        # leaf repo, no children
+    }
 }
 
 # clear progress bar

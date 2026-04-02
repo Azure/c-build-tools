@@ -18,7 +18,8 @@ $script:CACHE_ENV_VAR = "PROPAGATE_REPO_ORDER"
 function get-cached-repo-order
 {
     param(
-        [Parameter(Mandatory=$true)][string[]] $root_list
+        [Parameter(Mandatory=$true)][string[]] $root_list,
+        [switch] $silent # suppress log messages (used when reading back freshly built results)
     )
     $result = $null
 
@@ -84,7 +85,10 @@ function get-cached-repo-order
 
             if ($cache_valid)
             {
-                Write-Host "Using cached repo order (root_list matches)" -ForegroundColor Cyan
+                if (-not $silent)
+                {
+                    Write-Host "Using cached repo order (root_list matches)" -ForegroundColor Cyan
+                }
                 $result = @{
                     repo_order = $cached_data.repo_order
                     repo_urls = $cached_data.repo_urls

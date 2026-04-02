@@ -331,7 +331,7 @@ function propagate-updates
             }
             Write-Host "Done building dependency graph"
             # build_graph.ps1 sets the cache, so read from it
-            $cached_data = get-cached-repo-order -root_list $root_list
+            $cached_data = get-cached-repo-order -root_list $root_list -silent
             if (-not $cached_data)
             {
                 fail-with-status "Failed to get cached repo order after building graph."
