@@ -17,9 +17,6 @@ parameters:
     type: string
     default: ""
 
-  - name: validation_msbuild_target
-    type: string
-
   - name: pool_name
     type: string
     default: "Azure-MessagingStore-WinBuildPoolVS2022_1"
@@ -96,6 +93,6 @@ jobs:
       architecture: 'x64'
       solution: '$(Build.BinariesDirectory)/c/*.sln*'
       configuration: 'Debug'
-      msbuildArgs: '/t:${{ parameters.validation_msbuild_target }}'
+      msbuildArgs: '/t:repo_validation'
 
   - template : clean_ado_folders.yml
