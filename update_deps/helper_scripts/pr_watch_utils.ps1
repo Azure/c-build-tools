@@ -95,6 +95,8 @@ function global:prompt-cancel-propagation
         {
             close-pr -repo_name $global:current_repo -pr_url $pr_url
             set-repo-status -repo_name $global:current_repo -status "failed" -message "Cancelled by user"
+            # Clear PR URL so downstream error handlers don't try to close it again
+            $global:repo_status[$global:current_repo].PrUrl = ""
         }
         else
         {
