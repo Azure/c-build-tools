@@ -90,6 +90,7 @@ function global:prompt-cancel-propagation
         [Console]::TreatControlCAsInput = $false
         $response = Read-Host
         [Console]::TreatControlCAsInput = $true
+        Write-Host ""
 
         if ($response -eq 'y' -or $response -eq 'Y')
         {
@@ -112,6 +113,7 @@ function global:prompt-cancel-propagation
         [Console]::TreatControlCAsInput = $false
         $response = Read-Host
         [Console]::TreatControlCAsInput = $true
+        Write-Host ""
 
         if ($response -eq 'y' -or $response -eq 'Y')
         {
