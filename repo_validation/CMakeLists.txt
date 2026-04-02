@@ -139,3 +139,12 @@ endfunction()
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/tests" AND run_unittests AND run_repo_validation)
     add_subdirectory(tests)
 endif()
+
+# Build Rust repo_validator_rs and its tests when enabled
+option(run_repo_validation_rust "Build and test Rust repo_validator_rs alongside C version (default is OFF)" OFF)
+if(run_repo_validation_rust AND run_repo_validation)
+    add_subdirectory(src_rust)
+    if(run_unittests)
+        add_subdirectory(tests_rust)
+    endif()
+endif()
