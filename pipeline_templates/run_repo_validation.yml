@@ -87,12 +87,31 @@ jobs:
       buildDirectory: '$(Build.BinariesDirectory)/c'
       cmakeArgs: '${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }} -DCMAKE_BUILD_TYPE=Debug'
 
+  # Discover the repo validation target name from the CMake output.
+  # The target is named <project_name>_repo_validation and we find it by
+  # looking for the generated *_repo_validation.vcxproj file. This avoids
+  # requiring each consuming repo to pass the target name as a parameter.
+  - task: PowerShell@2
+    displayName: 'Discover repo validation target'
+    inputs:
+      targetType: 'inline'
+      script: |
+        $proj = Get-ChildItem "$(Build.BinariesDirectory)/c/*_repo_validation.vcxproj" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($proj) {
+          $targetName = $proj.BaseName
+          Write-Host "Found repo validation target: $targetName"
+          Write-Host "##vso[task.setvariable variable=repoValidationTarget]$targetName"
+        } else {
+          Write-Error "No *_repo_validation.vcxproj found in $(Build.BinariesDirectory)/c/"
+          exit 1
+        }
+
   # Build to execute the repo validation and traceability targets
   - template: tasks/msbuild.yml
     parameters:
       architecture: 'x64'
       solution: '$(Build.BinariesDirectory)/c/*.sln*'
       configuration: 'Debug'
-      msbuildArgs: '/t:repo_validation'
+      msbuildArgs: '/t:$(repoValidationTarget)'
 
   - template : clean_ado_folders.yml
