@@ -36,8 +36,8 @@ Given a root repo, this script builds the dependency graph and propagates update
 # Using PAT token authentication
 .\propagate_updates.ps1 -azure_token {your_pat_token} -azure_work_item {work_item_id} -root_list {root1}, {root2}, ...
 
-# Using cached repo order (skips graph rebuild if root_list matches)
-.\propagate_updates.ps1 -azure_work_item {work_item_id} -useCachedRepoOrder -root_list {root1}, {root2}, ...
+# Force a full graph rebuild (ignores known_graph.json)
+.\propagate_updates.ps1 -azure_work_item {work_item_id} -ForceBuildGraph -root_list {root1}, {root2}, ...
 ```
 
 ### Arguments
@@ -47,7 +47,9 @@ Given a root repo, this script builds the dependency graph and propagates update
 | `-root_list` | Yes | Comma-separated list of URLs of the repositories up to which updates must be propagated |
 | `-azure_work_item` | Yes | Work item ID to link to PRs made to Azure repos |
 | `-azure_token` | No | Personal access token for Azure DevOps. If not provided, WAM (Web Account Manager) authentication is used |
-| `-useCachedRepoOrder` | No | Use cached repo order if root_list matches the previous run (avoids rebuilding the graph) |
+| `-poll_interval` | No | Seconds between status polls during PR watch (default: 15) |
+| `-ForceBuildGraph` | No | Force a full graph rebuild even if the known graph matches |
+| `-NoCloseFailedPr` | No | Keep the PR open if it fails (default: close/abandon failed PRs) |
 
 ## build_graph.ps1
 

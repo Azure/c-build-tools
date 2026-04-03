@@ -62,11 +62,6 @@ PS> .\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345
 
 .EXAMPLE
 
-PS> .\propagate_updates.ps1 -azure_work_item 12345 -useCachedRepoOrder -root_list root1, root2, ...
-# Uses cached repo order if root_list matches the cached root_list
-
-.EXAMPLE
-
 PS> .\propagate_updates.ps1 -Resume
 # Resumes the most recent failed propagation run from the last failed repo
 #>
@@ -76,7 +71,6 @@ param(
     [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
     [Parameter(Mandatory=$false)][Int32]$azure_work_item, # Work item id to link to Azure PRs
     [Parameter(Mandatory=$false)][Int32]$poll_interval = 15, # Seconds between status polls during PR watch
-    [switch]$useCachedRepoOrder, # use cached repo order if root_list matches
     [switch]$NoCloseFailedPr, # keep the PR open if it fails (default: close/abandon failed PRs)
     [switch]$ForceBuildGraph, # force graph rebuild even if known graph matches
     [switch]$Resume, # resume a previously failed propagation run
@@ -280,76 +274,32 @@ function propagate-updates
         Set-Location $global:work_dir
         Write-Host "Working directory: $global:work_dir"
 
-        # build dependency graph (or use cache)
-        $cached_data = $null
-
-        if ($useCachedRepoOrder)
+        # build dependency graph
+        Write-Host "Building dependency graph..."
+        $build_graph_args = @{ root_list = $root_list }
+        if ($ForceBuildGraph) { $build_graph_args['ForceBuildGraph'] = $true }
+        & "$helper_scripts\build_graph.ps1" @build_graph_args
+        if($LASTEXITCODE -ne 0)
         {
-            $cached_data = get-cached-repo-order -root_list $root_list
+            fail-with-status "Could not build dependency graph for $root_list."
         }
         else
         {
-            # will build fresh
+            # graph built successfully
         }
-
-        if ($cached_data)
+        Write-Host "Done building dependency graph"
+        # build_graph.ps1 sets the cache, so read from it
+        $cached_data = get-cached-repo-order -root_list $root_list -silent
+        if (-not $cached_data)
         {
-            $repo_order = $cached_data.repo_order
-            $repo_urls = $cached_data.repo_urls
-            Write-Host "Using cached repo order"
-            Set-Content -Path .\order.json -Value ($repo_order | ConvertTo-Json)
-            # Clone repos that aren't already present using cached URLs
-            Write-Host "Cloning repositories..."
-            foreach ($repo_name in $repo_order)
-            {
-                if (-not (Test-Path -Path $repo_name))
-                {
-                    $repo_url = $repo_urls.$repo_name
-                    if ($repo_url)
-                    {
-                        Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
-                        git clone $repo_url
-                    }
-                    else
-                    {
-                        Write-Host "Warning: No URL cached for $repo_name, skipping" -ForegroundColor Yellow
-                    }
-                }
-                else
-                {
-                    # already present
-                }
-            }
-            Write-Host "Done cloning repositories"
+            fail-with-status "Failed to get cached repo order after building graph."
         }
         else
         {
-            Write-Host "Building dependency graph..."
-            $build_graph_args = @{ root_list = $root_list }
-            if ($ForceBuildGraph) { $build_graph_args['ForceBuildGraph'] = $true }
-            & "$helper_scripts\build_graph.ps1" @build_graph_args
-            if($LASTEXITCODE -ne 0)
-            {
-                fail-with-status "Could not build dependency graph for $root_list."
-            }
-            else
-            {
-                # graph built successfully
-            }
-            Write-Host "Done building dependency graph"
-            # build_graph.ps1 sets the cache, so read from it
-            $cached_data = get-cached-repo-order -root_list $root_list -silent
-            if (-not $cached_data)
-            {
-                fail-with-status "Failed to get cached repo order after building graph."
-            }
-            else
-            {
-                # cache retrieved
-            }
-            $repo_order = $cached_data.repo_order
-            $repo_urls = $cached_data.repo_urls
+            # cache retrieved
         }
+        $repo_order = $cached_data.repo_order
+        $repo_urls = $cached_data.repo_urls
 
         # Initialize status tracking
         initialize-repo-status -repos $repo_order
