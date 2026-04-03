@@ -14,6 +14,8 @@ add_executable(repo_validator
     checks/check_no_vld_include.c
     checks/check_no_backticks_in_srs.c
     checks/check_test_spec_tags.c
+    checks/check_aaa_comments.c
+    checks/check_srs_consistency.c
 )
 
 target_include_directories(repo_validator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
