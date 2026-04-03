@@ -84,16 +84,21 @@ function global:prompt-cancel-propagation
         Write-Host "A pull request is currently open for '$($global:current_repo)':" -ForegroundColor Yellow
         Write-Host "  $pr_url" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "Close/abandon this PR and exit? (Y/n/c=continue): " -ForegroundColor Yellow -NoNewline
+        Write-Host "What would you like to do?" -ForegroundColor Yellow
+        Write-Host "  [Enter] Close the PR and stop propagation (default)" -ForegroundColor White
+        Write-Host "  [n]     Stop propagation but leave the PR open" -ForegroundColor White
+        Write-Host "  [r]     Go back - resume watching the PR" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Choice: " -ForegroundColor Yellow -NoNewline
 
         # Restore normal input for the prompt
         [Console]::TreatControlCAsInput = $false
         $response = Read-Host
         [Console]::TreatControlCAsInput = $true
 
-        if ($response -eq 'c' -or $response -eq 'C')
+        if ($response -eq 'r' -or $response -eq 'R')
         {
-            Write-Host "Resuming propagation..." -ForegroundColor Cyan
+            Write-Host "Resuming..." -ForegroundColor Cyan
             # result stays false = don't cancel
         }
         elseif ($response -eq 'n' -or $response -eq 'N')
@@ -114,15 +119,19 @@ function global:prompt-cancel-propagation
     }
     else
     {
-        Write-Host "Exit propagation? (Y/n/c=continue): " -ForegroundColor Yellow -NoNewline
+        Write-Host "What would you like to do?" -ForegroundColor Yellow
+        Write-Host "  [Enter] Stop propagation (default)" -ForegroundColor White
+        Write-Host "  [r]     Go back - resume propagation" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Choice: " -ForegroundColor Yellow -NoNewline
 
         [Console]::TreatControlCAsInput = $false
         $response = Read-Host
         [Console]::TreatControlCAsInput = $true
 
-        if ($response -eq 'c' -or $response -eq 'C' -or $response -eq 'n' -or $response -eq 'N')
+        if ($response -eq 'r' -or $response -eq 'R')
         {
-            Write-Host "Resuming propagation..." -ForegroundColor Cyan
+            Write-Host "Resuming..." -ForegroundColor Cyan
         }
         else
         {
