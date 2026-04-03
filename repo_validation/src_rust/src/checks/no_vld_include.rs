@@ -269,7 +269,9 @@ impl Check for NoVldInclude {
                 }
 
                 if !was_removed {
-                    if is_vld_include(&lines[idx].trimmed) && !line_has_force_comment(&lines[idx].trimmed) {
+                    if is_vld_include(&lines[idx].trimmed)
+                        && !line_has_force_comment(&lines[idx].trimmed)
+                    {
                         removed += 1;
                     } else {
                         output.extend_from_slice(&lines[idx].raw);

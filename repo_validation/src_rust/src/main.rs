@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+mod checks;
 mod config;
 mod file_walker;
-mod checks;
 
 use config::ValidatorConfig;
 use std::process;
@@ -94,7 +94,7 @@ fn main() {
     };
 
     // Normalize repo_root: strip trailing separator
-    let repo_root = repo_root.trim_end_matches(|c| c == '/' || c == '\\').to_string();
+    let repo_root = repo_root.trim_end_matches(['/', '\\']).to_string();
 
     // Parse exclude folders - always include deps and cmake as defaults
     let mut exclude_folders: Vec<String> = vec!["deps".to_string(), "cmake".to_string()];
@@ -170,7 +170,11 @@ fn main() {
 
     for check in active_checks.iter_mut() {
         let check_result = check.finalize(&config);
-        let status = if check_result == 0 { "PASSED" } else { "FAILED" };
+        let status = if check_result == 0 {
+            "PASSED"
+        } else {
+            "FAILED"
+        };
         println!("  {:<25} [{}]", check.name(), status);
         if check_result > 0 {
             total_violations += check_result;

@@ -90,9 +90,17 @@ fn extract_test_name(line: &[u8], macro_type: u8) -> String {
             .iter()
             .position(|&b| b == b',')
             .map(|p| open + p)
-            .or_else(|| line[open..].iter().position(|&b| b == b')').map(|p| open + p))
+            .or_else(|| {
+                line[open..]
+                    .iter()
+                    .position(|&b| b == b')')
+                    .map(|p| open + p)
+            })
     } else {
-        line[open..].iter().position(|&b| b == b')').map(|p| open + p)
+        line[open..]
+            .iter()
+            .position(|&b| b == b')')
+            .map(|p| open + p)
     };
 
     let close = match end_delim {
@@ -135,11 +143,13 @@ fn has_no_srs_exemption(line: &[u8]) -> bool {
 
                 while j > 0 && !found_comment {
                     j -= 1;
-                    if j > 0 && line[j] == b'/' && line[j - 1] == b'/' {
+                    if j > 0 && line[j - 1] == b'/' && (line[j] == b'/' || line[j] == b'*') {
                         found_comment = true;
-                    } else if line[j] == b'*' && j > 0 && line[j - 1] == b'/' {
-                        found_comment = true;
-                    } else if line[j] != b' ' && line[j] != b'\t' && line[j] != b'*' && line[j] != b'/' {
+                    } else if line[j] != b' '
+                        && line[j] != b'\t'
+                        && line[j] != b'*'
+                        && line[j] != b'/'
+                    {
                         break;
                     }
                 }
@@ -326,9 +336,7 @@ impl Check for TestSpecTags {
                                 in_multiline_comment = true;
                             }
 
-                            if in_multiline_comment {
-                                search_idx -= 1;
-                            } else if is_comment_line(prev) {
+                            if in_multiline_comment || is_comment_line(prev) {
                                 search_idx -= 1;
                             } else {
                                 break;
@@ -339,7 +347,11 @@ impl Check for TestSpecTags {
                     if found_tag {
                         self.tests_with_tags += 1;
                     } else {
-                        let macro_name = if macro_type == 2 { "PARAMETERIZED_TEST_FUNCTION" } else { "TEST_FUNCTION" };
+                        let macro_name = if macro_type == 2 {
+                            "PARAMETERIZED_TEST_FUNCTION"
+                        } else {
+                            "TEST_FUNCTION"
+                        };
                         let test_name = extract_test_name(line, macro_type);
                         println!(
                             "  [ERROR] {}:{} {}({}) - missing spec tag",

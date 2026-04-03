@@ -7,6 +7,10 @@ use std::path::{Path, MAIN_SEPARATOR};
 use crate::checks::Check;
 use crate::config::*;
 
+/// Classify a filename by extension, returning a bitmask value.
+/// Uses u32 bitmask (not an enum) because file_types flags are combined
+/// with bitwise OR for multi-type checks and merged with location flags
+/// (FILE_FLAG_IN_DEVDOC, FILE_FLAG_IS_UT) into a single type_flags field.
 pub fn classify_file_type(filename: &str) -> u32 {
     if let Some(dot_pos) = filename.rfind('.') {
         match &filename[dot_pos..] {
@@ -27,7 +31,7 @@ pub fn classify_file_type(filename: &str) -> u32 {
 pub fn is_in_devdoc_directory(relative_path: &str) -> bool {
     // Split path into components and check if any component is "devdoc"
     // and the file is a direct child of that devdoc directory
-    let parts: Vec<&str> = relative_path.split(|c| c == '/' || c == '\\').collect();
+    let parts: Vec<&str> = relative_path.split(['/', '\\']).collect();
     for (i, part) in parts.iter().enumerate() {
         if *part == "devdoc" && i + 1 < parts.len() {
             // Check if the next component is the last (i.e., the filename)
@@ -62,17 +66,14 @@ pub fn walk_repository(config: &ValidatorConfig, checks: &mut [Box<dyn Check>]) 
     walk_directory_recursive(config, checks, Path::new(&config.repo_root));
 }
 
-fn walk_directory_recursive(
-    config: &ValidatorConfig,
-    checks: &mut [Box<dyn Check>],
-    dir: &Path,
-) {
+fn walk_directory_recursive(config: &ValidatorConfig, checks: &mut [Box<dyn Check>], dir: &Path) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
     };
 
     for entry in entries {
+        // Skip entries that can't be read (e.g., permission errors)
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
@@ -111,10 +112,8 @@ fn walk_directory_recursive(
             if !is_path_excluded(&relative, &config.exclude_folders) {
                 walk_directory_recursive(config, checks, &full_path);
             }
-        } else if file_type.is_file() {
-            if !is_path_excluded(&relative, &config.exclude_folders) {
-                process_file(config, checks, &full_path_str, &relative);
-            }
+        } else if file_type.is_file() && !is_path_excluded(&relative, &config.exclude_folders) {
+            process_file(config, checks, &full_path_str, &relative);
         }
     }
 }
@@ -166,7 +165,9 @@ fn process_file(
         return;
     }
 
-    // Read file content
+    // Read file content (skip unreadable files with a silent continue,
+    // matching the original PowerShell scripts' try/catch behavior that
+    // printed [WARN] and continued to the next file)
     let content = match fs::read(full_path) {
         Ok(c) => c,
         Err(_) => return,
