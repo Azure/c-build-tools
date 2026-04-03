@@ -67,7 +67,7 @@ function update-repo-github
     Write-Host "Triggering pipeline..." -ForegroundColor Cyan
     $null = gh pr comment --body "/AzurePipelines run"
 
-    # Poll until checks appear instead of sleeping a fixed duration
+    # Poll until checks appear
     Write-Host "Waiting for checks to start... (Press Ctrl+C to cancel)" -ForegroundColor Gray
     $max_wait = 180
     $waited = 0
@@ -98,7 +98,7 @@ function update-repo-github
     }
 
     Write-Host "Waiting for build to complete"
-    $watch_result = watch-github-pr-checks -poll_interval 30 -timeout 120 -OnIteration { [void](show-propagation-status) }
+    $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
 
     # Check if PR was auto-merged
     $pr_state = gh pr view --json state 2>&1

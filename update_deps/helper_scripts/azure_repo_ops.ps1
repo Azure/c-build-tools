@@ -206,7 +206,7 @@ function wait-until-complete-azure
 
     Write-Host "Waiting for build to complete"
     Write-Host "`nWatching PR policies..."
-    $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
+    $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval $global:poll_interval -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
 
     if(!$success)
     {

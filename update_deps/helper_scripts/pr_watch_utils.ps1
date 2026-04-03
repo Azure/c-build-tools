@@ -84,42 +84,50 @@ function global:prompt-cancel-propagation
         Write-Host "A pull request is currently open for '$($global:current_repo)':" -ForegroundColor Yellow
         Write-Host "  $pr_url" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "Close/abandon this PR? (y/N): " -ForegroundColor Yellow -NoNewline
+        Write-Host "Close/abandon this PR and exit? (Y/n/c=continue): " -ForegroundColor Yellow -NoNewline
 
         # Restore normal input for the prompt
         [Console]::TreatControlCAsInput = $false
         $response = Read-Host
         [Console]::TreatControlCAsInput = $true
 
-        if ($response -eq 'y' -or $response -eq 'Y')
+        if ($response -eq 'c' -or $response -eq 'C')
         {
+            Write-Host "Resuming propagation..." -ForegroundColor Cyan
+            # result stays false = don't cancel
+        }
+        elseif ($response -eq 'n' -or $response -eq 'N')
+        {
+            Write-Host "PR left open." -ForegroundColor Cyan
+            set-repo-status -repo_name $global:current_repo -status "failed" -message "Cancelled by user (PR left open)"
+            $result = $true
+        }
+        else
+        {
+            # default: close PR and exit
             close-pr -repo_name $global:current_repo -pr_url $pr_url
             set-repo-status -repo_name $global:current_repo -status "failed" -message "Cancelled by user"
             # Clear PR URL so downstream error handlers don't try to close it again
             $global:repo_status[$global:current_repo].PrUrl = ""
+            $result = $true
         }
-        else
-        {
-            Write-Host "PR left open." -ForegroundColor Cyan
-            set-repo-status -repo_name $global:current_repo -status "failed" -message "Cancelled by user (PR left open)"
-        }
-        $result = $true
     }
     else
     {
-        Write-Host "No PR is currently open. Exit propagation? (y/N): " -ForegroundColor Yellow -NoNewline
+        Write-Host "Exit propagation? (Y/n/c=continue): " -ForegroundColor Yellow -NoNewline
 
         [Console]::TreatControlCAsInput = $false
         $response = Read-Host
         [Console]::TreatControlCAsInput = $true
 
-        if ($response -eq 'y' -or $response -eq 'Y')
+        if ($response -eq 'c' -or $response -eq 'C' -or $response -eq 'n' -or $response -eq 'N')
         {
-            $result = $true
+            Write-Host "Resuming propagation..." -ForegroundColor Cyan
         }
         else
         {
-            Write-Host "Continuing..." -ForegroundColor Cyan
+            # default: exit
+            $result = $true
         }
     }
 

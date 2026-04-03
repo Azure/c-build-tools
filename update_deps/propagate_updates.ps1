@@ -75,8 +75,10 @@ PS> .\propagate_updates.ps1 -Resume
 param(
     [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
     [Parameter(Mandatory=$false)][Int32]$azure_work_item, # Work item id to link to Azure PRs
+    [Parameter(Mandatory=$false)][Int32]$poll_interval = 15, # Seconds between status polls during PR watch
     [switch]$useCachedRepoOrder, # use cached repo order if root_list matches
     [switch]$NoCloseFailedPr, # keep the PR open if it fails (default: close/abandon failed PRs)
+    [switch]$ForceBuildGraph, # force graph rebuild even if known graph matches
     [switch]$Resume, # resume a previously failed propagation run
     [Parameter(Mandatory=$false)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
@@ -153,6 +155,9 @@ function propagate-updates
 
     # Close failed PRs by default unless -NoCloseFailedPr is specified
     $global:close_failed_pr = -not $NoCloseFailedPr.IsPresent
+
+    # Store poll interval for use by repo ops functions
+    $global:poll_interval = $poll_interval
 
     # Check PowerShell version first
     check-powershell-version
@@ -320,7 +325,9 @@ function propagate-updates
         else
         {
             Write-Host "Building dependency graph..."
-            .$helper_scripts\build_graph.ps1 -root_list $root_list
+            $build_graph_args = @{ root_list = $root_list }
+            if ($ForceBuildGraph) { $build_graph_args['ForceBuildGraph'] = $true }
+            & "$helper_scripts\build_graph.ps1" @build_graph_args
             if($LASTEXITCODE -ne 0)
             {
                 fail-with-status "Could not build dependency graph for $root_list."

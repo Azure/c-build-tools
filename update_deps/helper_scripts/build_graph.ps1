@@ -47,7 +47,8 @@ PS> Get-Content -Path order.json
 #>
 
 param(
-    [Parameter(Mandatory=$true)][string[]] $root_list # comma-separated list of URLs for repositories upto which updates must be propagated
+    [Parameter(Mandatory=$true)][string[]] $root_list, # comma-separated list of URLs for repositories upto which updates must be propagated
+    [switch]$ForceBuildGraph # force graph rebuild even if known graph matches
 )
 
 # Source cache helper
@@ -161,7 +162,11 @@ $path_to_ignores = Join-Path $PSScriptRoot "..\ignores.json"
 $repos_to_ignore = (Get-Content -Path $path_to_ignores) | ConvertFrom-Json
 
 # Check if the known graph covers all requested roots and validate edges
-if ($known_graph)
+if ($ForceBuildGraph)
+{
+    Write-Host "Force rebuild requested, skipping known graph" -ForegroundColor Yellow
+}
+elseif ($known_graph)
 {
     $root_names = $root_list | ForEach-Object { get-name-from-url -url $_ }
     $all_roots_known = $true
@@ -385,6 +390,25 @@ else
 
     # Clear progress bar
     Write-Progress -Activity "Building dependency graph" -Completed
+
+    # Save discovered graph as new known_graph.json for future runs
+    $new_graph = @{
+        _comment = "Known dependency graph for update propagation. If any repo's actual edges differ from this, the graph is rebuilt from scratch."
+        edges = @{}
+        urls = @{}
+    }
+    foreach ($entry in $repo_edges.GetEnumerator())
+    {
+        $new_graph.edges[$entry.Key] = @($entry.Value)
+    }
+    foreach ($entry in $repo_urls.GetEnumerator())
+    {
+        $new_graph.urls[$entry.Key] = $entry.Value
+    }
+    $new_graph_json = $new_graph | ConvertTo-Json -Depth 3
+    $new_graph_json | Set-Content -Path $path_to_known_graph -Encoding UTF8
+    Write-Host "Updated known_graph.json with discovered graph ($(($repo_edges.Count)) repos)" -ForegroundColor Yellow
+    Write-Host "Consider committing the updated known_graph.json to c-build-tools" -ForegroundColor Yellow
 }
 
 # Phase 2: Compute levels (longest path from roots) using cached edges - no I/O
