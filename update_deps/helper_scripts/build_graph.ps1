@@ -147,6 +147,7 @@ function get-submodules
 $path_to_known_graph = Join-Path $PSScriptRoot "..\known_graph.json"
 $known_graph = $null
 $use_known_graph = $false
+$save_new_graph = $false
 
 if (Test-Path $path_to_known_graph)
 {
@@ -392,14 +393,86 @@ else
     Write-Progress -Activity "Building dependency graph" -Completed
 
     # Save discovered graph as new known_graph.json for future runs
+    # (deferred until after Phase 2 so edges can be sorted by update order)
+    $save_new_graph = $true
+}
+
+# Phase 2: Compute levels (longest path from roots) using cached edges - no I/O
+# dictionary to store mapping from repo name to level in dependency graph
+# root repo is level 0 and leaf repo is maximum level
+$repo_levels = New-Object -TypeName "System.Collections.Generic.Dictionary[string, int]"
+$level_queue = New-Object -TypeName "System.Collections.Queue"
+
+# seed roots at level 0
+foreach ($root in $root_list)
+{
+    $name = get-name-from-url -url $root
+    $repo_levels[$name] = 0
+    $level_queue.Enqueue($name)
+}
+
+while ($level_queue.Count -ne 0)
+{
+    $repo_name = $level_queue.Dequeue()
+    $repo_level = $repo_levels[$repo_name]
+
+    if ($repo_edges.ContainsKey($repo_name))
+    {
+        foreach ($child_name in $repo_edges[$repo_name])
+        {
+            # $current_level is the longest path from root to child seen so far
+            $current_level = 0
+            [void]$repo_levels.TryGetValue($child_name, [ref]$current_level)
+            # update level if path via current repo is longer
+            if (($repo_level + 1) -gt $current_level)
+            {
+                $repo_levels[$child_name] = $repo_level + 1
+                $level_queue.Enqueue($child_name)
+            }
+            else
+            {
+                # existing level is sufficient
+            }
+        }
+    }
+    else
+    {
+        # leaf repo, no children
+    }
+}
+
+# clear progress bar
+Write-Progress -Activity "Building dependency graph" -Completed
+# convert dictionary to list of (repo_name, level)
+$repo_levels_list = [Linq.Enumerable]::ToList($repo_levels)
+# sort list by descending order of level
+$repo_levels_list.Sort({$args[1].Value.CompareTo($args[0].Value)})
+# create list to hold repos in order to be updated
+$repo_order = New-Object -TypeName "System.Collections.ArrayList"
+# collect repo names in repo_order
+$repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
+# Cache the results
+set-cached-repo-order -root_list $root_list -repo_order $repo_order -repo_urls $repo_urls
+
+# Save discovered graph as new known_graph.json (with edges sorted by update order)
+if ($save_new_graph)
+{
     $new_graph = @{
-        _comment = "Known dependency graph for update propagation. If any repo's actual edges differ from this, the graph is rebuilt from scratch."
+        _comment = "Known dependency graph for update propagation. If any repo's actual edges differ from this, the graph is rebuilt from scratch. Edge lists are in update order (leaves first)."
         edges = @{}
         urls = @{}
     }
+    # Build index from repo name to position in update order for sorting
+    $order_index = @{}
+    for ($i = 0; $i -lt $repo_order.Count; $i++)
+    {
+        $order_index[$repo_order[$i]] = $i
+    }
     foreach ($entry in $repo_edges.GetEnumerator())
     {
-        $new_graph.edges[$entry.Key] = @($entry.Value)
+        # Sort this repo's edges by their position in the update order
+        $sorted_edges = @($entry.Value) | Sort-Object { $order_index[$_] }
+        $new_graph.edges[$entry.Key] = @($sorted_edges)
     }
     foreach ($entry in $repo_urls.GetEnumerator())
     {
@@ -407,7 +480,7 @@ else
     }
     $new_graph_json = $new_graph | ConvertTo-Json -Depth 3
     $new_graph_json | Set-Content -Path $path_to_known_graph -Encoding UTF8
-    Write-Host "Updated known_graph.json with discovered graph ($(($repo_edges.Count)) repos)" -ForegroundColor Yellow
+    Write-Host "Updated known_graph.json with discovered graph ($($repo_edges.Count) repos, edges sorted by update order)" -ForegroundColor Yellow
 
     # Create a PR to c-build-tools with the updated known_graph.json
     # Clone into a separate folder to avoid touching the user's c-build-tools checkout
@@ -475,61 +548,9 @@ else
         Write-Host "Warning: c-build-tools URL not found, cannot create PR" -ForegroundColor Yellow
     }
 }
-
-# Phase 2: Compute levels (longest path from roots) using cached edges - no I/O
-# dictionary to store mapping from repo name to level in dependency graph
-# root repo is level 0 and leaf repo is maximum level
-$repo_levels = New-Object -TypeName "System.Collections.Generic.Dictionary[string, int]"
-$level_queue = New-Object -TypeName "System.Collections.Queue"
-
-# seed roots at level 0
-foreach ($root in $root_list)
+else
 {
-    $name = get-name-from-url -url $root
-    $repo_levels[$name] = 0
-    $level_queue.Enqueue($name)
+    # known graph was used, no update needed
 }
 
-while ($level_queue.Count -ne 0)
-{
-    $repo_name = $level_queue.Dequeue()
-    $repo_level = $repo_levels[$repo_name]
-
-    if ($repo_edges.ContainsKey($repo_name))
-    {
-        foreach ($child_name in $repo_edges[$repo_name])
-        {
-            # $current_level is the longest path from root to child seen so far
-            $current_level = 0
-            [void]$repo_levels.TryGetValue($child_name, [ref]$current_level)
-            # update level if path via current repo is longer
-            if (($repo_level + 1) -gt $current_level)
-            {
-                $repo_levels[$child_name] = $repo_level + 1
-                $level_queue.Enqueue($child_name)
-            }
-            else
-            {
-                # existing level is sufficient
-            }
-        }
-    }
-    else
-    {
-        # leaf repo, no children
-    }
-}
-
-# clear progress bar
-Write-Progress -Activity "Building dependency graph" -Completed
-# convert dictionary to list of (repo_name, level)
-$repo_levels_list = [Linq.Enumerable]::ToList($repo_levels)
-# sort list by descending order of level
-$repo_levels_list.Sort({$args[1].Value.CompareTo($args[0].Value)})
-# create list to hold repos in order to be updated
-$repo_order = New-Object -TypeName "System.Collections.ArrayList"
-# collect repo names in repo_order
-$repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
-# Cache the results
-set-cached-repo-order -root_list $root_list -repo_order $repo_order -repo_urls $repo_urls
 Exit 0
