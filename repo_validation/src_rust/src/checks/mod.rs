@@ -9,6 +9,8 @@ pub mod enable_mocks;
 pub mod no_vld_include;
 pub mod no_backticks_in_srs;
 pub mod test_spec_tags;
+pub mod aaa_comments;
+pub mod srs_consistency;
 
 use crate::config::{FileInfo, ValidatorConfig};
 
@@ -33,5 +35,7 @@ pub fn all_checks() -> Vec<Box<dyn Check>> {
         Box::new(no_vld_include::NoVldInclude::new()),
         Box::new(no_backticks_in_srs::NoBackticksInSrs::new()),
         Box::new(test_spec_tags::TestSpecTags::new()),
+        Box::new(aaa_comments::AaaComments::new()),
+        Box::new(srs_consistency::SrsConsistency::new()),
     ]
 }
