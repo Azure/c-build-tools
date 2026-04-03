@@ -11,6 +11,7 @@ pub mod no_backticks_in_srs;
 pub mod test_spec_tags;
 pub mod aaa_comments;
 pub mod srs_consistency;
+pub mod srs_format;
 
 use crate::config::{FileInfo, ValidatorConfig};
 
@@ -37,5 +38,6 @@ pub fn all_checks() -> Vec<Box<dyn Check>> {
         Box::new(test_spec_tags::TestSpecTags::new()),
         Box::new(aaa_comments::AaaComments::new()),
         Box::new(srs_consistency::SrsConsistency::new()),
+        Box::new(srs_format::SrsFormat::new()),
     ]
 }

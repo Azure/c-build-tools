@@ -96,5 +96,6 @@ const CHECK_DEFINITION* get_check_test_spec_tags(void);
 // Check declarations - Phase 3
 const CHECK_DEFINITION* get_check_aaa_comments(void);
 const CHECK_DEFINITION* get_check_srs_consistency(void);
+const CHECK_DEFINITION* get_check_srs_format(void);
 
 #endif // REPO_VALIDATOR_H

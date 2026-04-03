@@ -276,6 +276,22 @@ add_dependencies(test_validate_srs_consistency_rs
 )
 
 # ============================================================
+# srs_format
+# ============================================================
+add_custom_target(test_validate_srs_format_rs_clean
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${TEST_FIXTURES_DIR}/validate_srs_format/no_violations" --check srs_format
+    COMMENT "[Rust] Testing srs_format on clean files"
+    DEPENDS repo_validator_rs
+)
+
+add_custom_target(test_validate_srs_format_rs
+    COMMENT "[Rust] Running all srs_format tests"
+)
+add_dependencies(test_validate_srs_format_rs
+    test_validate_srs_format_rs_clean
+)
+
+# ============================================================
 # Master target: runs ALL Rust validation tests
 # ============================================================
 add_custom_target(test_validate_all_rs
@@ -292,4 +308,5 @@ add_dependencies(test_validate_all_rs
     test_validate_test_spec_tags_rs
     test_validate_aaa_comments_rs
     test_validate_srs_consistency_rs
+    test_validate_srs_format_rs
 )
