@@ -81,7 +81,7 @@ function(add_repo_validation project_name)
     string(REPLACE ";" "," EXCLUDE_FOLDERS_LIST "${REPO_VAL_EXCLUDE_FOLDERS}")
 
     # Checks migrated to compiled C tool (Phase 1 + Phase 2)
-    set(C_CHECKS "no_tabs;file_endings;requirements_naming;srs_uniqueness;enable_mocks;no_vld_include;no_backticks_in_srs;test_spec_tags;aaa_comments;srs_consistency")
+    set(C_CHECKS "no_tabs;file_endings;requirements_naming;srs_uniqueness;enable_mocks;no_vld_include;no_backticks_in_srs;test_spec_tags;aaa_comments;srs_consistency;srs_format")
 
     # Add compiled validator command for migrated checks
     list(APPEND VALIDATION_COMMANDS
@@ -89,7 +89,7 @@ function(add_repo_validation project_name)
         COMMAND repo_validator --repo-root "${REPO_ROOT}" --exclude-folders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG_C}
             --check no_tabs --check file_endings --check requirements_naming --check srs_uniqueness
             --check enable_mocks --check no_vld_include --check no_backticks_in_srs --check test_spec_tags
-            --check aaa_comments --check srs_consistency
+            --check aaa_comments --check srs_consistency --check srs_format
     )
 
     # Find PowerShell validation scripts that have NOT been migrated

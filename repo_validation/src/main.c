@@ -31,6 +31,7 @@ static void print_usage(const char* program_name)
     (void)printf("  test_spec_tags             Validates TEST_FUNCTION has spec tags\n");
     (void)printf("  aaa_comments               Validates test functions have AAA comments\n");
     (void)printf("  srs_consistency            Validates SRS consistency between markdown and C\n");
+    (void)printf("  srs_format                 Validates SRS requirement tag formatting in markdown\n");
 }
 
 static int is_check_enabled(const char* check_name, const char** enabled_checks, int num_enabled)
@@ -77,6 +78,7 @@ int main(int argc, char* argv[])
         get_check_test_spec_tags(),
         get_check_aaa_comments(),
         get_check_srs_consistency(),
+        get_check_srs_format(),
     };
     int total_available_checks = (int)(sizeof(all_checks) / sizeof(all_checks[0]));
 
