@@ -84,7 +84,7 @@ function global:prompt-cancel-propagation
         Write-Host "A pull request is currently open for '$($global:current_repo)':" -ForegroundColor Yellow
         Write-Host "  $pr_url" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "Close/abandon this PR? (y/n): " -ForegroundColor Yellow -NoNewline
+        Write-Host "Close/abandon this PR? (y/N): " -ForegroundColor Yellow -NoNewline
 
         # Restore normal input for the prompt
         [Console]::TreatControlCAsInput = $false
@@ -107,7 +107,7 @@ function global:prompt-cancel-propagation
     }
     else
     {
-        Write-Host "No PR is currently open. Exit propagation? (y/n): " -ForegroundColor Yellow -NoNewline
+        Write-Host "No PR is currently open. Exit propagation? (y/N): " -ForegroundColor Yellow -NoNewline
 
         [Console]::TreatControlCAsInput = $false
         $response = Read-Host

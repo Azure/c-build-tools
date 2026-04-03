@@ -257,9 +257,9 @@ function wait-until-complete-azure
                 $waited = 0
                 while($waited -lt $max_wait -and !$done)
                 {
-                    $cancelled = wait-or-cancel -seconds 10
+                    $cancelled = wait-or-cancel -seconds 2
                     if ($cancelled) { $global:propagation_cancelled = $true; break }
-                    $waited += 10
+                    $waited += 2
                     $pr_output = az repos pr show --id $pr_id --organization $org --output json
                     $pr_info = $pr_output | ConvertFrom-Json
                     if($pr_info.status -eq "completed")

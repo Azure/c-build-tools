@@ -141,102 +141,250 @@ function get-submodules
 }
 
 
-# dictionary to store dependency edges: repo_name -> list of submodule names
-$repo_edges = New-Object -TypeName "System.Collections.Generic.Dictionary[string, System.Collections.ArrayList]"
-# dictionary to store mapping from repo name to URL
-$repo_urls = New-Object -TypeName "System.Collections.Generic.Dictionary[string, string]"
-# set of repo names already cloned and enumerated
-$visited = New-Object -TypeName "System.Collections.Generic.HashSet[string]"
-# queue for BFS
-$queue = New-Object -TypeName "System.Collections.Queue"
+# Known graph: pre-computed dependency edges and URLs.
+# If the actual edges from .gitmodules match the known graph, skip the full BFS discovery.
+$path_to_known_graph = Join-Path $PSScriptRoot "..\known_graph.json"
+$known_graph = $null
+$use_known_graph = $false
+
+if (Test-Path $path_to_known_graph)
+{
+    $known_graph = (Get-Content -Path $path_to_known_graph -Raw) | ConvertFrom-Json
+}
+else
+{
+    Write-Host "No known_graph.json found, will discover from scratch" -ForegroundColor Yellow
+}
+
 # get list of repos to ignore while building graph from ignores.json
 $path_to_ignores = Join-Path $PSScriptRoot "..\ignores.json"
 $repos_to_ignore = (Get-Content -Path $path_to_ignores) | ConvertFrom-Json
 
-# Phase 1: Discovery - BFS with visited set, clone each repo once and collect dependency edges
-foreach ($root in $root_list)
+# Check if the known graph covers all requested roots and validate edges
+if ($known_graph)
 {
-    $queue.Enqueue($root)
+    $root_names = $root_list | ForEach-Object { get-name-from-url -url $_ }
+    $all_roots_known = $true
+    foreach ($name in $root_names)
+    {
+        if (-not $known_graph.edges.PSObject.Properties[$name])
+        {
+            Write-Host "Root '$name' not in known graph, will discover from scratch" -ForegroundColor Yellow
+            $all_roots_known = $false
+            break
+        }
+        else
+        {
+            # root is known
+        }
+    }
+
+    if ($all_roots_known)
+    {
+        # Validate edges: clone only the root repos (shallow) and check their .gitmodules
+        Write-Host "Validating known graph against root repos..." -ForegroundColor Cyan
+        $edges_match = $true
+        foreach ($root in $root_list)
+        {
+            $repo_name = get-name-from-url -url $root
+            # clone if not already present
+            if (-not (Test-Path -Path $repo_name))
+            {
+                Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
+                git clone --depth 1 $root
+                Write-Host ""
+            }
+            else
+            {
+                # already cloned
+            }
+            # get actual submodules
+            $submodules = get-submodules $root
+            $actual_children = @()
+            foreach ($sub in $submodules)
+            {
+                $sub_name = get-name-from-url -url $sub
+                if ($sub_name -in $repos_to_ignore) { continue }
+                $actual_children += $sub_name
+            }
+            # compare with known edges
+            $known_children = @($known_graph.edges.$repo_name)
+            $actual_sorted = $actual_children | Sort-Object
+            $known_sorted = $known_children | Sort-Object
+            if (($actual_sorted -join ",") -ne ($known_sorted -join ","))
+            {
+                Write-Host "Edge mismatch for '$repo_name': known graph is stale, will recompute" -ForegroundColor Yellow
+                $edges_match = $false
+                break
+            }
+            else
+            {
+                # edges match for this root
+            }
+        }
+
+        if ($edges_match)
+        {
+            Write-Host "Known graph validated, using hardcoded dependency order" -ForegroundColor Green
+            $use_known_graph = $true
+        }
+        else
+        {
+            # fall through to full discovery
+        }
+    }
+    else
+    {
+        # fall through to full discovery
+    }
+}
+else
+{
+    # no known graph, fall through to full discovery
 }
 
-while ($queue.Count -ne 0)
+if ($use_known_graph)
 {
-    $repo_url = $queue.Dequeue()
-    $repo_name = get-name-from-url -url $repo_url
+    # Build repo_edges and repo_urls from known graph, filtering to only repos reachable from roots
+    $repo_edges = New-Object -TypeName "System.Collections.Generic.Dictionary[string, System.Collections.ArrayList]"
+    $repo_urls = New-Object -TypeName "System.Collections.Generic.Dictionary[string, string]"
 
-    # skip if already discovered
-    if ($visited.Contains($repo_name))
+    # BFS to find all reachable repos from roots using known edges
+    $reachable = New-Object -TypeName "System.Collections.Generic.HashSet[string]"
+    $bfs_queue = New-Object -TypeName "System.Collections.Queue"
+    foreach ($root in $root_list)
     {
-        continue
+        $name = get-name-from-url -url $root
+        $bfs_queue.Enqueue($name)
+        # prefer root_list URL over known graph URL
+        $repo_urls[$name] = $root
     }
-    else
+    while ($bfs_queue.Count -ne 0)
     {
-        # first time seeing this repo
-    }
-    [void]$visited.Add($repo_name)
+        $name = $bfs_queue.Dequeue()
+        if ($reachable.Contains($name)) { continue }
+        [void]$reachable.Add($name)
 
-    # store repo URL
-    if (-not $repo_urls.ContainsKey($repo_name))
-    {
-        $repo_urls[$repo_name] = $repo_url
+        if (-not $repo_urls.ContainsKey($name) -and $known_graph.urls.PSObject.Properties[$name])
+        {
+            $repo_urls[$name] = $known_graph.urls.$name
+        }
+        else
+        {
+            # already have URL
+        }
+
+        $children = New-Object -TypeName "System.Collections.ArrayList"
+        if ($known_graph.edges.PSObject.Properties[$name])
+        {
+            foreach ($child in $known_graph.edges.$name)
+            {
+                [void]$children.Add($child)
+                $bfs_queue.Enqueue($child)
+            }
+        }
+        else
+        {
+            # leaf node
+        }
+        $repo_edges[$name] = $children
     }
-    else
+}
+else
+{
+    # Full discovery: BFS with visited set, clone each repo once and collect dependency edges
+    $repo_edges = New-Object -TypeName "System.Collections.Generic.Dictionary[string, System.Collections.ArrayList]"
+    $repo_urls = New-Object -TypeName "System.Collections.Generic.Dictionary[string, string]"
+    $visited = New-Object -TypeName "System.Collections.Generic.HashSet[string]"
+    $queue = New-Object -TypeName "System.Collections.Queue"
+
+    foreach ($root in $root_list)
     {
-        # already stored
+        $queue.Enqueue($root)
     }
 
-    Write-Progress -Activity "Building dependency graph" -Status "Discovering: $repo_name" -CurrentOperation "Repos discovered: $($visited.Count) | Queue: $($queue.Count)"
+    while ($queue.Count -ne 0)
+    {
+        $repo_url = $queue.Dequeue()
+        $repo_name = get-name-from-url -url $repo_url
 
-    # clone repo if not already present (shallow clone - only .gitmodules is needed)
-    if (-not (Test-Path -Path $repo_name))
-    {
-        # Hide progress bar during clone to avoid output conflicts
-        Write-Progress -Activity "Building dependency graph" -Completed
-        Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
-        git clone --depth 1 $repo_url
-        Write-Host ""
-    }
-    else
-    {
-        # already cloned
-    }
-
-    # get submodules and record edges
-    $submodules = get-submodules $repo_url
-    $children = New-Object -TypeName "System.Collections.ArrayList"
-    foreach ($submodule in $submodules)
-    {
-        $sub_name = get-name-from-url -url $submodule
-        # ignore submodule if it is in $repos_to_ignore
-        if ($sub_name -in $repos_to_ignore)
+        # skip if already discovered
+        if ($visited.Contains($repo_name))
         {
             continue
         }
         else
         {
-            # process this submodule
+            # first time seeing this repo
         }
-        [void]$children.Add($sub_name)
-        # store URL for this submodule
-        if (-not $repo_urls.ContainsKey($sub_name))
+        [void]$visited.Add($repo_name)
+
+        # store repo URL
+        if (-not $repo_urls.ContainsKey($repo_name))
         {
-            $repo_urls[$sub_name] = $submodule
+            $repo_urls[$repo_name] = $repo_url
         }
         else
         {
             # already stored
         }
-        # enqueue for discovery if not yet visited
-        if (-not $visited.Contains($sub_name))
+
+        Write-Progress -Activity "Building dependency graph" -Status "Discovering: $repo_name" -CurrentOperation "Repos discovered: $($visited.Count) | Queue: $($queue.Count)"
+
+        # clone repo if not already present (shallow clone - only .gitmodules is needed)
+        if (-not (Test-Path -Path $repo_name))
         {
-            $queue.Enqueue($submodule)
+            # Hide progress bar during clone to avoid output conflicts
+            Write-Progress -Activity "Building dependency graph" -Completed
+            Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
+            git clone --depth 1 $repo_url
+            Write-Host ""
         }
         else
         {
-            # already discovered
+            # already cloned
         }
+
+        # get submodules and record edges
+        $submodules = get-submodules $repo_url
+        $children = New-Object -TypeName "System.Collections.ArrayList"
+        foreach ($submodule in $submodules)
+        {
+            $sub_name = get-name-from-url -url $submodule
+            # ignore submodule if it is in $repos_to_ignore
+            if ($sub_name -in $repos_to_ignore)
+            {
+                continue
+            }
+            else
+            {
+                # process this submodule
+            }
+            [void]$children.Add($sub_name)
+            # store URL for this submodule
+            if (-not $repo_urls.ContainsKey($sub_name))
+            {
+                $repo_urls[$sub_name] = $submodule
+            }
+            else
+            {
+                # already stored
+            }
+            # enqueue for discovery if not yet visited
+            if (-not $visited.Contains($sub_name))
+            {
+                $queue.Enqueue($submodule)
+            }
+            else
+            {
+                # already discovered
+            }
+        }
+        $repo_edges[$repo_name] = $children
     }
-    $repo_edges[$repo_name] = $children
+
+    # Clear progress bar
+    Write-Progress -Activity "Building dependency graph" -Completed
 }
 
 # Phase 2: Compute levels (longest path from roots) using cached edges - no I/O

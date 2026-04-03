@@ -1,0 +1,43 @@
+{
+    "_comment": "Known dependency graph for update propagation. If any repo's actual edges differ from this, the graph is rebuilt from scratch.",
+    "edges": {
+        "Azure-Messaging-GeoReplication": ["zrpc", "clds", "c-util", "umock-c", "c-testrunnerswitcher", "ctest", "c-logging", "macro-utils-c", "c-build-tools", "c-pal", "com-wrapper", "sf-c-util", "Azure-Messaging-Metrics", "Azure-MessagingStore-AITools", "azure-messaging-ai-context"],
+        "Azure-Messaging-ElasticLog": ["umock-c", "c-build-tools", "macro-utils-c", "c-logging", "ctest", "c-testrunnerswitcher", "c-pal", "c-util", "sf-c-util", "Azure-Messaging-Metrics", "com-wrapper", "zrpc", "Azure-MessagingStore", "clds", "azure-messaging-ai-context"],
+        "Azure-MessagingStore": ["umock-c", "clds", "c-build-tools", "macro-utils-c", "c-logging", "ctest", "c-testrunnerswitcher", "c-pal", "c-util", "zrpc", "com-wrapper", "sf-c-util", "Azure-Messaging-Metrics", "Azure-MessagingStore-AITools", "azure-messaging-ai-context"],
+        "Azure-Messaging-Metrics": ["c-build-tools", "umock-c", "macro-utils-c", "ctest", "c-testrunnerswitcher", "c-util", "c-pal", "c-logging", "sf-c-util", "com-wrapper", "azure-messaging-ai-context"],
+        "Azure-MessagingStore-AITools": ["c-build-tools", "azure-messaging-ai-context"],
+        "zrpc": ["umock-c", "clds", "c-build-tools", "macro-utils-c", "c-logging", "ctest", "c-testrunnerswitcher", "c-pal", "c-util", "azure-messaging-ai-context"],
+        "clds": ["umock-c", "c-build-tools", "macro-utils-c", "c-logging", "ctest", "c-testrunnerswitcher", "c-pal", "c-util", "azure-messaging-ai-context"],
+        "sf-c-util": ["macro-utils-c", "c-build-tools", "ctest", "c-logging", "c-testrunnerswitcher", "umock-c", "com-wrapper", "c-pal", "c-util", "azure-messaging-ai-context"],
+        "c-util": ["umock-c", "c-build-tools", "macro-utils-c", "c-logging", "ctest", "c-testrunnerswitcher", "c-pal", "azure-messaging-ai-context"],
+        "com-wrapper": ["c-build-tools", "ctest", "umock-c", "c-testrunnerswitcher", "c-logging", "macro-utils-c", "c-pal", "azure-messaging-ai-context"],
+        "c-pal": ["umock-c", "c-build-tools", "macro-utils-c", "c-logging", "ctest", "c-testrunnerswitcher", "azure-messaging-ai-context"],
+        "umock-c": ["c-build-tools", "macro-utils-c", "c-logging", "ctest", "c-testrunnerswitcher", "azure-messaging-ai-context"],
+        "c-testrunnerswitcher": ["c-build-tools", "macro-utils-c", "ctest", "c-logging", "azure-messaging-ai-context"],
+        "ctest": ["c-build-tools", "macro-utils-c", "c-logging", "azure-messaging-ai-context"],
+        "c-logging": ["c-build-tools", "macro-utils-c", "azure-messaging-ai-context"],
+        "macro-utils-c": ["c-build-tools", "azure-messaging-ai-context"],
+        "c-build-tools": [],
+        "azure-messaging-ai-context": []
+    },
+    "urls": {
+        "Azure-Messaging-GeoReplication": "https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-GeoReplication",
+        "Azure-Messaging-ElasticLog": "https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-ElasticLog",
+        "Azure-MessagingStore": "https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-MessagingStore",
+        "Azure-Messaging-Metrics": "https://msazure.visualstudio.com/One/_git/Azure-Messaging-Metrics",
+        "Azure-MessagingStore-AITools": "https://msazure.visualstudio.com/One/_git/Azure-MessagingStore-AITools",
+        "zrpc": "https://msazure.visualstudio.com/DefaultCollection/One/_git/zrpc",
+        "clds": "https://github.com/Azure/clds",
+        "sf-c-util": "https://github.com/Azure/sf-c-util",
+        "c-util": "https://github.com/Azure/c-util",
+        "com-wrapper": "https://github.com/Azure/com-wrapper",
+        "c-pal": "https://github.com/Azure/c-pal",
+        "umock-c": "https://github.com/azure/umock-c",
+        "c-testrunnerswitcher": "https://github.com/Azure/c-testrunnerswitcher",
+        "ctest": "https://github.com/Azure/ctest",
+        "c-logging": "https://github.com/Azure/c-logging",
+        "macro-utils-c": "https://github.com/Azure/macro-utils-c",
+        "c-build-tools": "https://github.com/Azure/c-build-tools",
+        "azure-messaging-ai-context": "https://github.com/Azure/azure-messaging-ai-context.git"
+    }
+}
