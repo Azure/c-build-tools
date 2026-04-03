@@ -14,6 +14,26 @@ set(TEST_FIXTURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tests")
 # The Rust executable path is set by src_rust/CMakeLists.txt
 # REPO_VALIDATOR_RS_EXE is set in parent scope by src_rust/CMakeLists.txt
 
+set(RUST_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src_rust")
+
+# ============================================================
+# Rust code quality checks (clippy + fmt)
+# These only run as part of the test suite, not when running validation.
+# ============================================================
+add_custom_target(test_rust_clippy
+    COMMAND cargo clippy --manifest-path "${RUST_SRC_DIR}/Cargo.toml" -- -D warnings
+    WORKING_DIRECTORY "${RUST_SRC_DIR}"
+    COMMENT "[Rust] Running cargo clippy"
+    DEPENDS repo_validator_rs
+)
+
+add_custom_target(test_rust_fmt_check
+    COMMAND cargo fmt --manifest-path "${RUST_SRC_DIR}/Cargo.toml" --check
+    WORKING_DIRECTORY "${RUST_SRC_DIR}"
+    COMMENT "[Rust] Checking cargo fmt"
+    DEPENDS repo_validator_rs
+)
+
 # ============================================================
 # no_tabs
 # ============================================================
@@ -309,4 +329,6 @@ add_dependencies(test_validate_all_rs
     test_validate_aaa_comments_rs
     test_validate_srs_consistency_rs
     test_validate_srs_format_rs
+    test_rust_clippy
+    test_rust_fmt_check
 )

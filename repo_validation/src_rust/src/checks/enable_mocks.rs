@@ -192,7 +192,8 @@ impl Check for EnableMocks {
         }
 
         if config.fix_mode {
-            let mut output = Vec::with_capacity(file.content.len() + (total_violations as usize) * 128);
+            let mut output =
+                Vec::with_capacity(file.content.len() + (total_violations as usize) * 128);
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = &line.trimmed;
@@ -224,7 +225,8 @@ impl Check for EnableMocks {
 
                 // Add newline if not the last line
                 let is_last = idx == lines.len() - 1;
-                let original_had_newline = !line.raw.is_empty() && line.raw[line.raw.len() - 1] == b'\n';
+                let original_had_newline =
+                    !line.raw.is_empty() && line.raw[line.raw.len() - 1] == b'\n';
                 if !is_last || original_had_newline {
                     if is_last && !original_had_newline {
                         // don't add

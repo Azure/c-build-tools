@@ -30,13 +30,13 @@ impl SrsUniqueness {
 }
 
 fn is_srs_module_char(c: u8) -> bool {
-    (c >= b'A' && c <= b'Z') || (c >= b'0' && c <= b'9') || c == b'_'
+    c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_'
 }
 
 fn compute_line_number(content: &[u8], offset: usize) -> i32 {
     let mut line = 1;
-    for i in 0..offset {
-        if content[i] == b'\n' {
+    for &byte in &content[..offset] {
+        if byte == b'\n' {
             line += 1;
         }
     }
@@ -200,10 +200,7 @@ impl Check for SrsUniqueness {
 
     fn finalize(&mut self, _config: &ValidatorConfig) -> i32 {
         println!();
-        println!(
-            "  Requirement documents scanned: {}",
-            self.files_scanned
-        );
+        println!("  Requirement documents scanned: {}", self.files_scanned);
         println!("  Total SRS tags found: {}", self.total_tags);
 
         if self.duplicate_found {

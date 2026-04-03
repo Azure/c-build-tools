@@ -79,7 +79,12 @@ fn strip_markdown_formatting(text: &str) -> String {
         if let Some(start) = result.find("**") {
             if let Some(end) = result[start + 2..].find("**") {
                 let inner = result[start + 2..start + 2 + end].to_string();
-                result = format!("{}{}{}", &result[..start], inner, &result[start + 2 + end + 2..]);
+                result = format!(
+                    "{}{}{}",
+                    &result[..start],
+                    inner,
+                    &result[start + 2 + end + 2..]
+                );
                 continue;
             }
         }
@@ -102,8 +107,8 @@ fn strip_markdown_formatting(text: &str) -> String {
             }
             if j < clen && chars[j] == '*' && j > word_start {
                 // This is *word* pattern - remove the asterisks
-                for k in word_start..j {
-                    new_result.push(chars[k]);
+                for &ch in &chars[word_start..j] {
+                    new_result.push(ch);
                 }
                 i = j + 1;
                 continue;
@@ -128,8 +133,8 @@ fn strip_markdown_formatting(text: &str) -> String {
             }
             if j < clen {
                 // Found matching backtick
-                for k in start..j {
-                    new_result.push(chars[k]);
+                for &ch in &chars[start..j] {
+                    new_result.push(ch);
                 }
                 i = j + 1;
                 continue;
@@ -200,7 +205,11 @@ fn extract_markdown_srs_tags(content: &str, file_path: &str) -> Vec<(String, Mar
             if bytes[q] == b':' {
                 // Standard: **SRS_TAG: [** text **]**
                 q += 1;
-            } else if q + 2 < len && bytes[q] == b'*' && bytes[q + 1] == b'*' && bytes[q + 2] == b':' {
+            } else if q + 2 < len
+                && bytes[q] == b'*'
+                && bytes[q + 1] == b'*'
+                && bytes[q + 2] == b':'
+            {
                 // Alternate: **SRS_TAG**: [** text **]**
                 q += 3;
             } else {
@@ -256,7 +265,9 @@ fn extract_markdown_srs_tags(content: &str, file_path: &str) -> Vec<(String, Mar
             if let Some(te) = text_end {
                 // Trim trailing whitespace from text
                 let mut actual_end = te;
-                while actual_end > text_start && (bytes[actual_end - 1] == b' ' || bytes[actual_end - 1] == b'\t') {
+                while actual_end > text_start
+                    && (bytes[actual_end - 1] == b' ' || bytes[actual_end - 1] == b'\t')
+                {
                     actual_end -= 1;
                 }
 
@@ -264,10 +275,13 @@ fn extract_markdown_srs_tags(content: &str, file_path: &str) -> Vec<(String, Mar
                 let raw_text = String::from_utf8_lossy(&bytes[text_start..actual_end]).to_string();
                 let clean_text = strip_markdown_formatting(&raw_text);
 
-                tags.push((tag, MarkdownReq {
-                    clean_text,
-                    file_path: file_path.to_string(),
-                }));
+                tags.push((
+                    tag,
+                    MarkdownReq {
+                        clean_text,
+                        file_path: file_path.to_string(),
+                    },
+                ));
 
                 p = te + 5;
             } else {
@@ -282,7 +296,7 @@ fn extract_markdown_srs_tags(content: &str, file_path: &str) -> Vec<(String, Mar
 }
 
 fn is_srs_tag_char(b: u8) -> bool {
-    (b >= b'A' && b <= b'Z') || (b >= b'0' && b <= b'9') || b == b'_'
+    b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_'
 }
 
 /// Validate tag has format SRS_MODULE_DD_DDD (ends with _NN_NNN)
@@ -418,16 +432,25 @@ fn extract_c_srs_tags(content: &str) -> Vec<CTag> {
                     if bytes[scan] == b']' {
                         // Found ], look for */ after optional whitespace
                         let mut after_bracket = scan + 1;
-                        while after_bracket < line_end && (bytes[after_bracket] == b' ' || bytes[after_bracket] == b'\t') {
+                        while after_bracket < line_end
+                            && (bytes[after_bracket] == b' ' || bytes[after_bracket] == b'\t')
+                        {
                             after_bracket += 1;
                         }
                         // Check for */ (possibly with extra *)
-                        if after_bracket + 1 < len && bytes[after_bracket] == b'*' && bytes[after_bracket + 1] == b'/' {
+                        if after_bracket + 1 < len
+                            && bytes[after_bracket] == b'*'
+                            && bytes[after_bracket + 1] == b'/'
+                        {
                             text_end_pos = scan;
                             comment_end_pos = after_bracket + 2;
                             found_complete = true;
                             // Don't break - keep looking for LAST ]*/ on this line
-                        } else if after_bracket + 2 < len && bytes[after_bracket] == b'*' && bytes[after_bracket + 1] == b'*' && bytes[after_bracket + 2] == b'/' {
+                        } else if after_bracket + 2 < len
+                            && bytes[after_bracket] == b'*'
+                            && bytes[after_bracket + 1] == b'*'
+                            && bytes[after_bracket + 2] == b'/'
+                        {
                             text_end_pos = scan;
                             comment_end_pos = after_bracket + 3;
                             found_complete = true;
@@ -465,7 +488,8 @@ fn extract_c_srs_tags(content: &str) -> Vec<CTag> {
                     let raw_text = String::from_utf8_lossy(raw_text_bytes).to_string();
                     let clean_text = normalize_c_text(&raw_text);
 
-                    let original = String::from_utf8_lossy(&bytes[comment_start..comment_end_pos]).to_string();
+                    let original =
+                        String::from_utf8_lossy(&bytes[comment_start..comment_end_pos]).to_string();
 
                     // Check for duplication
                     let has_duplication = original.matches("]*/").count() > 1;
@@ -582,9 +606,9 @@ fn extract_c_srs_tags(content: &str) -> Vec<CTag> {
                 let text_end = last_bracket.unwrap_or(line_end);
 
                 // Check that this doesn't overlap with a block comment match
-                let overlaps = complete_ranges.iter().any(|(s, e)| {
-                    comment_start >= *s && comment_start < *e
-                });
+                let overlaps = complete_ranges
+                    .iter()
+                    .any(|(s, e)| comment_start >= *s && comment_start < *e);
                 if overlaps {
                     p += 1;
                     continue;
@@ -594,8 +618,13 @@ fn extract_c_srs_tags(content: &str) -> Vec<CTag> {
                 let raw_text = String::from_utf8_lossy(&bytes[text_start..text_end]).to_string();
                 let clean_text = normalize_c_text(&raw_text);
 
-                let original_end = if last_bracket.is_some() { text_end + 1 } else { line_end };
-                let original = String::from_utf8_lossy(&bytes[comment_start..original_end]).to_string();
+                let original_end = if last_bracket.is_some() {
+                    text_end + 1
+                } else {
+                    line_end
+                };
+                let original =
+                    String::from_utf8_lossy(&bytes[comment_start..original_end]).to_string();
 
                 tags.push(CTag {
                     tag,
@@ -632,10 +661,9 @@ fn normalize_c_text(text: &str) -> String {
 
 /// Determine if a file is a test file based on parent directory name ending with _ut or _int
 fn is_test_file(relative_path: &str) -> bool {
-    let parts: Vec<&str> = relative_path.split(|c: char| c == '/' || c == '\\').collect();
+    let parts: Vec<&str> = relative_path.split(['/', '\\']).collect();
     // Check all directory components (not the filename)
-    for i in 0..parts.len().saturating_sub(1) {
-        let dir = parts[i];
+    for dir in parts.iter().take(parts.len().saturating_sub(1)) {
         if dir.ends_with("_ut") || dir.ends_with("_int") {
             return true;
         }
@@ -661,17 +689,24 @@ fn fix_c_file_records(file_path: &str, inconsistencies: &[&InconsistencyRecord])
         let old_comment = &inc.original_match;
         if let Some(pos) = result.find(old_comment) {
             if let Some(new_comment) = build_fixed_comment(old_comment, &inc.md_text) {
-                result = format!("{}{}{}", &result[..pos], new_comment, &result[pos + old_comment.len()..]);
+                result = format!(
+                    "{}{}{}",
+                    &result[..pos],
+                    new_comment,
+                    &result[pos + old_comment.len()..]
+                );
                 fixed_count += 1;
-                println!("  [FIXED] {} in {}", inc.tag, extract_filename_str(file_path));
+                println!(
+                    "  [FIXED] {} in {}",
+                    inc.tag,
+                    extract_filename_str(file_path)
+                );
             }
         }
     }
 
-    if fixed_count > 0 {
-        if fs::write(file_path, &result).is_ok() {
-            return true;
-        }
+    if fixed_count > 0 && fs::write(file_path, &result).is_ok() {
+        return true;
     }
     false
 }
@@ -703,15 +738,24 @@ fn build_fixed_comment(old_comment: &str, new_text: &str) -> Option<String> {
             let bracket_close = bracket_open + 1 + bracket_close_rel;
             // Preserve whitespace after [ and before ]
             let ws_after_open = extract_leading_ws(&old_comment[bracket_open + 1..bracket_close]);
-            let ws_before_close = extract_trailing_ws(&old_comment[bracket_open + 1..bracket_close]);
+            let ws_before_close =
+                extract_trailing_ws(&old_comment[bracket_open + 1..bracket_close]);
             let suffix = &old_comment[bracket_close..];
-            Some(format!("{}[{}{}{}{}", &old_comment[..bracket_open], ws_after_open, new_text, ws_before_close, suffix))
+            Some(format!(
+                "{}[{}{}{}{}",
+                &old_comment[..bracket_open],
+                ws_after_open,
+                new_text,
+                ws_before_close,
+                suffix
+            ))
         } else {
             // Incomplete comment - add closing bracket
             // Find */
             let end_pos = old_comment.rfind("*/")?;
             let ws_after_open = extract_leading_ws(&old_comment[bracket_open + 1..end_pos]);
-            Some(format!("{}[{}{} ]{}",
+            Some(format!(
+                "{}[{}{} ]{}",
                 &old_comment[..bracket_open],
                 ws_after_open,
                 new_text,
@@ -725,8 +769,15 @@ fn build_fixed_comment(old_comment: &str, new_text: &str) -> Option<String> {
         if let Some(bracket_close_rel) = after_bracket.rfind(']') {
             let bracket_close = bracket_open + 1 + bracket_close_rel;
             let ws_after_open = extract_leading_ws(&old_comment[bracket_open + 1..bracket_close]);
-            let ws_before_close = extract_trailing_ws(&old_comment[bracket_open + 1..bracket_close]);
-            Some(format!("{}[{}{}{}]", &old_comment[..bracket_open], ws_after_open, new_text, ws_before_close))
+            let ws_before_close =
+                extract_trailing_ws(&old_comment[bracket_open + 1..bracket_close]);
+            Some(format!(
+                "{}[{}{}{}]",
+                &old_comment[..bracket_open],
+                ws_after_open,
+                new_text,
+                ws_before_close
+            ))
         } else {
             Some(format!("{}[ {} ]", &old_comment[..bracket_open], new_text))
         }
@@ -751,12 +802,7 @@ fn find_last_bracket_before_end(s: &str) -> Option<usize> {
     let end_pos = end_pos?;
 
     // Find last ] before end_pos
-    for i in (0..end_pos).rev() {
-        if bytes[i] == b']' {
-            return Some(i);
-        }
-    }
-    None
+    (0..end_pos).rev().find(|&i| bytes[i] == b']')
 }
 
 fn extract_leading_ws(s: &str) -> &str {
@@ -822,8 +868,10 @@ impl Check for SrsConsistency {
 
             let md_tags = extract_markdown_srs_tags(content, &file.relative_path);
             for (tag, req) in md_tags {
-                if !self.md_requirements.contains_key(&tag) {
-                    self.md_requirements.insert(tag, req);
+                if let std::collections::hash_map::Entry::Vacant(e) =
+                    self.md_requirements.entry(tag)
+                {
+                    e.insert(req);
                     self.total_md_requirements += 1;
                 }
             }
@@ -851,13 +899,15 @@ impl Check for SrsConsistency {
                 self.placement_violations.push(PlacementViolation {
                     file_path: file.relative_path.clone(),
                     full_tag: format!("{}_{}", ctag.prefix, ctag.tag),
-                    violation: "Codes_SRS_ tag found in test file (should use Tests_SRS_)".to_string(),
+                    violation: "Codes_SRS_ tag found in test file (should use Tests_SRS_)"
+                        .to_string(),
                 });
             } else if !is_test && ctag.prefix == "Tests" {
                 self.placement_violations.push(PlacementViolation {
                     file_path: file.relative_path.clone(),
                     full_tag: format!("{}_{}", ctag.prefix, ctag.tag),
-                    violation: "Tests_SRS_ tag found in production file (should use Codes_SRS_)".to_string(),
+                    violation: "Tests_SRS_ tag found in production file (should use Codes_SRS_)"
+                        .to_string(),
                 });
             }
 
@@ -897,10 +947,16 @@ impl Check for SrsConsistency {
         }
 
         println!();
-        println!("  SRS requirements in markdown: {}", self.total_md_requirements);
+        println!(
+            "  SRS requirements in markdown: {}",
+            self.total_md_requirements
+        );
         println!("  C source files scanned: {}", self.c_files_scanned);
         println!("  Inconsistencies found: {}", inconsistencies.len());
-        println!("  Tag placement violations: {}", self.placement_violations.len());
+        println!(
+            "  Tag placement violations: {}",
+            self.placement_violations.len()
+        );
 
         if !inconsistencies.is_empty() {
             if config.fix_mode {
@@ -912,7 +968,7 @@ impl Check for SrsConsistency {
 
                 let mut fixed_count = 0;
                 for (file_path, incs) in &by_file {
-                    if fix_c_file_records(file_path, &incs) {
+                    if fix_c_file_records(file_path, incs) {
                         fixed_count += incs.len();
                     }
                 }
@@ -931,11 +987,18 @@ impl Check for SrsConsistency {
             println!();
             println!("  Tag placement violations:");
             for v in &self.placement_violations {
-                println!("    [ERROR] {}: {} - {}", v.file_path, v.full_tag, v.violation);
+                println!(
+                    "    [ERROR] {}: {} - {}",
+                    v.file_path, v.full_tag, v.violation
+                );
             }
         }
 
-        let unfixed = if config.fix_mode { 0 } else { inconsistencies.len() };
+        let unfixed = if config.fix_mode {
+            0
+        } else {
+            inconsistencies.len()
+        };
         (unfixed + self.placement_violations.len()) as i32
     }
 }

@@ -24,7 +24,11 @@ fn content_has_srs_tag(content: &[u8]) -> bool {
 
     let mut i = 0;
     while i + 15 < len {
-        if content[i] == b'S' && content[i + 1] == b'R' && content[i + 2] == b'S' && content[i + 3] == b'_' {
+        if content[i] == b'S'
+            && content[i + 1] == b'R'
+            && content[i + 2] == b'S'
+            && content[i + 3] == b'_'
+        {
             let mut p = i + 4;
             let mut found_upper = false;
 

@@ -1,17 +1,17 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-pub mod no_tabs;
-pub mod file_endings;
-pub mod requirements_naming;
-pub mod srs_uniqueness;
-pub mod enable_mocks;
-pub mod no_vld_include;
-pub mod no_backticks_in_srs;
-pub mod test_spec_tags;
 pub mod aaa_comments;
+pub mod enable_mocks;
+pub mod file_endings;
+pub mod no_backticks_in_srs;
+pub mod no_tabs;
+pub mod no_vld_include;
+pub mod requirements_naming;
 pub mod srs_consistency;
 pub mod srs_format;
+pub mod srs_uniqueness;
+pub mod test_spec_tags;
 
 use crate::config::{FileInfo, ValidatorConfig};
 

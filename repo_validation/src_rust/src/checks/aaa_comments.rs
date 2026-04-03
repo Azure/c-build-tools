@@ -29,7 +29,7 @@ fn build_line_index(content: &[u8]) -> LineIndex {
     let mut starts = Vec::new();
     starts.push(0);
     for i in 0..content.len() {
-        if content[i] == b'\n' && i + 1 <= content.len() {
+        if content[i] == b'\n' && i < content.len() {
             starts.push(i + 1);
         }
     }
@@ -240,11 +240,7 @@ fn extract_function_body(content: &[u8], start_index: usize) -> Option<(usize, V
 fn find_aaa_positions(body: &[u8]) -> [i64; 3] {
     let mut positions = [-1i64; 3];
 
-    let keywords: [(&[u8], usize); 3] = [
-        (b"arrange", 0),
-        (b"act", 1),
-        (b"assert", 2),
-    ];
+    let keywords: [(&[u8], usize); 3] = [(b"arrange", 0), (b"act", 1), (b"assert", 2)];
 
     let len = body.len();
 
@@ -275,10 +271,8 @@ fn find_aaa_positions(body: &[u8]) -> [i64; 3] {
                 if q + klen <= len && eq_ignore_case(&body[q..q + klen], keyword) {
                     // Word boundary check: char after keyword should not be alphanumeric or _
                     let after = q + klen;
-                    if after >= len || !is_ident_char(body[after]) {
-                        if positions[*idx] < 0 {
-                            positions[*idx] = comment_start as i64;
-                        }
+                    if (after >= len || !is_ident_char(body[after])) && positions[*idx] < 0 {
+                        positions[*idx] = comment_start as i64;
                     }
                 }
 
@@ -312,7 +306,7 @@ fn eq_ignore_case(a: &[u8], b: &[u8]) -> bool {
         return false;
     }
     for i in 0..a.len() {
-        if a[i].to_ascii_lowercase() != b[i].to_ascii_lowercase() {
+        if !a[i].eq_ignore_ascii_case(&b[i]) {
             return false;
         }
     }
@@ -375,8 +369,17 @@ fn has_no_aaa_exemption(line: &[u8]) -> bool {
 
 /// C return type keywords used to identify helper function definitions
 const RETURN_TYPES: &[&[u8]] = &[
-    b"void", b"int", b"bool", b"char", b"unsigned", b"signed", b"long",
-    b"short", b"float", b"double", b"size_t",
+    b"void",
+    b"int",
+    b"bool",
+    b"char",
+    b"unsigned",
+    b"signed",
+    b"long",
+    b"short",
+    b"float",
+    b"double",
+    b"size_t",
 ];
 
 fn is_return_type_prefix(word: &[u8]) -> bool {
@@ -385,17 +388,20 @@ fn is_return_type_prefix(word: &[u8]) -> bool {
             return true;
         }
     }
-    // uint*_t, int*_t patterns
+    // uint*_t, int*_t patterns (e.g., uint32_t, int64_t)
     if word.len() >= 5 && word[word.len() - 2] == b'_' && word[word.len() - 1] == b't' {
         let prefix = &word[..word.len() - 2];
         if prefix.starts_with(b"uint") || prefix.starts_with(b"int") {
-            return prefix[if prefix.starts_with(b"uint") { 4 } else { 3 }..]
-                .iter()
-                .all(|b| b.is_ascii_digit());
+            let digits_start = if prefix.starts_with(b"uint") {
+                b"uint".len()
+            } else {
+                b"int".len()
+            };
+            return prefix[digits_start..].iter().all(|b| b.is_ascii_digit());
         }
     }
-    // THANDLE(...)
-    if word.len() >= 8 && word.starts_with(b"THANDLE") {
+    // THANDLE(...) macro type
+    if word.len() >= b"THANDLE(".len() && word.starts_with(b"THANDLE") {
         return true;
     }
     false
@@ -427,7 +433,10 @@ fn find_helper_functions(content: &[u8]) -> HashMap<String, HelperFunc> {
 
         // Check for "static " prefix
         let mut p = pos;
-        if p + 7 <= len && &content[p..p + 6] == b"static" && (content[p + 6] == b' ' || content[p + 6] == b'\t') {
+        if p + 7 <= len
+            && &content[p..p + 6] == b"static"
+            && (content[p + 6] == b' ' || content[p + 6] == b'\t')
+        {
             p += 6;
             while p < len && (content[p] == b' ' || content[p] == b'\t') {
                 p += 1;
@@ -445,8 +454,12 @@ fn find_helper_functions(content: &[u8]) -> HashMap<String, HelperFunc> {
                 let mut paren_depth = 1;
                 p += 1;
                 while p < len && paren_depth > 0 {
-                    if content[p] == b'(' { paren_depth += 1; }
-                    if content[p] == b')' { paren_depth -= 1; }
+                    if content[p] == b'(' {
+                        paren_depth += 1;
+                    }
+                    if content[p] == b')' {
+                        paren_depth -= 1;
+                    }
                     p += 1;
                 }
             }
@@ -461,7 +474,9 @@ fn find_helper_functions(content: &[u8]) -> HashMap<String, HelperFunc> {
                 while pos < len && content[pos] != b'\n' {
                     pos += 1;
                 }
-                if pos < len { pos += 1; }
+                if pos < len {
+                    pos += 1;
+                }
                 continue;
             }
         }
@@ -487,7 +502,7 @@ fn find_helper_functions(content: &[u8]) -> HashMap<String, HelperFunc> {
             let func_name = String::from_utf8_lossy(&content[name_start..p]).to_string();
 
             // Check it's not an excluded name
-            let excluded = EXCLUDED_NAMES.iter().any(|e| *e == func_name.as_str());
+            let excluded = EXCLUDED_NAMES.contains(&func_name.as_str());
 
             if !excluded {
                 // Skip whitespace, expect '('
@@ -500,14 +515,23 @@ fn find_helper_functions(content: &[u8]) -> HashMap<String, HelperFunc> {
                     let mut paren_count = 1;
                     p += 1;
                     while p < len && paren_count > 0 {
-                        if content[p] == b'(' { paren_count += 1; }
-                        if content[p] == b')' { paren_count -= 1; }
+                        if content[p] == b'(' {
+                            paren_count += 1;
+                        }
+                        if content[p] == b')' {
+                            paren_count -= 1;
+                        }
                         p += 1;
                     }
 
                     if paren_count == 0 {
                         // Skip whitespace, look for '{'
-                        while p < len && (content[p] == b' ' || content[p] == b'\t' || content[p] == b'\r' || content[p] == b'\n') {
+                        while p < len
+                            && (content[p] == b' '
+                                || content[p] == b'\t'
+                                || content[p] == b'\r'
+                                || content[p] == b'\n')
+                        {
                             p += 1;
                         }
 
@@ -661,9 +685,15 @@ impl Check for AaaComments {
                             None => [-1, -1, -1],
                         }
                     });
-                    if h_positions[0] >= 0 { positions[0] = 0; }
-                    if h_positions[1] >= 0 { positions[1] = 0; }
-                    if h_positions[2] >= 0 { positions[2] = 0; }
+                    if h_positions[0] >= 0 {
+                        positions[0] = 0;
+                    }
+                    if h_positions[1] >= 0 {
+                        positions[1] = 0;
+                    }
+                    if h_positions[2] >= 0 {
+                        positions[2] = 0;
+                    }
                 }
                 if positions[0] >= 0 && positions[1] >= 0 && positions[2] >= 0 {
                     break;
@@ -672,15 +702,24 @@ impl Check for AaaComments {
 
             // Report missing
             let mut missing = Vec::new();
-            if positions[0] < 0 { missing.push("arrange"); }
-            if positions[1] < 0 { missing.push("act"); }
-            if positions[2] < 0 { missing.push("assert"); }
+            if positions[0] < 0 {
+                missing.push("arrange");
+            }
+            if positions[1] < 0 {
+                missing.push("act");
+            }
+            if positions[2] < 0 {
+                missing.push("assert");
+            }
 
             if !missing.is_empty() {
                 let line_num = line_number_at(&line_index, tf.match_pos);
                 println!(
                     "  [ERROR] {}:{} {}({}) - missing AAA: {}",
-                    file.relative_path, line_num, tf.macro_name, tf.test_name,
+                    file.relative_path,
+                    line_num,
+                    tf.macro_name,
+                    tf.test_name,
                     missing.join(", ")
                 );
                 self.violations += 1;
