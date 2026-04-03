@@ -144,18 +144,35 @@ function get-submodules
 
 # Known graph: pre-computed dependency edges and URLs.
 # If the actual edges from .gitmodules match the known graph, skip the full BFS discovery.
+# Always fetch the latest version from the c-build-tools repo to avoid stale local copies.
 $path_to_known_graph = Join-Path $PSScriptRoot "..\known_graph.json"
 $known_graph = $null
 $use_known_graph = $false
 $save_new_graph = $false
 
-if (Test-Path $path_to_known_graph)
+Write-Host "Fetching latest known_graph.json from c-build-tools..." -ForegroundColor Gray
+try
 {
-    $known_graph = (Get-Content -Path $path_to_known_graph -Raw) | ConvertFrom-Json
+    $raw_url = "https://raw.githubusercontent.com/Azure/c-build-tools/master/update_deps/known_graph.json"
+    $remote_json = Invoke-RestMethod -Uri $raw_url -ErrorAction Stop
+    $known_graph = $remote_json
+    # Save locally so the auto-update PR can diff against it
+    $remote_json | ConvertTo-Json -Depth 3 | Set-Content -Path $path_to_known_graph -Encoding UTF8
+    Write-Host "Using known_graph.json from remote (master)" -ForegroundColor Green
 }
-else
+catch
 {
-    Write-Host "No known_graph.json found, will discover from scratch" -ForegroundColor Yellow
+    Write-Host "Could not fetch remote known_graph.json: $_" -ForegroundColor Yellow
+    # Fall back to local copy if available
+    if (Test-Path $path_to_known_graph)
+    {
+        Write-Host "Using local known_graph.json as fallback" -ForegroundColor Yellow
+        $known_graph = (Get-Content -Path $path_to_known_graph -Raw) | ConvertFrom-Json
+    }
+    else
+    {
+        Write-Host "No known_graph.json available, will discover from scratch" -ForegroundColor Yellow
+    }
 }
 
 # get list of repos to ignore while building graph from ignores.json
