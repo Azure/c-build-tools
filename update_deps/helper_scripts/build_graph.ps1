@@ -51,9 +51,6 @@ param(
     [switch]$ForceBuildGraph # force graph rebuild even if known graph matches
 )
 
-# Source cache helper
-. "$PSScriptRoot\repo_order_cache.ps1"
-
 
 # parse repo URL to extract repo name
 # Expected URL format: */<repo_name>[.*]
@@ -459,8 +456,6 @@ $repo_levels_list.Sort({$args[1].Value.CompareTo($args[0].Value)})
 $repo_order = New-Object -TypeName "System.Collections.ArrayList"
 # collect repo names in repo_order
 $repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
-# Cache the results
-set-cached-repo-order -root_list $root_list -repo_order $repo_order -repo_urls $repo_urls
 
 # Save discovered graph as new known_graph.json (with edges sorted by update order)
 if ($save_new_graph)
@@ -560,5 +555,3 @@ else
 {
     # known graph was used, no update needed
 }
-
-Exit 0

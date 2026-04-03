@@ -18,7 +18,6 @@ update_deps/
 │   ├── github_repo_ops.ps1    # GitHub PR operations
 │   ├── watch_azure_pr.ps1     # Azure PR policy monitoring
 │   ├── watch_github_pr.ps1    # GitHub PR check monitoring
-│   ├── repo_order_cache.ps1   # Caching functions
 │   ├── install_az_cli.ps1     # Azure CLI setup
 │   └── install_gh_cli.ps1     # GitHub CLI setup
 ```

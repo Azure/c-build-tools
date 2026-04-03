@@ -84,7 +84,6 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\check_script_update.ps1"
 . "$helper_scripts\install_az_cli.ps1"
 . "$helper_scripts\install_gh_cli.ps1"
-. "$helper_scripts\repo_order_cache.ps1"
 . "$helper_scripts\status_tracking.ps1"
 . "$helper_scripts\git_operations.ps1"
 . "$helper_scripts\watch_azure_pr.ps1"
@@ -278,8 +277,8 @@ function propagate-updates
         Write-Host "Building dependency graph..."
         $build_graph_args = @{ root_list = $root_list }
         if ($ForceBuildGraph) { $build_graph_args['ForceBuildGraph'] = $true }
-        & "$helper_scripts\build_graph.ps1" @build_graph_args
-        if($LASTEXITCODE -ne 0)
+        . "$helper_scripts\build_graph.ps1" @build_graph_args
+        if (-not $repo_order -or $repo_order.Count -eq 0)
         {
             fail-with-status "Could not build dependency graph for $root_list."
         }
@@ -288,18 +287,6 @@ function propagate-updates
             # graph built successfully
         }
         Write-Host "Done building dependency graph"
-        # build_graph.ps1 sets the cache, so read from it
-        $cached_data = get-cached-repo-order -root_list $root_list -silent
-        if (-not $cached_data)
-        {
-            fail-with-status "Failed to get cached repo order after building graph."
-        }
-        else
-        {
-            # cache retrieved
-        }
-        $repo_order = $cached_data.repo_order
-        $repo_urls = $cached_data.repo_urls
 
         # Initialize status tracking
         initialize-repo-status -repos $repo_order
