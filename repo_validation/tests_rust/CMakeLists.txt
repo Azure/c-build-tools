@@ -244,6 +244,38 @@ add_dependencies(test_validate_test_spec_tags_rs
 )
 
 # ============================================================
+# aaa_comments
+# ============================================================
+add_custom_target(test_validate_aaa_comments_rs_clean
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${TEST_FIXTURES_DIR}/validate_aaa_comments/has_aaa" --check aaa_comments
+    COMMENT "[Rust] Testing aaa_comments on clean files"
+    DEPENDS repo_validator_rs
+)
+
+add_custom_target(test_validate_aaa_comments_rs
+    COMMENT "[Rust] Running all aaa_comments tests"
+)
+add_dependencies(test_validate_aaa_comments_rs
+    test_validate_aaa_comments_rs_clean
+)
+
+# ============================================================
+# srs_consistency
+# ============================================================
+add_custom_target(test_validate_srs_consistency_rs_clean
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${TEST_FIXTURES_DIR}/validate_srs_consistency/consistent" --check srs_consistency
+    COMMENT "[Rust] Testing srs_consistency on consistent files"
+    DEPENDS repo_validator_rs
+)
+
+add_custom_target(test_validate_srs_consistency_rs
+    COMMENT "[Rust] Running all srs_consistency tests"
+)
+add_dependencies(test_validate_srs_consistency_rs
+    test_validate_srs_consistency_rs_clean
+)
+
+# ============================================================
 # Master target: runs ALL Rust validation tests
 # ============================================================
 add_custom_target(test_validate_all_rs
@@ -258,4 +290,6 @@ add_dependencies(test_validate_all_rs
     test_validate_no_vld_include_rs
     test_validate_no_backticks_in_srs_rs
     test_validate_test_spec_tags_rs
+    test_validate_aaa_comments_rs
+    test_validate_srs_consistency_rs
 )
