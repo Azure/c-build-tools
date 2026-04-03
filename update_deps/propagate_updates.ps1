@@ -302,7 +302,7 @@ function propagate-updates
     }
 
     Write-Host "Updating repositories in the following order: "
-    for($i = 0; $i -lt $repo_order.Length; $i++)
+    for($i = 0; $i -lt $repo_order.Count; $i++)
     {
         Write-Host "$($i+1). $($repo_order[$i])"
     }
