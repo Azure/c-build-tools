@@ -163,16 +163,7 @@ try
 catch
 {
     Write-Host "Could not fetch remote known_graph.json: $_" -ForegroundColor Yellow
-    # Fall back to local copy if available
-    if (Test-Path $path_to_known_graph)
-    {
-        Write-Host "Using local known_graph.json as fallback" -ForegroundColor Yellow
-        $known_graph = (Get-Content -Path $path_to_known_graph -Raw) | ConvertFrom-Json
-    }
-    else
-    {
-        Write-Host "No known_graph.json available, will discover from scratch" -ForegroundColor Yellow
-    }
+    Write-Host "Will discover dependency graph from scratch" -ForegroundColor Yellow
 }
 
 # get list of repos to ignore while building graph from ignores.json
