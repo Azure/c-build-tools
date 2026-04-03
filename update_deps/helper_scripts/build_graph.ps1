@@ -450,8 +450,12 @@ while ($level_queue.Count -ne 0)
 Write-Progress -Activity "Building dependency graph" -Completed
 # convert dictionary to list of (repo_name, level)
 $repo_levels_list = [Linq.Enumerable]::ToList($repo_levels)
-# sort list by descending order of level
-$repo_levels_list.Sort({$args[1].Value.CompareTo($args[0].Value)})
+# sort list by descending order of level, then alphabetically for same-level repos
+$repo_levels_list.Sort({
+    $level_cmp = $args[1].Value.CompareTo($args[0].Value)
+    if ($level_cmp -ne 0) { return $level_cmp }
+    return [string]::Compare($args[0].Key, $args[1].Key, [System.StringComparison]::OrdinalIgnoreCase)
+})
 # create list to hold repos in order to be updated
 $repo_order = New-Object -TypeName "System.Collections.ArrayList"
 # collect repo names in repo_order
@@ -460,27 +464,51 @@ $repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
 # Save discovered graph as new known_graph.json (with edges sorted by update order)
 if ($save_new_graph)
 {
-    $new_graph = @{
-        _comment = "Known dependency graph for update propagation. If any repo's actual edges differ from this, the graph is rebuilt from scratch. Edge lists are in update order (leaves first)."
-        edges = @{}
-        urls = @{}
-    }
-    # Build index from repo name to position in update order for sorting
+    # Build index from repo name to position in update order for sorting edges
     $order_index = @{}
     for ($i = 0; $i -lt $repo_order.Count; $i++)
     {
         $order_index[$repo_order[$i]] = $i
     }
-    foreach ($entry in $repo_edges.GetEnumerator())
+
+    # Build edges in reverse update order (roots first, leaves last) with sorted edge lists
+    $ordered_edges = [ordered]@{}
+    $reverse_order = @($repo_order)
+    [Array]::Reverse($reverse_order)
+    foreach ($name in $reverse_order)
     {
-        # Sort this repo's edges by their position in the update order
-        $sorted_edges = @($entry.Value) | Sort-Object { $order_index[$_] }
-        $new_graph.edges[$entry.Key] = @($sorted_edges)
+        if ($repo_edges.ContainsKey($name))
+        {
+            $sorted_edges = @($repo_edges[$name]) | Sort-Object { $order_index[$_] }
+            $ordered_edges[$name] = @($sorted_edges)
+        }
+        else
+        {
+            $ordered_edges[$name] = @()
+        }
     }
-    foreach ($entry in $repo_urls.GetEnumerator())
+
+    # Build urls in update order (leaves first) with .git suffix stripped
+    $ordered_urls = [ordered]@{}
+    foreach ($name in $repo_order)
     {
-        $new_graph.urls[$entry.Key] = $entry.Value
+        if ($repo_urls.ContainsKey($name))
+        {
+            $url = $repo_urls[$name] -replace '\.git$', ''
+            $ordered_urls[$name] = $url
+        }
+        else
+        {
+            # no url for this repo
+        }
     }
+
+    $new_graph = [ordered]@{
+        _comment = "Known dependency graph for update propagation. If any repo's actual edges differ from this, the graph is rebuilt from scratch. Edge lists are in update order (leaves first)."
+        edges = $ordered_edges
+        urls = $ordered_urls
+    }
+
     $new_graph_json = $new_graph | ConvertTo-Json -Depth 3
     $new_graph_json | Set-Content -Path $path_to_known_graph -Encoding UTF8
     Write-Host "Updated known_graph.json with discovered graph ($($repo_edges.Count) repos, edges sorted by update order)" -ForegroundColor Yellow
