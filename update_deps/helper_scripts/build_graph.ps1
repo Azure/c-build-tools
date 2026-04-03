@@ -527,16 +527,17 @@ if ($save_new_graph)
 
     if ($cbt_url)
     {
+        $saved_location = (Get-Location).Path
         try
         {
-            $update_dir = Join-Path $PWD "known_graph_update"
+            $update_dir = Join-Path $saved_location "known_graph_update"
             if (Test-Path $update_dir) { Remove-Item -Recurse -Force $update_dir }
             New-Item -ItemType Directory -Path $update_dir -Force | Out-Null
 
-            Push-Location $update_dir
+            Set-Location $update_dir
             Write-Host "Cloning c-build-tools to create known_graph.json PR..." -ForegroundColor Cyan
             git clone --depth 1 $cbt_url
-            Push-Location "c-build-tools"
+            Set-Location "c-build-tools"
 
             # Copy the updated known_graph.json into the fresh clone
             Copy-Item $path_to_known_graph -Destination "update_deps\known_graph.json" -Force
@@ -563,15 +564,14 @@ if ($save_new_graph)
             {
                 Write-Host "No changes to known_graph.json detected" -ForegroundColor Gray
             }
-
-            Pop-Location # c-build-tools
-            Pop-Location # known_graph_update
         }
         catch
         {
             Write-Host "Warning: Could not create PR for known_graph.json: $_" -ForegroundColor Yellow
-            # Restore location in case of error
-            while ((Get-Location).Path -ne $PWD) { Pop-Location -ErrorAction SilentlyContinue; break }
+        }
+        finally
+        {
+            Set-Location $saved_location
         }
     }
     else

@@ -288,6 +288,29 @@ function propagate-updates
         }
         Write-Host "Done building dependency graph"
 
+        # Clone any repos that aren't already present (known graph path only clones roots)
+        Write-Host "Ensuring all repositories are cloned..."
+        Set-Location $global:work_dir
+        foreach ($repo_name in $repo_order)
+        {
+            if (-not (Test-Path -Path $repo_name))
+            {
+                if ($repo_urls.ContainsKey($repo_name))
+                {
+                    Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
+                    git clone $repo_urls[$repo_name]
+                }
+                else
+                {
+                    Write-Host "Warning: No URL for $repo_name, skipping clone" -ForegroundColor Yellow
+                }
+            }
+            else
+            {
+                # already cloned
+            }
+        }
+
         # Initialize status tracking
         initialize-repo-status -repos $repo_order
 
