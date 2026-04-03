@@ -191,12 +191,22 @@ fn extract_markdown_srs_tags(content: &str, file_path: &str) -> Vec<(String, Mar
 
             let tag_end = q;
 
-            // Expect ':' immediately (no whitespace - matching PS1 regex behavior)
-            if q >= len || bytes[q] != b':' {
+            // Expect ':' (possibly after closing '**' if tag is **SRS_TAG**: [** pattern)
+            if q >= len {
                 p += 2;
                 continue;
             }
-            q += 1;
+
+            if bytes[q] == b':' {
+                // Standard: **SRS_TAG: [** text **]**
+                q += 1;
+            } else if q + 2 < len && bytes[q] == b'*' && bytes[q + 1] == b'*' && bytes[q + 2] == b':' {
+                // Alternate: **SRS_TAG**: [** text **]**
+                q += 3;
+            } else {
+                p += 2;
+                continue;
+            }
 
             // Validate tag format: SRS_MODULE_DD_DDD
             let tag_bytes = &bytes[tag_start..tag_end];
@@ -205,8 +215,9 @@ fn extract_markdown_srs_tags(content: &str, file_path: &str) -> Vec<(String, Mar
                 continue;
             }
 
-            // Skip whitespace
-            while q < len && (bytes[q] == b' ' || bytes[q] == b'\t') {
+            // Skip whitespace and bold close markers (**) between colon and opening bracket
+            // Handles both: **SRS_TAG: [** text **]** and **SRS_TAG:** [** text **]**
+            while q < len && (bytes[q] == b' ' || bytes[q] == b'\t' || bytes[q] == b'*') {
                 q += 1;
             }
 
