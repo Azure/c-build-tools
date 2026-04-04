@@ -10,18 +10,18 @@
 
 # Test 1: Verify tool detects incorrectly named requirements
 add_custom_target(test_validate_requirements_naming_detection
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/incorrect_naming" --check requirements_naming
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/incorrect_naming" --check requirements_naming
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing requirements naming detection on incorrectly named files"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Test 2: Verify tool passes on correctly named requirements
 add_custom_target(test_validate_requirements_naming_clean
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/correct_naming" --check requirements_naming
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/correct_naming" --check requirements_naming
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing requirements naming validation on correctly named files"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Test 3: Verify fix functionality works
@@ -33,12 +33,12 @@ add_custom_target(test_validate_requirements_naming_fix
         "${CMAKE_CURRENT_SOURCE_DIR}/incorrect_naming" 
         "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
     # Run the tool with fix mode
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check requirements_naming --fix
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check requirements_naming --fix
     # Verify files were renamed correctly (tool should pass now)
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check requirements_naming
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check requirements_naming
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing requirements naming fix functionality"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Master target for all requirements naming validation tests

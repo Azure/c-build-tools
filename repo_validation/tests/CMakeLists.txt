@@ -12,6 +12,16 @@
 set(POWERSHELL_EXECUTABLE "powershell.exe")
 set(VALIDATION_SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../scripts")
 
+# Set the validator executable name based on which validator is being used
+# Child test CMakeLists should use REPO_VALIDATOR_EXE and REPO_VALIDATOR_TARGET
+if(use_c_repo_validator)
+    set(REPO_VALIDATOR_EXE repo_validator)
+    set(REPO_VALIDATOR_TARGET repo_validator)
+else()
+    set(REPO_VALIDATOR_EXE "${REPO_VALIDATOR_RS_EXE}")
+    set(REPO_VALIDATOR_TARGET repo_validator_rs)
+endif()
+
 # Add test targets for each validation script
 add_subdirectory(validate_no_tabs)
 add_subdirectory(validate_file_endings)

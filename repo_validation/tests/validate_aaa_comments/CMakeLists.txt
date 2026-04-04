@@ -10,34 +10,34 @@
 
 # Test 1: Verify tool detects missing AAA comments
 add_custom_target(test_validate_aaa_comments_detection
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa" --check aaa_comments
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa" --check aaa_comments
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment detection on files with missing comments"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Test 2: Verify tool passes on files with proper AAA comments
 add_custom_target(test_validate_aaa_comments_clean
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa" --check aaa_comments
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa" --check aaa_comments
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment validation on clean files"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Test 3: Verify tool handles exempted tests correctly
 add_custom_target(test_validate_aaa_comments_exempted
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa" --check aaa_comments
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa" --check aaa_comments
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment validation with exempted tests"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Test 4: Verify --fix parameter doesn't break anything (it should do nothing)
 add_custom_target(test_validate_aaa_comments_fix_noop
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa" --check aaa_comments --fix
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa" --check aaa_comments --fix
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing that --fix parameter has no effect"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Master target for all AAA comment validation tests

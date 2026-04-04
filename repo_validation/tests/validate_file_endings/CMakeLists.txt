@@ -10,18 +10,18 @@
 
 # Test 1: Verify tool detects missing CRLF endings
 add_custom_target(test_validate_file_endings_detection
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_crlf" --check file_endings
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_crlf" --check file_endings
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing file ending detection on files missing CRLF"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Test 2: Verify tool passes on files with proper endings
 add_custom_target(test_validate_file_endings_clean
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/proper_crlf" --check file_endings
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/proper_crlf" --check file_endings
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing file ending validation on files with proper CRLF"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Test 3: Verify fix functionality works
@@ -32,12 +32,12 @@ add_custom_target(test_validate_file_endings_fix
         "${CMAKE_CURRENT_SOURCE_DIR}/missing_crlf" 
         "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
     # Run the tool with fix mode
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check file_endings --fix
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check file_endings --fix
     # Verify CRLF endings were added (tool should pass now)
-    COMMAND repo_validator --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check file_endings
+    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check file_endings
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing file ending fix functionality"
-    DEPENDS repo_validator
+    DEPENDS ${REPO_VALIDATOR_TARGET}
 )
 
 # Master target for all file ending validation tests
