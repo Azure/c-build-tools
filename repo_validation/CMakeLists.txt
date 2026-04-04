@@ -3,9 +3,29 @@
 
 cmake_minimum_required(VERSION 3.18)
 
-# Build the repo_validator executable when validation is enabled
+# Build the compiled validator when validation is enabled.
+# Default is Rust (repo_validator_rs via cargo). Set use_c_repo_validator=ON to use the C version.
+option(use_c_repo_validator "Use C repo_validator instead of Rust repo_validator_rs (default is OFF)" OFF)
+
 if(run_repo_validation)
-    add_subdirectory(src)
+    if(use_c_repo_validator)
+        add_subdirectory(src)
+    else()
+        # Check that cargo is available before trying to build the Rust validator
+        find_program(CARGO_EXECUTABLE cargo)
+        if(NOT CARGO_EXECUTABLE)
+            message(FATAL_ERROR
+                "cargo not found. The Rust repo_validator_rs requires a Rust toolchain.\n"
+                "To install:\n"
+                "  1. Install msrustup: https://eng.ms/docs/more/rust\n"
+                "  2. Run: msrustup toolchain install ms-prod-1.93\n"
+                "  3. Run: msrustup default ms-prod-1.93\n"
+                "\n"
+                "Alternatively, set -Duse_c_repo_validator=ON to use the C version (no Rust needed)."
+            )
+        endif()
+        add_subdirectory(src_rust)
+    endif()
 endif()
 
 # Function to add repository validation target
@@ -80,44 +100,28 @@ function(add_repo_validation project_name)
     # Build the exclude folders argument as comma-separated list
     string(REPLACE ";" "," EXCLUDE_FOLDERS_LIST "${REPO_VAL_EXCLUDE_FOLDERS}")
 
-    # Checks migrated to compiled C tool (Phase 1 + Phase 2)
-    set(C_CHECKS "no_tabs;file_endings;requirements_naming;srs_uniqueness;enable_mocks;no_vld_include;no_backticks_in_srs;test_spec_tags;aaa_comments;srs_consistency;srs_format")
+    # Determine which validator binary to use
+    if(use_c_repo_validator)
+        set(VALIDATOR_TARGET repo_validator)
+        set(VALIDATOR_NAME "C repo_validator")
+    else()
+        set(VALIDATOR_TARGET repo_validator_rs)
+        set(VALIDATOR_NAME "Rust repo_validator_rs")
+    endif()
 
-    # Add compiled validator command for migrated checks
+    # Run the compiled validator (all checks are built-in, no --check flags needed)
     list(APPEND VALIDATION_COMMANDS
-        COMMAND ${CMAKE_COMMAND} -E echo "Running compiled validator (${C_CHECKS})"
-        COMMAND repo_validator --repo-root "${REPO_ROOT}" --exclude-folders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG_C}
-            --check no_tabs --check file_endings --check requirements_naming --check srs_uniqueness
-            --check enable_mocks --check no_vld_include --check no_backticks_in_srs --check test_spec_tags
-            --check aaa_comments --check srs_consistency --check srs_format
+        COMMAND ${CMAKE_COMMAND} -E echo "Running ${VALIDATOR_NAME}"
+        COMMAND ${VALIDATOR_TARGET} --repo-root "${REPO_ROOT}" --exclude-folders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG_C}
     )
 
-    # Find PowerShell validation scripts that have NOT been migrated
+    # Find PowerShell validation scripts not yet migrated to the compiled validator
+    # (currently only validate_c_build_tools_ref.ps1 remains as PowerShell)
     file(GLOB VALIDATION_SCRIPTS "${VALIDATION_SCRIPTS_DIR}/*.ps1")
-
-    # Scripts migrated to C - exclude from PowerShell execution
-    set(MIGRATED_SCRIPTS
-        "validate_no_tabs.ps1"
-        "validate_file_endings.ps1"
-        "validate_requirements_naming.ps1"
-        "validate_srs_uniqueness.ps1"
-        "validate_enable_mocks_pattern.ps1"
-        "validate_no_vld_include.ps1"
-        "validate_no_backticks_in_srs.ps1"
-        "validate_test_spec_tags.ps1"
-        "validate_aaa_comments.ps1"
-        "validate_srs_consistency.ps1"
-    )
 
     # Build the command list for remaining PowerShell scripts
     foreach(SCRIPT ${VALIDATION_SCRIPTS})
         get_filename_component(SCRIPT_NAME ${SCRIPT} NAME)
-        
-        # Skip scripts that have been migrated to C
-        list(FIND MIGRATED_SCRIPTS "${SCRIPT_NAME}" MIGRATED_INDEX)
-        if(MIGRATED_INDEX GREATER -1)
-            continue()
-        endif()
 
         list(APPEND VALIDATION_COMMANDS
             COMMAND ${CMAKE_COMMAND} -E echo "Running validation: ${SCRIPT_NAME}"
@@ -130,7 +134,7 @@ function(add_repo_validation project_name)
         ${VALIDATION_COMMANDS}
         WORKING_DIRECTORY ${REPO_ROOT}
         COMMENT "Running repository validation for ${project_name}"
-        DEPENDS repo_validator
+        DEPENDS ${VALIDATOR_TARGET}
         VERBATIM
     )
     
@@ -141,13 +145,8 @@ endfunction()
 # Include testing framework if tests directory exists and testing is enabled
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/tests" AND run_unittests AND run_repo_validation)
     add_subdirectory(tests)
-endif()
-
-# Build Rust repo_validator_rs and its tests when enabled
-option(run_repo_validation_rust "Build and test Rust repo_validator_rs alongside C version (default is OFF)" OFF)
-if(run_repo_validation_rust AND run_repo_validation)
-    add_subdirectory(src_rust)
-    if(run_unittests)
+    # Also build Rust tests when using the Rust validator (for clippy/fmt checks)
+    if(NOT use_c_repo_validator)
         add_subdirectory(tests_rust)
     endif()
 endif()
