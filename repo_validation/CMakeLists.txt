@@ -15,6 +15,8 @@ if(run_repo_validation)
         )
     endif()
     add_subdirectory(src_rust)
+    # Cache the exe path so it's visible inside add_repo_validation() function
+    set(REPO_VALIDATOR_RS_EXE "${REPO_VALIDATOR_RS_EXE}" CACHE INTERNAL "Path to Rust repo_validator_rs executable")
 endif()
 
 # Function to add repository validation target
@@ -91,7 +93,7 @@ function(add_repo_validation project_name)
     # Run the Rust validator (all checks are built-in)
     list(APPEND VALIDATION_COMMANDS
         COMMAND ${CMAKE_COMMAND} -E echo "Running repo_validator_rs"
-        COMMAND repo_validator_rs --repo-root "${REPO_ROOT}" --exclude-folders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG_RS}
+        COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${REPO_ROOT}" --exclude-folders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG_RS}
     )
 
     # Find remaining PowerShell validation scripts
