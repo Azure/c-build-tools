@@ -11,9 +11,7 @@ if(run_repo_validation)
         message(FATAL_ERROR
             "cargo not found. The repo_validator_rs requires a Rust toolchain.\n"
             "To install:\n"
-            "  1. Install msrustup: https://eng.ms/docs/more/rust\n"
-            "  2. Run: msrustup toolchain install ms-prod-1.93\n"
-            "  3. Run: msrustup default ms-prod-1.93\n"
+            "  Visit https://rustup.rs/ and follow the instructions.\n"
         )
     endif()
     add_subdirectory(src_rust)

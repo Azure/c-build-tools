@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.18)
 
 # Build the Rust repo_validator_rs executable via cargo
-# Uses ms-prod-1.93 toolchain pinned in rust-toolchain.toml
+# Requires any Rust toolchain with cargo available on PATH.
 
 set(RUST_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(RUST_MANIFEST "${RUST_SRC_DIR}/Cargo.toml")
@@ -54,6 +54,9 @@ add_custom_command(
         "${RUST_SRC_DIR}/src/checks/no_vld_include.rs"
         "${RUST_SRC_DIR}/src/checks/no_backticks_in_srs.rs"
         "${RUST_SRC_DIR}/src/checks/test_spec_tags.rs"
+        "${RUST_SRC_DIR}/src/checks/aaa_comments.rs"
+        "${RUST_SRC_DIR}/src/checks/srs_consistency.rs"
+        "${RUST_SRC_DIR}/src/checks/srs_format.rs"
 )
 
 add_custom_target(repo_validator_rs
