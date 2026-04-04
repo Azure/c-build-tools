@@ -8,15 +8,16 @@ if(run_repo_validation)
     # Check that cargo is available
     find_program(CARGO_EXECUTABLE cargo)
     if(NOT CARGO_EXECUTABLE)
-        message(FATAL_ERROR
-            "cargo not found. The repo_validator_rs requires a Rust toolchain.\n"
-            "To install:\n"
-            "  Visit https://rustup.rs/ and follow the instructions.\n"
+        message(WARNING
+            "cargo not found - repo_validator_rs will not be built.\n"
+            "Repository validation will fail at build time.\n"
+            "To install Rust: visit https://rustup.rs/\n"
         )
+    else()
+        add_subdirectory(src_rust)
+        # Cache the exe path so it's visible inside add_repo_validation() function
+        set(REPO_VALIDATOR_RS_EXE "${REPO_VALIDATOR_RS_EXE}" CACHE INTERNAL "Path to Rust repo_validator_rs executable")
     endif()
-    add_subdirectory(src_rust)
-    # Cache the exe path so it's visible inside add_repo_validation() function
-    set(REPO_VALIDATOR_RS_EXE "${REPO_VALIDATOR_RS_EXE}" CACHE INTERNAL "Path to Rust repo_validator_rs executable")
 endif()
 
 # Function to add repository validation target
@@ -90,11 +91,20 @@ function(add_repo_validation project_name)
     # Build the exclude folders argument as comma-separated list
     string(REPLACE ";" "," EXCLUDE_FOLDERS_LIST "${REPO_VAL_EXCLUDE_FOLDERS}")
 
-    # Run the Rust validator (all checks are built-in)
-    list(APPEND VALIDATION_COMMANDS
-        COMMAND ${CMAKE_COMMAND} -E echo "Running repo_validator_rs"
-        COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${REPO_ROOT}" --exclude-folders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG_RS}
-    )
+    # Run the Rust validator if cargo was found during configure
+    if(REPO_VALIDATOR_RS_EXE)
+        list(APPEND VALIDATION_COMMANDS
+            COMMAND ${CMAKE_COMMAND} -E echo "Running repo_validator_rs"
+            COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${REPO_ROOT}" --exclude-folders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG_RS}
+        )
+        set(VALIDATOR_DEPENDS repo_validator_rs)
+    else()
+        list(APPEND VALIDATION_COMMANDS
+            COMMAND ${CMAKE_COMMAND} -E echo "ERROR: repo_validator_rs not available - cargo was not found during configure. Install Rust from https://rustup.rs/"
+            COMMAND ${CMAKE_COMMAND} -E false
+        )
+        set(VALIDATOR_DEPENDS "")
+    endif()
 
     # Find remaining PowerShell validation scripts
     # (currently only validate_c_build_tools_ref.ps1)
@@ -110,13 +120,22 @@ function(add_repo_validation project_name)
     endforeach()
     
     # Create the validation target
-    add_custom_target(${project_name}_repo_validation ALL
-        ${VALIDATION_COMMANDS}
-        WORKING_DIRECTORY ${REPO_ROOT}
-        COMMENT "Running repository validation for ${project_name}"
-        DEPENDS repo_validator_rs
-        VERBATIM
-    )
+    if(REPO_VALIDATOR_RS_EXE)
+        add_custom_target(${project_name}_repo_validation ALL
+            ${VALIDATION_COMMANDS}
+            WORKING_DIRECTORY ${REPO_ROOT}
+            COMMENT "Running repository validation for ${project_name}"
+            DEPENDS repo_validator_rs
+            VERBATIM
+        )
+    else()
+        add_custom_target(${project_name}_repo_validation ALL
+            ${VALIDATION_COMMANDS}
+            WORKING_DIRECTORY ${REPO_ROOT}
+            COMMENT "Running repository validation for ${project_name}"
+            VERBATIM
+        )
+    endif()
     
     # Add a message to indicate the target was created
     message(STATUS "Added repository validation target: ${project_name}_repo_validation (excluding: ${REPO_VAL_EXCLUDE_FOLDERS})")
