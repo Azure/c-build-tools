@@ -10,18 +10,18 @@
 
 # Test 1: Verify tool detects backticks in SRS requirements
 add_custom_target(test_validate_no_backticks_detection
-    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_backticks" --check no_backticks_in_srs
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_backticks" --check no_backticks_in_srs
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing backticks detection in SRS requirements (should fail)"
-    DEPENDS ${REPO_VALIDATOR_TARGET}
+    DEPENDS repo_validator_rs
 )
 
 # Test 2: Verify tool passes on files without backticks in SRS requirements
 add_custom_target(test_validate_no_backticks_clean
-    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/no_backticks" --check no_backticks_in_srs
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/no_backticks" --check no_backticks_in_srs
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing backticks validation on clean files (should pass)"
-    DEPENDS ${REPO_VALIDATOR_TARGET}
+    DEPENDS repo_validator_rs
 )
 
 # Test 3: Verify fix functionality works
@@ -32,12 +32,12 @@ add_custom_target(test_validate_no_backticks_fix
         "${CMAKE_CURRENT_SOURCE_DIR}/has_backticks/sample_with_backticks.c" 
         "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test/"
     # Run the tool with fix mode
-    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check no_backticks_in_srs --fix
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check no_backticks_in_srs --fix
     # Verify fixed file now passes validation (run without --fix)
-    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check no_backticks_in_srs
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check no_backticks_in_srs
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing backticks fix functionality"
-    DEPENDS ${REPO_VALIDATOR_TARGET}
+    DEPENDS repo_validator_rs
 )
 
 # Master target for all backticks validation tests

@@ -10,27 +10,27 @@
 
 # Test 1: Verify tool detects violations in files with missing spec tags
 add_custom_target(test_validate_test_spec_tags_detection
-    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_violations" --check test_spec_tags
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_violations" --check test_spec_tags
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing spec tag detection on files with missing tags"
-    DEPENDS ${REPO_VALIDATOR_TARGET}
+    DEPENDS repo_validator_rs
 )
 
 # Test 2: Verify tool passes on files where all tests have spec tags
 add_custom_target(test_validate_test_spec_tags_clean
-    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/no_violations" --check test_spec_tags
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/no_violations" --check test_spec_tags
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing spec tag validation on clean files"
-    DEPENDS ${REPO_VALIDATOR_TARGET}
+    DEPENDS repo_validator_rs
 )
 
 # Test 3: Verify that --fix option still fails (since fix is not supported)
 # This ensures the tool reports violations even in fix mode
 add_custom_target(test_validate_test_spec_tags_fix_still_fails
-    COMMAND "${REPO_VALIDATOR_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_violations" --check test_spec_tags --fix
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_violations" --check test_spec_tags --fix
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing that --fix mode still reports violations (fix not supported)"
-    DEPENDS ${REPO_VALIDATOR_TARGET}
+    DEPENDS repo_validator_rs
 )
 
 # Master target for all test spec tag validation tests
