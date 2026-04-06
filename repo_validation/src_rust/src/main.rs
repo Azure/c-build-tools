@@ -15,6 +15,7 @@ fn print_usage(program_name: &str) {
     println!("  --exclude-folders <list>   Comma-separated list of folders to exclude");
     println!("  --fix                      Automatically fix validation errors");
     println!("  --check <name>             Run only the specified check (can be repeated)");
+    println!("  --submodule-sha <sha>      Override c-build-tools submodule SHA (for testing)");
     println!("  --list-checks              List all available checks");
     println!("  --help                     Show this help message");
     println!("\nAvailable checks:");
@@ -39,6 +40,7 @@ fn main() {
     let mut fix_mode = false;
     let mut enabled_check_names: Vec<String> = Vec::new();
     let mut list_checks = false;
+    let mut submodule_sha: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -62,6 +64,15 @@ fn main() {
                 if i + 1 < args.len() {
                     i += 1;
                     enabled_check_names.push(args[i].clone());
+                }
+            }
+            "--submodule-sha" | "-SubmoduleSha" => {
+                if i + 1 < args.len() {
+                    i += 1;
+                    let val = args[i].trim().to_string();
+                    if !val.is_empty() {
+                        submodule_sha = Some(val);
+                    }
                 }
             }
             "--list-checks" => {
@@ -112,6 +123,7 @@ fn main() {
         repo_root,
         exclude_folders,
         fix_mode,
+        submodule_sha,
     };
 
     // Select active checks

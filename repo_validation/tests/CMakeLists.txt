@@ -4,15 +4,11 @@
 #
 # Repository Validation Testing Framework
 #
-# This CMake file defines test targets for validating the repository validation scripts.
-# Each validation script has corresponding test cases that verify correct detection of issues.
+# This CMake file defines test targets for validating the repository validation checks.
+# All checks are now implemented in the Rust repo_validator_rs tool.
 #
 
-# Test configuration
-set(POWERSHELL_EXECUTABLE "powershell.exe")
-set(VALIDATION_SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../scripts")
-
-# Add test targets for each validation script
+# Add test targets for each validation check
 add_subdirectory(validate_no_tabs)
 add_subdirectory(validate_file_endings)
 add_subdirectory(validate_srs_consistency)

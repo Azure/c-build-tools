@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 pub mod aaa_comments;
+pub mod c_build_tools_ref;
 pub mod enable_mocks;
 pub mod file_endings;
 pub mod no_backticks_in_srs;
@@ -39,5 +40,6 @@ pub fn all_checks() -> Vec<Box<dyn Check>> {
         Box::new(aaa_comments::AaaComments::new()),
         Box::new(srs_consistency::SrsConsistency::new()),
         Box::new(srs_format::SrsFormat::new()),
+        Box::new(c_build_tools_ref::CBuildToolsRef::new()),
     ]
 }

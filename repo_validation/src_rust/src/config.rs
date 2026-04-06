@@ -25,4 +25,6 @@ pub struct ValidatorConfig {
     pub repo_root: String,
     pub exclude_folders: Vec<String>,
     pub fix_mode: bool,
+    /// Optional override for the c-build-tools submodule SHA (used for testing)
+    pub submodule_sha: Option<String>,
 }

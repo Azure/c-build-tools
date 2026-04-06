@@ -57,6 +57,7 @@ add_custom_command(
         "${RUST_SRC_DIR}/src/checks/aaa_comments.rs"
         "${RUST_SRC_DIR}/src/checks/srs_consistency.rs"
         "${RUST_SRC_DIR}/src/checks/srs_format.rs"
+        "${RUST_SRC_DIR}/src/checks/c_build_tools_ref.rs"
 )
 
 add_custom_target(repo_validator_rs

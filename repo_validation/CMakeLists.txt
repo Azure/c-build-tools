@@ -36,7 +36,7 @@ endif()
 #   fix_repo_validation_errors - Set to ON to automatically fix validation errors (default is OFF)
 #
 # The function will create a target named <project_name>_repo_validation that runs
-# the compiled Rust repo_validator_rs tool and any remaining PowerShell scripts.
+# the compiled Rust repo_validator_rs tool.
 # If fix_repo_validation_errors is ON, the tool will be called with --fix argument.
 #
 # Note: 
@@ -70,9 +70,6 @@ function(add_repo_validation project_name)
         return()
     endif()
     
-    # Get the absolute path to the validation scripts directory
-    set(VALIDATION_SCRIPTS_DIR "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/scripts")
-    
     # Get the repository root (assuming this is called from a project that includes c-build-tools)
     get_filename_component(REPO_ROOT "${CMAKE_SOURCE_DIR}" ABSOLUTE)
     
@@ -80,10 +77,8 @@ function(add_repo_validation project_name)
     set(VALIDATION_COMMANDS "")
     
     # Determine if we should fix errors
-    set(FIX_ARG "")
     set(FIX_ARG_RS "")
     if(fix_repo_validation_errors)
-        set(FIX_ARG "-Fix")
         set(FIX_ARG_RS "--fix")
         message(STATUS "Repository validation will attempt to fix errors (fix_repo_validation_errors=ON)")
     endif()
@@ -105,19 +100,6 @@ function(add_repo_validation project_name)
         )
         set(VALIDATOR_DEPENDS "")
     endif()
-
-    # Find remaining PowerShell validation scripts
-    # (currently only validate_c_build_tools_ref.ps1)
-    file(GLOB VALIDATION_SCRIPTS "${VALIDATION_SCRIPTS_DIR}/*.ps1")
-
-    foreach(SCRIPT ${VALIDATION_SCRIPTS})
-        get_filename_component(SCRIPT_NAME ${SCRIPT} NAME)
-
-        list(APPEND VALIDATION_COMMANDS
-            COMMAND ${CMAKE_COMMAND} -E echo "Running validation: ${SCRIPT_NAME}"
-            COMMAND powershell -ExecutionPolicy Bypass -File "${SCRIPT}" -RepoRoot "${REPO_ROOT}" -ExcludeFolders "${EXCLUDE_FOLDERS_LIST}" ${FIX_ARG}
-        )
-    endforeach()
     
     # Create the validation target
     if(REPO_VALIDATOR_RS_EXE)
