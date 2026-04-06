@@ -120,7 +120,59 @@ function update-repo
     {
         $repo_type = get-repo-type $repo_name
         $pr_url = $null
-        if($repo_type -eq "github")
+
+        # Check if we already have a PR URL from a previous run (resume scenario)
+        $existing_pr_url = $null
+        if ($global:repo_status.ContainsKey($repo_name))
+        {
+            $existing_pr_url = $global:repo_status[$repo_name].PrUrl
+        }
+        else
+        {
+            # no existing status
+        }
+
+        if ($existing_pr_url)
+        {
+            Write-Host "Found existing PR from previous run: $existing_pr_url" -ForegroundColor Cyan
+            Write-Host "Monitoring existing PR..."
+            $pr_url = $existing_pr_url
+            if ($repo_type -eq "github")
+            {
+                Push-Location $repo_name
+                $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
+                if (-not $watch_result.Success)
+                {
+                    fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+                }
+                else
+                {
+                    Write-Host "PR checks passed" -ForegroundColor Green
+                }
+                Pop-Location
+            }
+            elseif ($repo_type -eq "azure")
+            {
+                # Extract PR ID and org from the saved URL
+                $azure_info = get-azure-org-project $repo_name
+                if ($existing_pr_url -match "/pullrequest/(\d+)")
+                {
+                    $pr_id = [int]$matches[1]
+                    wait-until-complete-azure $pr_id $azure_info.Organization $repo_name
+                }
+                else
+                {
+                    fail-with-status "Could not parse PR ID from URL: $existing_pr_url"
+                }
+            }
+            else
+            {
+                fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
+            }
+            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+            update-fixed-commit $repo_name
+        }
+        elseif ($repo_type -eq "github")
         {
             $pr_url = update-repo-github $repo_name $new_branch_name $description
             set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
