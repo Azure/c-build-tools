@@ -382,31 +382,11 @@ function propagate-updates
         Write-Host "$($i+1). $($repo_order[$i])"
     }
 
-    # Register Ctrl+C handler to prompt user about closing the current PR
+    # Ctrl+C handling: works during our own sleep intervals (wait-or-cancel).
+    # During external commands (az, gh, git), Ctrl+C terminates immediately.
+    # State is saved after each repo, so use -Resume to continue.
     $global:propagation_cancelled = $false
     [Console]::TreatControlCAsInput = $true
-
-    # Trap handles Ctrl+C when it interrupts external commands (az, gh, git)
-    # where TreatControlCAsInput doesn't apply
-    trap
-    {
-        [Console]::TreatControlCAsInput = $false
-        $cancelled = prompt-cancel-propagation
-        if ($cancelled)
-        {
-            $global:propagation_cancelled = $true
-            [void](show-propagation-status -Final)
-            restore-original-directory
-            Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
-            exit 1
-        }
-        else
-        {
-            # user chose to resume — continue execution
-            [Console]::TreatControlCAsInput = $true
-            continue
-        }
-    }
 
     try
     {
