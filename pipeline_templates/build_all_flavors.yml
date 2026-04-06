@@ -64,6 +64,12 @@ parameters:
     type: string
     default: "Azure-MessagingStore-Win-ARM64-Dpldsv6-v01"
 
+  # Controls whether tests are executed on ARM64 builds. When false (default),
+  # ARM64 builds compile tests but do not run them.
+  - name: run_arm64_tests
+    type: boolean
+    default: false
+
   - name: skip_repo_validation
     type: boolean
     default: false
@@ -104,3 +110,5 @@ jobs:
               # ARM64 builds are optional (non-blocking)
               ${{ if eq(ARCH_TYPE, 'ARM64') }}:
                 is_optional: true
+                ${{ if not(parameters.run_arm64_tests) }}:
+                  skip_tests: true

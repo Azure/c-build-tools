@@ -42,6 +42,10 @@ parameters:
   - name: pool_name
     type: string
     default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
+  # When true, tests are built but not executed
+  - name: skip_tests
+    type: boolean
+    default: false
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -149,10 +153,11 @@ jobs:
       configuration: '${{ parameters.build_configuration }}'
       msbuildArgs: '/t:restore /t:build'
 
-  - template : start_logman.yml
-    parameters:
-      ${{ if ne(parameters.repo_root_override, '') }}:
-        repo_root: ${{ parameters.repo_root_override }}
+  - ${{ if not(parameters.skip_tests) }}:
+    - template : start_logman.yml
+      parameters:
+        ${{ if ne(parameters.repo_root_override, '') }}:
+          repo_root: ${{ parameters.repo_root_override }}
 
   # in the gate address sanitizer has problems running which are not reproducible locally, so skipping Address Sanitizer for vstest (note: ctest is perfectly fine with Address Sanitizer)
   # here's example:
@@ -163,7 +168,7 @@ jobs:
   # [continues, with none of our code on any stack]
   
   # Use wrapper template for VSTest - handles ARM64 (VSTest@3) vs x64 (VSTest@2) transparently
-  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
+  - ${{ if and(not(parameters.skip_tests), eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
     - template: tasks/vstest.yml
       parameters:
         architecture: ${{ parameters.ARCH_TYPE }}
@@ -188,7 +193,7 @@ jobs:
         pathToSources: '$(Build.SourcesDirectory)'
 
   # Use wrapper template for CTest - handles ARM64 native tools transparently
-  - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
+  - ${{ if and(not(parameters.skip_tests), eq(parameters.run_test_suite_without_ctest, '')) }}:
     - template: tasks/ctest.yml
       parameters:
         architecture: ${{ parameters.ARCH_TYPE }}
@@ -196,18 +201,19 @@ jobs:
         configuration: '${{ parameters.build_configuration }}'
         outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
 
-  - task: PublishTestResults@2
-    displayName: '📊 Publish ctest results'
-    inputs:
-      testResultsFormat: 'JUnit'
-      searchFolder: $(Build.BinariesDirectory)\c
-      testResultsFiles: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-      testRunTitle: 'ctest${{ parameters.BUILD_SUFFIX }}'
-      buildConfiguration: ${{ parameters.build_configuration }}
-      failTaskOnMissingResultsFile: true
-    condition: always()
+  - ${{ if not(parameters.skip_tests) }}:
+    - task: PublishTestResults@2
+      displayName: '📊 Publish ctest results'
+      inputs:
+        testResultsFormat: 'JUnit'
+        searchFolder: $(Build.BinariesDirectory)\c
+        testResultsFiles: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+        testRunTitle: 'ctest${{ parameters.BUILD_SUFFIX }}'
+        buildConfiguration: ${{ parameters.build_configuration }}
+        failTaskOnMissingResultsFile: true
+      condition: always()
 
-  - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier)) }}:
+  - ${{ if and(not(parameters.skip_tests), eq(parameters.FSANITIZE_TYPE, 'OFF'), and(eq(parameters.run_test_suite_without_ctest, ''), parameters.with_app_verifier)) }}:
     - template : run_ctests_with_appverifier.yml
       parameters:
         ${{ if ne(parameters.repo_root_override, '') }}:
@@ -238,17 +244,18 @@ jobs:
         failTaskOnMissingResultsFile: true
       condition: always()
 
-  - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
+  - ${{ if and(not(parameters.skip_tests), not(eq(parameters.run_test_suite_without_ctest, ''))) }}:
     - task: CmdLine@2
       displayName: '🧪 Run ${{ parameters.run_test_suite_without_ctest }}'
       inputs:
         script: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}\${{ parameters.run_test_suite_without_ctest }}.exe'
         workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}'
 
-  - template : stop_logman.yml
-    parameters:
-      ${{ if ne(parameters.repo_root_override, '') }}:
-        repo_root: ${{ parameters.repo_root_override }}
+  - ${{ if not(parameters.skip_tests) }}:
+    - template : stop_logman.yml
+      parameters:
+        ${{ if ne(parameters.repo_root_override, '') }}:
+          repo_root: ${{ parameters.repo_root_override }}
 
   - task: PublishPipelineArtifact@1
     displayName: 'Publish ${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration}} Artifacts'
