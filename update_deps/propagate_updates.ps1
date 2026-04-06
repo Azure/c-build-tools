@@ -334,6 +334,28 @@ function propagate-updates
     $global:propagation_cancelled = $false
     [Console]::TreatControlCAsInput = $true
 
+    # Trap handles Ctrl+C when it interrupts external commands (az, gh, git)
+    # where TreatControlCAsInput doesn't apply
+    trap
+    {
+        [Console]::TreatControlCAsInput = $false
+        $cancelled = prompt-cancel-propagation
+        if ($cancelled)
+        {
+            $global:propagation_cancelled = $true
+            show-propagation-status -Final
+            restore-original-directory
+            Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
+            exit 1
+        }
+        else
+        {
+            # user chose to resume — continue execution
+            [Console]::TreatControlCAsInput = $true
+            continue
+        }
+    }
+
     try
     {
         foreach ($repo in $repo_order)
