@@ -52,6 +52,10 @@ add_dependencies(test_validate_aaa_comments
     test_validate_aaa_comments_fix_noop
 )
 
-# Note: We don't add test_validate_aaa_comments_detection as a dependency because 
-# it should fail with exit code 1 (which would fail the build). 
-# Instead, it's available to run manually to verify detection works.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_aaa_comments_failures
+    COMMENT "Running all aaa_comments failure detection tests"
+)
+add_dependencies(test_validate_aaa_comments_failures
+    test_validate_aaa_comments_detection
+)

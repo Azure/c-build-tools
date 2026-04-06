@@ -42,6 +42,11 @@ add_dependencies(test_validate_srs_uniqueness
     test_validate_srs_uniqueness_clean
 )
 
-# Note: We don't add test_validate_srs_uniqueness_detection and test_validate_srs_uniqueness_no_fix
-# as dependencies because they should fail with exit code 1 (which would fail the build).
-# Instead, they are available to run manually to verify detection works.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_srs_uniqueness_failures
+    COMMENT "Running all srs_uniqueness failure detection tests"
+)
+add_dependencies(test_validate_srs_uniqueness_failures
+    test_validate_srs_uniqueness_detection
+    test_validate_srs_uniqueness_no_fix
+)

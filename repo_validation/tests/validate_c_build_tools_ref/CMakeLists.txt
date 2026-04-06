@@ -109,6 +109,11 @@ add_dependencies(test_validate_c_build_tools_ref
     test_validate_c_build_tools_ref_multiple_fix
 )
 
-# Note: test_validate_c_build_tools_ref_detection and test_validate_c_build_tools_ref_multiple_detection
-# are not added as dependencies because they should fail with exit code 1 (which would fail the build).
-# They are available to run manually to verify detection works.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_c_build_tools_ref_failures
+    COMMENT "Running all c_build_tools_ref failure detection tests"
+)
+add_dependencies(test_validate_c_build_tools_ref_failures
+    test_validate_c_build_tools_ref_detection
+    test_validate_c_build_tools_ref_multiple_detection
+)

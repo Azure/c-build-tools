@@ -266,7 +266,11 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_tag_placement_single_violation
     test_validate_srs_consistency_tag_placement_test_helper
 )
-# Note: We don't add test_validate_srs_consistency_detection or
-# test_validate_srs_consistency_tag_placement_violations as dependencies because
-# they should fail with exit code 1 (which would fail the build).
-# Instead, they are available to run manually to verify detection works.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_srs_consistency_failures
+    COMMENT "Running all srs_consistency failure detection tests"
+)
+add_dependencies(test_validate_srs_consistency_failures
+    test_validate_srs_consistency_detection
+    test_validate_srs_consistency_tag_placement_violations
+)

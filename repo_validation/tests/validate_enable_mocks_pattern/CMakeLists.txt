@@ -79,6 +79,10 @@ add_dependencies(test_validate_enable_mocks
     test_validate_enable_mocks_fix_preserves_force
 )
 
-# Note: We don't add test_validate_enable_mocks_detection as a dependency because 
-# it should fail with exit code 1 (which would fail the build). 
-# Instead, it's available to run manually to verify detection works.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_enable_mocks_failures
+    COMMENT "Running all enable_mocks failure detection tests"
+)
+add_dependencies(test_validate_enable_mocks_failures
+    test_validate_enable_mocks_detection
+)

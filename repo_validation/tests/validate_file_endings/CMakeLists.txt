@@ -51,6 +51,10 @@ add_dependencies(test_validate_file_endings
     test_validate_file_endings_fix
 )
 
-# Note: We don't add test_validate_file_endings_detection as a dependency because 
-# it should fail with exit code 1 (which would fail the build). 
-# Instead, it's available to run manually to verify detection works.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_file_endings_failures
+    COMMENT "Running all file_endings failure detection tests"
+)
+add_dependencies(test_validate_file_endings_failures
+    test_validate_file_endings_detection
+)

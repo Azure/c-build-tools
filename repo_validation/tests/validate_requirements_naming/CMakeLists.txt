@@ -52,6 +52,10 @@ add_dependencies(test_validate_requirements_naming
     test_validate_requirements_naming_fix
 )
 
-# Note: We don't add test_validate_requirements_naming_detection as a dependency because 
-# it should fail with exit code 1 (which would fail the build). 
-# Instead, it's available to run manually to verify detection works.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_requirements_naming_failures
+    COMMENT "Running all requirements_naming failure detection tests"
+)
+add_dependencies(test_validate_requirements_naming_failures
+    test_validate_requirements_naming_detection
+)

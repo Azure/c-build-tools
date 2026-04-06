@@ -43,7 +43,11 @@ add_dependencies(test_validate_test_spec_tags
     test_validate_test_spec_tags_clean
 )
 
-# Note: We don't add test_validate_test_spec_tags_detection as a dependency because 
-# it should fail with exit code 1 (which would fail the build). 
-# Note: test_validate_test_spec_tags_fix_still_fails is also expected to fail
-# since test_spec_tags does not support fixing.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_test_spec_tags_failures
+    COMMENT "Running all test_spec_tags failure detection tests"
+)
+add_dependencies(test_validate_test_spec_tags_failures
+    test_validate_test_spec_tags_detection
+    test_validate_test_spec_tags_fix_still_fails
+)
