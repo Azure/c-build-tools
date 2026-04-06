@@ -556,10 +556,20 @@ function global:Test-ChecksComplete
     }
     else
     {
-        # Filter to blocking checks (if IsBlocking exists, use it; otherwise all are blocking)
-        $blocking_checks = $checks | Where-Object {
-            $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
+        # Filter out license/CLA checks — these pass immediately and don't indicate CI status
+        $ci_checks = $checks | Where-Object { $_.Name -notmatch "license|cla" }
+
+        if (-not $ci_checks -or $ci_checks.Count -eq 0)
+        {
+            # Only license/CLA checks present — CI hasn't started yet
+            $result = @{ Complete = $false; Success = $false; Message = "Waiting for CI checks to appear" }
         }
+        else
+        {
+            # Filter to blocking checks (if IsBlocking exists, use it; otherwise all are blocking)
+            $blocking_checks = $ci_checks | Where-Object {
+                $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
+            }
 
         # Check if any blocking check is still in progress
         $in_progress = $blocking_checks | Where-Object {
@@ -591,6 +601,7 @@ function global:Test-ChecksComplete
             {
                 $result = @{ Complete = $true; Success = $true; Message = "All checks passed" }
             }
+        }
         }
     }
 
