@@ -692,8 +692,35 @@ function global:watch-pr-status
         else
         {
             # Pre-fetch all data before clearing screen
-            $display_data = & $FetchData
-            if(-not $display_data)
+            $fetch_interrupted = $false
+            try
+            {
+                $display_data = & $FetchData
+            }
+            catch
+            {
+                # Ctrl+C during external command (az, gh) lands here
+                $display_data = $null
+                $fetch_interrupted = $true
+            }
+
+            if ($fetch_interrupted)
+            {
+                # Ctrl+C hit during fetch — show the cancellation prompt
+                [Console]::TreatControlCAsInput = $false
+                $cancelled = prompt-cancel-propagation
+                [Console]::TreatControlCAsInput = $true
+                if ($cancelled)
+                {
+                    $global:propagation_cancelled = $true
+                    $fn_result = @{ Success = $false; Message = "Cancelled by user" }
+                }
+                else
+                {
+                    # user chose to resume, continue the loop
+                }
+            }
+            elseif(-not $display_data)
             {
                 Write-Host "Failed to get checks status, retrying..." -ForegroundColor Yellow
                 $cancelled = wait-or-cancel -seconds $poll_interval
