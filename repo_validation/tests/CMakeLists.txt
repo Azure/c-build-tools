@@ -5,7 +5,7 @@
 # Repository Validation Testing Framework
 #
 # This CMake file defines test targets for validating the repository validation checks.
-# All checks are now implemented in the Rust repo_validator_rs tool.
+# All checks are implemented in the Rust repo_validator_rs tool.
 #
 
 # Add test targets for each validation check

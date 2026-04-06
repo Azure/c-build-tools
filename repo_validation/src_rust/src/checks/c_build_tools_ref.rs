@@ -119,6 +119,18 @@ fn find_yml_files(dir: &Path, repo_root: &str, exclude_folders: &[String], out: 
     }
 }
 
+/// Check if a trimmed YAML line is a c_build_tools repository declaration.
+/// Matches with flexible whitespace: optional "-", then "repository:", then "c_build_tools"
+/// Mirrors PS1 regex: '^\s*-?\s*repository:\s*c_build_tools\s*$'
+fn is_cbt_repository_line(trimmed: &str) -> bool {
+    let s = trimmed.trim_start_matches('-').trim();
+    if let Some(rest) = s.strip_prefix("repository:") {
+        rest.trim() == "c_build_tools"
+    } else {
+        false
+    }
+}
+
 /// Check a single YAML file for c_build_tools repository ref.
 /// Returns (is_valid, ref_line_index, ref_value) or None if file doesn't reference c_build_tools.
 fn check_yaml_file(lines: &[String], expected_sha: &str) -> Option<(bool, usize, String)> {
@@ -127,8 +139,9 @@ fn check_yaml_file(lines: &[String], expected_sha: &str) -> Option<(bool, usize,
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
 
-        // Match "repository: c_build_tools" with optional leading "- "
-        if trimmed == "repository: c_build_tools" || trimmed == "- repository: c_build_tools" {
+        // Match "repository: c_build_tools" with optional leading "- " and flexible whitespace
+        // Pattern mirrors PS1: '^\s*-?\s*repository:\s*c_build_tools\s*$'
+        if is_cbt_repository_line(trimmed) {
             in_cbt_block = true;
             continue;
         }
@@ -237,7 +250,8 @@ impl Check for CBuildToolsRef {
             };
 
             // Quick check: does this file reference c_build_tools?
-            if !content.contains("repository: c_build_tools") {
+            // Uses flexible matching (mirrors PS1: 'repository:\s*c_build_tools')
+            if !content.contains("c_build_tools") {
                 continue;
             }
 
