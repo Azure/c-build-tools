@@ -62,7 +62,7 @@ parameters:
     default: "Azure-MessagingStore-WinBuildPoolVS2022_1"
   - name: pool_name_arm64
     type: string
-    default: "Azure-MessagingStore-Win-ARM64-Dpldsv6-v28"
+    default: "Azure-MessagingStore-Win-ARM64-Dpldsv6-v01"
 
   - name: skip_repo_validation
     type: boolean
