@@ -239,7 +239,7 @@ function propagate-updates
 
         # Show what was already done
         Write-Host "`nResumed propagation status:" -ForegroundColor Cyan
-        show-propagation-status
+        [void](show-propagation-status)
     }
     else
     {
@@ -343,7 +343,7 @@ function propagate-updates
         if ($cancelled)
         {
             $global:propagation_cancelled = $true
-            show-propagation-status -Final
+            [void](show-propagation-status -Final)
             restore-original-directory
             Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
             exit 1
@@ -393,7 +393,7 @@ function propagate-updates
 
     if ($global:propagation_cancelled)
     {
-        show-propagation-status -Final
+        [void](show-propagation-status -Final)
         restore-original-directory
         Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
         exit 1
