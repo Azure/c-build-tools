@@ -63,14 +63,42 @@ function update-repo-github
         Write-Host "Auto-merge enabled" -ForegroundColor Green
     }
 
-    # Small wait to ensure PR is fully created before triggering pipeline
-    Start-Sleep -Seconds 30
+    # Post pipeline trigger immediately - polling will detect when checks start
+    Write-Host "Triggering pipeline..." -ForegroundColor Cyan
     $null = gh pr comment --body "/AzurePipelines run"
-    Write-Host "Waiting for checks to start"
-    Start-Sleep -Seconds 120
+
+    # Poll until checks appear
+    Write-Host "Waiting for checks to start... (Press Ctrl+C to cancel)" -ForegroundColor Gray
+    $max_wait = 180
+    $waited = 0
+    $checks_started = $false
+    while ($waited -lt $max_wait -and -not $checks_started)
+    {
+        $cancelled = wait-or-cancel -seconds 5
+        if ($cancelled) { $global:propagation_cancelled = $true; return $pr_url }
+        $waited += 5
+        $checks_output = gh pr checks --json name,state 2>&1
+        if ($LASTEXITCODE -eq 0 -and $checks_output -ne "[]" -and $checks_output -ne "")
+        {
+            $checks_started = $true
+            Write-Host "Checks detected after ${waited}s" -ForegroundColor Green
+        }
+        else
+        {
+            # checks not yet visible, keep polling
+        }
+    }
+    if (-not $checks_started)
+    {
+        Write-Host "No checks detected after ${max_wait}s, proceeding to watch anyway" -ForegroundColor Yellow
+    }
+    else
+    {
+        # checks started
+    }
 
     Write-Host "Waiting for build to complete"
-    $watch_result = watch-github-pr-checks -poll_interval 30 -timeout 120 -OnIteration { [void](show-propagation-status) }
+    $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
 
     # Check if PR was auto-merged
     $pr_state = gh pr view --json state 2>&1
@@ -108,8 +136,9 @@ function update-repo-github
             $waited = 0
             while($waited -lt $max_wait -and -not $merged)
             {
-                Start-Sleep -Seconds 15
-                $waited += 15
+                $cancelled = wait-or-cancel -seconds 2
+                if ($cancelled) { $global:propagation_cancelled = $true; break }
+                $waited += 2
                 $pr_state = gh pr view --json state 2>&1
                 if($LASTEXITCODE -eq 0)
                 {
@@ -146,7 +175,7 @@ function update-repo-github
     }
 
     # Wait for merge to settle
-    Start-Sleep -Seconds 10
+    Start-Sleep -Seconds 2
     Pop-Location
 
     return $fn_result

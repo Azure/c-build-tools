@@ -206,7 +206,7 @@ function wait-until-complete-azure
 
     Write-Host "Waiting for build to complete"
     Write-Host "`nWatching PR policies..."
-    $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
+    $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval $global:poll_interval -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
 
     if(!$success)
     {
@@ -257,8 +257,9 @@ function wait-until-complete-azure
                 $waited = 0
                 while($waited -lt $max_wait -and !$done)
                 {
-                    Start-Sleep -Seconds 10
-                    $waited += 10
+                    $cancelled = wait-or-cancel -seconds 2
+                    if ($cancelled) { $global:propagation_cancelled = $true; break }
+                    $waited += 2
                     $pr_output = az repos pr show --id $pr_id --organization $org --output json
                     $pr_info = $pr_output | ConvertFrom-Json
                     if($pr_info.status -eq "completed")
