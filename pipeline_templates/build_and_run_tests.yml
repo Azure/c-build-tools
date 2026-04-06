@@ -153,7 +153,8 @@ jobs:
       configuration: '${{ parameters.build_configuration }}'
       msbuildArgs: '/t:restore /t:build'
 
-  - ${{ if not(parameters.skip_tests) }}:
+  # skip_tests is only honored for ARM64 builds - x64 always runs tests
+  - ${{ if or(not(parameters.skip_tests), ne(parameters.ARCH_TYPE, 'ARM64')) }}:
     - template : start_logman.yml
       parameters:
         ${{ if ne(parameters.repo_root_override, '') }}:
