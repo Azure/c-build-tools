@@ -34,7 +34,15 @@ function update-repo-github
         # no description, use defaults
     }
 
-    $null = gh pr create --title $pr_title --body $pr_body --head $new_branch_name
+    $create_output = gh pr create --title $pr_title --body $pr_body --head $new_branch_name 2>&1
+    if ($LASTEXITCODE -ne 0)
+    {
+        Write-Host "PR creation returned error (may already exist), checking..." -ForegroundColor Yellow
+    }
+    else
+    {
+        Write-Host "PR created" -ForegroundColor Green
+    }
 
     # Get PR URL
     $pr_info = gh pr view --json url 2>&1
