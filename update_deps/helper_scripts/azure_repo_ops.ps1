@@ -220,6 +220,42 @@ function set-autocomplete-azure
 }
 
 
+# Fetch PR status with retries to handle transient API failures
+function get-pr-status-with-retry
+{
+    param(
+        [int] $pr_id,
+        [string] $org,
+        [int] $max_retries = 3,
+        [int] $retry_delay = 5
+    )
+    $result = $null
+
+    for ($attempt = 1; $attempt -le $max_retries; $attempt++)
+    {
+        $pr_output = az repos pr show --id $pr_id --organization $org --output json 2>$null
+        if ($LASTEXITCODE -eq 0 -and $pr_output)
+        {
+            $result = $pr_output | ConvertFrom-Json
+            break
+        }
+        else
+        {
+            if ($attempt -lt $max_retries)
+            {
+                Write-Host "  Retrying PR status check ($attempt/$max_retries)..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $retry_delay
+            }
+            else
+            {
+                # all retries exhausted
+            }
+        }
+    }
+
+    return $result
+}
+
 # wait until build completes for Azure repo using Azure CLI
 function wait-until-complete-azure
 {
@@ -236,24 +272,16 @@ function wait-until-complete-azure
 
     if(!$success)
     {
-        # Check if PR completed despite policy failures (e.g., manually merged)
-        $pr_output = az repos pr show --id $pr_id --organization $org --output json
-        if($LASTEXITCODE -eq 0)
+        # Check if PR completed despite policy failures (e.g., manually merged or autocomplete)
+        $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
+        if($pr_info -and $pr_info.status -eq "completed")
         {
-            $pr_info = $pr_output | ConvertFrom-Json
-            if($pr_info.status -eq "completed")
-            {
-                Write-Host "PR completed successfully" -ForegroundColor Green
-                $done = $true
-            }
-            else
-            {
-                # PR not completed, fall through to fail
-            }
+            Write-Host "PR completed successfully" -ForegroundColor Green
+            $done = $true
         }
         else
         {
-            # couldn't get PR status, fall through to fail
+            # PR not completed or couldn't get status
         }
         if(!$done)
         {
@@ -267,14 +295,13 @@ function wait-until-complete-azure
     else
     {
         # Verify PR is completed
-        $pr_output = az repos pr show --id $pr_id --organization $org --output json
-        if($LASTEXITCODE -ne 0)
+        $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
+        if(-not $pr_info)
         {
-            fail-with-status "Failed to get PR status for ID: $pr_id"
+            fail-with-status "Failed to get PR status for ID: $pr_id after retries"
         }
         else
         {
-            $pr_info = $pr_output | ConvertFrom-Json
             if($pr_info.status -ne "completed")
             {
                 # PR policies passed but PR not yet merged - wait a bit for autocomplete
@@ -286,9 +313,8 @@ function wait-until-complete-azure
                     $cancelled = wait-or-cancel -seconds 2
                     if ($cancelled) { $global:propagation_cancelled = $true; break }
                     $waited += 2
-                    $pr_output = az repos pr show --id $pr_id --organization $org --output json
-                    $pr_info = $pr_output | ConvertFrom-Json
-                    if($pr_info.status -eq "completed")
+                    $pr_check = get-pr-status-with-retry -pr_id $pr_id -org $org -max_retries 1
+                    if($pr_check -and $pr_check.status -eq "completed")
                     {
                         Write-Host "PR completed successfully" -ForegroundColor Green
                         $done = $true
