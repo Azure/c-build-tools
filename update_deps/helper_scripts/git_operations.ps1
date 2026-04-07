@@ -524,10 +524,28 @@ function collect-upstream-changes
                                         $commit_sha = $matches[1]
                                         $commit_subject = $matches[2]
 
-                                        # Strip GitHub PR references like (#123) to prevent
-                                        # Azure DevOps from auto-linking them as work items
-                                        $commit_subject = $commit_subject -replace '\s*\(#\d+\)\s*', ' '
-                                        $commit_subject = $commit_subject.Trim()
+                                        # Replace GitHub PR references like (#123) with full
+                                        # URLs to prevent Azure DevOps from auto-linking them
+                                        # as ADO work items
+                                        if ($commit_subject -match '\(#(\d+)\)')
+                                        {
+                                            $sub_remote_url = (git config --get remote.origin.url 2>$null)
+                                            if ($sub_remote_url -match 'github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$')
+                                            {
+                                                $gh_slug = $matches[1]
+                                                $commit_subject = [regex]::Replace($commit_subject, '\(#(\d+)\)', { param($m) "(https://github.com/$gh_slug/pull/$($m.Groups[1].Value))" })
+                                            }
+                                            else
+                                            {
+                                                # not a GitHub repo, just strip the reference
+                                                $commit_subject = $commit_subject -replace '\s*\(#\d+\)\s*', ' '
+                                                $commit_subject = $commit_subject.Trim()
+                                            }
+                                        }
+                                        else
+                                        {
+                                            # no PR reference to replace
+                                        }
 
                                         # Filter out dep-update commits produced by this script
                                         if ($commit_subject -eq "Update dependencies" -or
@@ -698,6 +716,39 @@ function build-propagation-description
             }
             $pr_body_lines += ""
         }
+
+        # Add links to PRs created by this propagation run
+        if ($global:repo_status)
+        {
+            $pr_links = @()
+            foreach ($r in $global:repo_order_list)
+            {
+                if ($global:repo_status.ContainsKey($r) -and $global:repo_status[$r].PrUrl)
+                {
+                    $pr_links += "- [$r]($($global:repo_status[$r].PrUrl))"
+                }
+                else
+                {
+                    # no PR for this repo
+                }
+            }
+            if ($pr_links.Count -gt 0)
+            {
+                $pr_body_lines += "## Related PRs"
+                $pr_body_lines += ""
+                $pr_body_lines += $pr_links
+                $pr_body_lines += ""
+            }
+            else
+            {
+                # no PR links to add
+            }
+        }
+        else
+        {
+            # no repo status available
+        }
+
         $result.PrBody = $pr_body_lines -join "`n"
     }
 
