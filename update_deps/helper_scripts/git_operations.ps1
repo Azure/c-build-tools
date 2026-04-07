@@ -524,6 +524,11 @@ function collect-upstream-changes
                                         $commit_sha = $matches[1]
                                         $commit_subject = $matches[2]
 
+                                        # Strip GitHub PR references like (#123) to prevent
+                                        # Azure DevOps from auto-linking them as work items
+                                        $commit_subject = $commit_subject -replace '\s*\(#\d+\)\s*', ' '
+                                        $commit_subject = $commit_subject.Trim()
+
                                         # Filter out dep-update commits produced by this script
                                         if ($commit_subject -eq "Update dependencies" -or
                                             $commit_subject -like "Update deps:*" -or
