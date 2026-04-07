@@ -135,42 +135,103 @@ function update-repo
         if ($existing_pr_url)
         {
             Write-Host "Found existing PR from previous run: $existing_pr_url" -ForegroundColor Cyan
-            Write-Host "Monitoring existing PR..."
-            $pr_url = $existing_pr_url
-            if ($repo_type -eq "github")
+
+            # Check if the PR is already merged/completed
+            $already_merged = $false
+            if ($repo_type -eq "azure" -and $existing_pr_url -match "/pullrequest/(\d+)")
             {
-                Push-Location $repo_name
-                $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
-                if (-not $watch_result.Success)
+                $pr_id = [int]$matches[1]
+                $azure_info = get-azure-org-project $repo_name
+                $pr_check = az repos pr show --id $pr_id --organization $azure_info.Organization --output json 2>&1
+                if ($LASTEXITCODE -eq 0)
                 {
-                    fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+                    $pr_info = $pr_check | ConvertFrom-Json
+                    if ($pr_info.status -eq "completed")
+                    {
+                        $already_merged = $true
+                    }
+                    else
+                    {
+                        # PR still active
+                    }
                 }
                 else
                 {
-                    Write-Host "PR checks passed" -ForegroundColor Green
+                    # couldn't check PR status
+                }
+            }
+            elseif ($repo_type -eq "github")
+            {
+                Push-Location $repo_name
+                $pr_check = gh pr view $existing_pr_url --json state 2>&1
+                if ($LASTEXITCODE -eq 0)
+                {
+                    $pr_info = $pr_check | ConvertFrom-Json
+                    if ($pr_info.state -eq "MERGED")
+                    {
+                        $already_merged = $true
+                    }
+                    else
+                    {
+                        # PR still active
+                    }
+                }
+                else
+                {
+                    # couldn't check PR status
                 }
                 Pop-Location
             }
-            elseif ($repo_type -eq "azure")
+            else
             {
-                # Extract PR ID and org from the saved URL
-                $azure_info = get-azure-org-project $repo_name
-                if ($existing_pr_url -match "/pullrequest/(\d+)")
-                {
-                    $pr_id = [int]$matches[1]
-                    wait-until-complete-azure $pr_id $azure_info.Organization $repo_name
-                }
-                else
-                {
-                    fail-with-status "Could not parse PR ID from URL: $existing_pr_url"
-                }
+                # unknown repo type
+            }
+
+            if ($already_merged)
+            {
+                Write-Host "PR already merged, skipping repo" -ForegroundColor Green
+                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
+                update-fixed-commit $repo_name
             }
             else
             {
-                fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
+                Write-Host "Monitoring existing PR..."
+                $pr_url = $existing_pr_url
+                if ($repo_type -eq "github")
+                {
+                    Push-Location $repo_name
+                    $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
+                    if (-not $watch_result.Success)
+                    {
+                        fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+                    }
+                    else
+                    {
+                        Write-Host "PR checks passed" -ForegroundColor Green
+                    }
+                    Pop-Location
+                }
+                elseif ($repo_type -eq "azure")
+                {
+                    # Extract PR ID and org from the saved URL
+                    $azure_info = get-azure-org-project $repo_name
+                    if ($existing_pr_url -match "/pullrequest/(\d+)")
+                    {
+                        $pr_id = [int]$matches[1]
+                        wait-until-complete-azure $pr_id $azure_info.Organization $repo_name
+                    }
+                    else
+                    {
+                        fail-with-status "Could not parse PR ID from URL: $existing_pr_url"
+                    }
+                }
+                else
+                {
+                    fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
+                }
+                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+                update-fixed-commit $repo_name
             }
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-            update-fixed-commit $repo_name
         }
         elseif ($repo_type -eq "github")
         {
