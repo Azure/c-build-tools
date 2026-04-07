@@ -14,7 +14,10 @@ parameters:
   default: $(Build.SourcesDirectory)/deps/c-build-tools
 - name: pool_name
   type: string
-  default: 'Azure-MessagingStore-Win-x64-Dadsv5-v19'
+  default: 'Azure-MessagingStore-Win-x64-Dadsv7-v03'
+- name: setup_nuget
+  type: boolean
+  default: false
 
 jobs:
 - job: codeql
@@ -51,6 +54,10 @@ jobs:
     inputs:
       sourceFolder: $(Build.BinariesDirectory)
       contents: \*
+
+  # Authenticate NuGet feeds so cmake configure can restore packages
+  - ${{ if parameters.setup_nuget }}:
+    - template: setup_nuget_tools.yml
 
   - template: codeql3000_init.yml
     parameters:
