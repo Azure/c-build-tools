@@ -756,6 +756,57 @@ function update-local-repo
 
     # Collect upstream changes and build description
     $upstream_changes = collect-upstream-changes $repo_name
+
+    # If no upstream changes were found but there are staged changes,
+    # build a fallback description from the staged diff
+    if ((-not $upstream_changes -or $upstream_changes.Count -eq 0))
+    {
+        $staged_files = git diff --cached --name-only
+        if ($staged_files)
+        {
+            # Identify what changed: submodule updates and/or file changes
+            $changed_submodules = @()
+            $changed_files = @()
+            foreach ($f in $staged_files)
+            {
+                if ($f -match "^deps/")
+                {
+                    $sub_name = ($f -replace "^deps/", "").Split("/")[0]
+                    if ($sub_name -notin $changed_submodules) { $changed_submodules += $sub_name }
+                }
+                else
+                {
+                    $changed_files += $f
+                }
+            }
+            # Build fallback change entries
+            foreach ($sub in $changed_submodules)
+            {
+                $upstream_changes += @{
+                    Repo = $sub
+                    SHA = ""
+                    Subject = "updated to latest"
+                }
+            }
+            foreach ($f in $changed_files)
+            {
+                $upstream_changes += @{
+                    Repo = $repo_name
+                    SHA = ""
+                    Subject = "updated $f"
+                }
+            }
+        }
+        else
+        {
+            # no staged changes
+        }
+    }
+    else
+    {
+        # upstream changes found
+    }
+
     $description = build-propagation-description $upstream_changes
 
     # Store change descriptions for downstream repos to reference
