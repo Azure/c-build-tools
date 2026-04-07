@@ -272,7 +272,9 @@ function wait-until-complete-azure
 
     if(!$success)
     {
-        # Check if PR completed despite policy failures (e.g., manually merged or autocomplete)
+        # Policy watch reported failure — but this could be a non-blocking/optional
+        # policy. Autocomplete will still merge the PR if all required policies pass.
+        # Wait for autocomplete before giving up.
         $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
         if($pr_info -and $pr_info.status -eq "completed")
         {
@@ -281,15 +283,33 @@ function wait-until-complete-azure
         }
         else
         {
-            # PR not completed or couldn't get status
+            Write-Host "Waiting for PR to auto-complete despite policy status..." -ForegroundColor Yellow
+            $max_wait = 120
+            $waited = 0
+            while($waited -lt $max_wait -and !$done)
+            {
+                $cancelled = wait-or-cancel -seconds 5
+                if ($cancelled) { $global:propagation_cancelled = $true; break }
+                $waited += 5
+                $pr_check = get-pr-status-with-retry -pr_id $pr_id -org $org -max_retries 1
+                if($pr_check -and $pr_check.status -eq "completed")
+                {
+                    Write-Host "PR completed successfully" -ForegroundColor Green
+                    $done = $true
+                }
+                else
+                {
+                    # keep waiting
+                }
+            }
         }
-        if(!$done)
+        if(!$done -and -not $global:propagation_cancelled)
         {
             fail-with-status "PR $pr_id failed to complete. Check policy status above."
         }
         else
         {
-            # already done
+            # already done or cancelled
         }
     }
     else
