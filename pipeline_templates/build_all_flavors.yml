@@ -74,6 +74,12 @@ parameters:
     type: boolean
     default: false
 
+  # When true, run NuGetAuthenticate and NuGetToolInstaller before cmake
+  # so that execute_process(COMMAND nuget ...) can access private feeds.
+  - name: setup_nuget
+    type: boolean
+    default: false
+
 jobs:
 # Run repo validation and traceability once (not per-flavor)
 - ${{ if not(parameters.skip_repo_validation) }}:
@@ -103,6 +109,7 @@ jobs:
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
               failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
+              setup_nuget: ${{ parameters.setup_nuget }}
               ${{ if eq(ARCH_TYPE, 'ARM64') }}:
                 pool_name: ${{ parameters.pool_name_arm64 }}
               ${{ else }}:
