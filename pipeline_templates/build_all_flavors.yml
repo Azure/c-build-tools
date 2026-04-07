@@ -98,7 +98,8 @@ jobs:
               ARCH_TYPE: ${{ ARCH_TYPE }}
               cmake_options: ${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }}
               run_test_suite_without_ctest: ${{ parameters.run_test_suite_without_ctest }}
-              with_app_verifier: ${{ parameters.with_app_verifier }}
+              # When app verifier is enabled, it runs in a separate parallel job below, so disable it on the main job
+              with_app_verifier: false
               repo_root_override: ${{ parameters.repo_root_override }}
               binary_name_suffix: ${{ parameters.binary_name_suffix }}
               appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
@@ -112,3 +113,30 @@ jobs:
                 is_optional: true
                 ${{ if not(parameters.run_arm64_tests) }}:
                   skip_tests: true
+
+          # Separate parallel job for CTest with AppVerifier (only for FSANITIZE=OFF and ctest-based test runs)
+          - ${{ if and(parameters.with_app_verifier, eq(FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
+            - template: build_and_run_tests.yml
+              parameters:
+                BUILD_SUFFIX: _appverifier_${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}
+                display_name_suffix: ' (AppVerifier)'
+                GBALLOC_LL_TYPE: ${{ GBALLOC_LL_TYPE }}
+                build_configuration: ${{ BUILD_CONFIGURATION_TYPE }}
+                FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
+                ARCH_TYPE: ${{ ARCH_TYPE }}
+                cmake_options: ${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }}
+                with_app_verifier: true
+                skip_vstest: true
+                skip_ctest: true
+                repo_root_override: ${{ parameters.repo_root_override }}
+                binary_name_suffix: ${{ parameters.binary_name_suffix }}
+                appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
+                failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
+                ${{ if eq(ARCH_TYPE, 'ARM64') }}:
+                  pool_name: ${{ parameters.pool_name_arm64 }}
+                ${{ else }}:
+                  pool_name: ${{ parameters.pool_name_x64 }}
+                ${{ if eq(ARCH_TYPE, 'ARM64') }}:
+                  is_optional: true
+                  ${{ if not(parameters.run_arm64_tests) }}:
+                    skip_tests: true
