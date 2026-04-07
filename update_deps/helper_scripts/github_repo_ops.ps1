@@ -34,7 +34,15 @@ function update-repo-github
         # no description, use defaults
     }
 
-    $null = gh pr create --title $pr_title --body $pr_body --head $new_branch_name
+    $create_output = gh pr create --title $pr_title --body $pr_body --head $new_branch_name 2>&1
+    if ($LASTEXITCODE -ne 0)
+    {
+        Write-Host "PR creation returned error (may already exist), checking..." -ForegroundColor Yellow
+    }
+    else
+    {
+        Write-Host "PR created" -ForegroundColor Green
+    }
 
     # Get PR URL
     $pr_info = gh pr view --json url 2>&1
@@ -67,8 +75,8 @@ function update-repo-github
     Write-Host "Triggering pipeline..." -ForegroundColor Cyan
     $null = gh pr comment --body "/AzurePipelines run"
 
-    # Poll until checks appear
-    Write-Host "Waiting for checks to start... (Press Ctrl+C to cancel)" -ForegroundColor Gray
+    # Poll until CI checks appear (not just CLA/license checks which are always present)
+    Write-Host "Waiting for CI checks to start... (Press Ctrl+C to cancel)" -ForegroundColor Gray
     $max_wait = 180
     $waited = 0
     $checks_started = $false
@@ -80,8 +88,18 @@ function update-repo-github
         $checks_output = gh pr checks --json name,state 2>&1
         if ($LASTEXITCODE -eq 0 -and $checks_output -ne "[]" -and $checks_output -ne "")
         {
-            $checks_started = $true
-            Write-Host "Checks detected after ${waited}s" -ForegroundColor Green
+            $checks = $checks_output | ConvertFrom-Json
+            # Filter out license/CLA checks — wait for actual CI checks
+            $ci_checks = @($checks | Where-Object { $_.name -notmatch "license|cla" })
+            if ($ci_checks.Count -gt 0)
+            {
+                $checks_started = $true
+                Write-Host "CI checks detected after ${waited}s ($($ci_checks.Count) check(s))" -ForegroundColor Green
+            }
+            else
+            {
+                # only CLA/license checks so far, keep waiting
+            }
         }
         else
         {

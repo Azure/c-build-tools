@@ -208,11 +208,11 @@ function restore-repo-status
             }
             else
             {
-                # failed or pending — reset to pending for retry
+                # failed or in-progress — reset to pending for retry, but preserve PrUrl
                 $global:repo_status[$repo] = @{
                     Status = $script:STATUS_PENDING
                     Message = ""
-                    PrUrl = ""
+                    PrUrl = if ($saved.PrUrl) { $saved.PrUrl } else { "" }
                 }
             }
         }

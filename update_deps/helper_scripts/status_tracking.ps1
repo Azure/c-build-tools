@@ -160,7 +160,7 @@ function fail-with-status
     {
         # no current repo to mark as failed
     }
-    show-propagation-status -Final
+    [void](show-propagation-status -Final)
 
     # Restore original directory so the user is not stranded in work_dir/<repo>
     restore-original-directory
