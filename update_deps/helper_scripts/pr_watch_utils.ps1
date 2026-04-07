@@ -39,8 +39,10 @@ function global:show-pr-notification
 `$toast = [Windows.UI.Notifications.ToastNotification]::new(`$doc)
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(`$appId).Show(`$toast)
 "@
-        # Run async so it doesn't block propagation
-        Start-Process powershell.exe -ArgumentList "-NoProfile", "-Command", $toast_script -WindowStyle Hidden
+        # Write to temp file and execute — Start-Process -Command doesn't handle multi-line scripts well
+        $temp_file = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
+        $toast_script | Set-Content -Path $temp_file -Encoding UTF8
+        Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $temp_file -WindowStyle Hidden
     }
     catch
     {
