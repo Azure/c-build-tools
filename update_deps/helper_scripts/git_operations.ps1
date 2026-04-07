@@ -110,11 +110,48 @@ function update-submodules-to-fixed-commits
                     if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
                     {
                         $target_sha = $global:fixed_commits[$sub_repo_name]
-                        Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
                         git fetch origin
-                        git checkout $target_sha
-                        # Reset console color — git checkout may leave ANSI color codes active
-                        Write-Host "`e[0m" -NoNewline
+
+                        # Check if the submodule is already at or ahead of the target commit
+                        $current_sha = (git rev-parse HEAD 2>$null)
+                        if ($LASTEXITCODE -eq 0 -and $current_sha)
+                        {
+                            $current_sha = $current_sha.Trim()
+                        }
+                        else
+                        {
+                            $current_sha = $null
+                        }
+
+                        if ($current_sha -eq $target_sha)
+                        {
+                            Write-Host "  $sub_path already at fixed commit $($target_sha.Substring(0, 8))"
+                        }
+                        elseif ($current_sha)
+                        {
+                            # Check if target_sha is an ancestor of current — meaning current is newer
+                            git merge-base --is-ancestor $target_sha $current_sha 2>$null
+                            if ($LASTEXITCODE -eq 0)
+                            {
+                                # Current commit is ahead of target — do NOT downgrade
+                                Write-Host "  $sub_path is already at $($current_sha.Substring(0, 8)) which is ahead of fixed commit $($target_sha.Substring(0, 8)), keeping current" -ForegroundColor Yellow
+                            }
+                            else
+                            {
+                                # Target is not an ancestor of current — could be a different branch or target is newer
+                                Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
+                                git checkout $target_sha
+                                # Reset console color — git checkout may leave ANSI color codes active
+                                Write-Host "`e[0m" -NoNewline
+                            }
+                        }
+                        else
+                        {
+                            # Couldn't determine current SHA — proceed with checkout
+                            Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
+                            git checkout $target_sha
+                            Write-Host "`e[0m" -NoNewline
+                        }
 
                         # Warn if remote master has moved ahead of the fixed commit
                         $remote_sha = (git rev-parse origin/master 2>$null)
