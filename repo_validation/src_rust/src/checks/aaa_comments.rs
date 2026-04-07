@@ -247,9 +247,45 @@ fn find_aaa_positions(body: &[u8]) -> [i64; 3] {
     for (keyword, idx) in &keywords {
         let klen = keyword.len();
         let mut p = 0usize;
+        let mut in_string = false;
+        let mut in_char = false;
 
         while p + klen <= len {
-            // Look for "//" or "/*"
+            // Track string and char literals to avoid false comment matches
+            if !in_string && !in_char && body[p] == b'"' {
+                in_string = true;
+                p += 1;
+                continue;
+            }
+            if in_string {
+                if body[p] == b'\\' && p + 1 < len {
+                    p += 2; // skip escaped char
+                } else if body[p] == b'"' {
+                    in_string = false;
+                    p += 1;
+                } else {
+                    p += 1;
+                }
+                continue;
+            }
+            if !in_string && !in_char && body[p] == b'\'' {
+                in_char = true;
+                p += 1;
+                continue;
+            }
+            if in_char {
+                if body[p] == b'\\' && p + 1 < len {
+                    p += 2;
+                } else if body[p] == b'\'' {
+                    in_char = false;
+                    p += 1;
+                } else {
+                    p += 1;
+                }
+                continue;
+            }
+
+            // Look for "//" or "/*" (only outside string/char literals)
             if p + 1 < len && body[p] == b'/' && (body[p + 1] == b'/' || body[p + 1] == b'*') {
                 let is_block = body[p + 1] == b'*';
                 let comment_start = p;
