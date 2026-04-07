@@ -712,6 +712,17 @@ function update-local-repo
     Push-Location $repo_name
     git checkout master
     Write-Host "`e[0m" -NoNewline
+    # Unshallow if this is a shallow clone (e.g., from build_graph.ps1 --depth 1)
+    $is_shallow = git rev-parse --is-shallow-repository 2>$null
+    if ($is_shallow -eq "true")
+    {
+        Write-Host "  Unshallowing repository..."
+        git fetch --unshallow
+    }
+    else
+    {
+        # full clone, no unshallowing needed
+    }
     git pull
     # Sometimes git fails to detect updates in submodules
     # Fix is to delete the submodule and reinitializes it
