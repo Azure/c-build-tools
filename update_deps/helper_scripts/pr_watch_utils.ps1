@@ -15,6 +15,41 @@ watch loop that can be used by both Azure DevOps and GitHub PR watching scripts.
 
 
 #
+# Windows toast notification for PR events
+#
+function global:show-pr-notification
+{
+    param(
+        [string] $repo_name,
+        [string] $pr_url,
+        [string] $message = "PR created"
+    )
+
+    try
+    {
+        # Use Windows PowerShell 5.1 for WinRT toast support (not available in pwsh 7)
+        $escaped_url = $pr_url -replace '&', '&amp;'
+        $toast_script = @"
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null
+`$xml = '<toast activationType="protocol" launch="$escaped_url"><visual><binding template="ToastGeneric"><text>$message</text><text>$repo_name</text><text>$escaped_url</text></binding></visual></toast>'
+`$doc = New-Object Windows.Data.Xml.Dom.XmlDocument
+`$doc.LoadXml(`$xml)
+`$appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+`$toast = [Windows.UI.Notifications.ToastNotification]::new(`$doc)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(`$appId).Show(`$toast)
+"@
+        # Run async so it doesn't block propagation
+        Start-Process powershell.exe -ArgumentList "-NoProfile", "-Command", $toast_script -WindowStyle Hidden
+    }
+    catch
+    {
+        # Toast notifications are best-effort — don't fail propagation if they don't work
+    }
+}
+
+
+#
 # Ctrl+C aware sleep - checks for Ctrl+C keypress during the sleep interval.
 # If detected, prompts the user to close/abandon the current PR.
 # Returns $true if propagation should be cancelled, $false otherwise.

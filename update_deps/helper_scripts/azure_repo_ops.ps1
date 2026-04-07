@@ -347,6 +347,16 @@ function update-repo-azure
     # Update status with PR URL immediately so it shows even if later steps fail
     set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $result
 
+    # Show Windows notification with PR link
+    if ($result)
+    {
+        show-pr-notification -repo_name $repo_name -pr_url $result
+    }
+    else
+    {
+        # no PR URL to notify about
+    }
+
     link-work-item-to-pr-azure $pr_id $org $project
 
     approve-pr-azure $pr_id $org

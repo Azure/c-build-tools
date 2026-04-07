@@ -59,6 +59,16 @@ function update-repo-github
     # Update status with PR URL immediately so it shows even if later steps fail
     set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $fn_result
 
+    # Show Windows notification with PR link
+    if ($fn_result)
+    {
+        show-pr-notification -repo_name $repo_name -pr_url $fn_result
+    }
+    else
+    {
+        # no PR URL to notify about
+    }
+
     # Enable auto-merge so GitHub merges once required checks pass
     Write-Host "Enabling auto-merge"
     $null = gh pr merge --auto --squash --delete-branch 2>&1
