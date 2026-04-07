@@ -197,6 +197,21 @@ function fail-with-status
     }
     [void](show-propagation-status -Final)
 
+    # Save state so resume can pick up PrUrls and status from this failed run
+    if ($global:_state_branch_name -and $global:_state_repo_order -and $global:work_dir)
+    {
+        save-propagation-state `
+            -branch_name $global:_state_branch_name `
+            -repo_order $global:_state_repo_order `
+            -repo_urls $global:_state_repo_urls `
+            -root_list $global:_state_root_list `
+            -azure_work_item $global:_state_azure_work_item
+    }
+    else
+    {
+        # state globals not yet initialized, nothing to save
+    }
+
     # Restore original directory so the user is not stranded in work_dir/<repo>
     restore-original-directory
 

@@ -225,33 +225,133 @@ function update-repo
     }
     else
     {
-        # No existing PR — do the full update-local-repo + create PR flow
-        $update_result = (update-local-repo $repo_name $new_branch_name)
-        [string]$git_output = $update_result.GitOutput
-        $description = $update_result.Description
-        if($git_output.Contains("nothing to commit"))
+        # No saved PR URL — check if there's an active PR for this branch on the remote
+        # (handles case where state file was saved before PrUrl was set)
+        Write-Host "  Checking for active PR on branch $new_branch_name..." -ForegroundColor Gray
+        $repo_type = get-repo-type $repo_name
+        $discovered_pr_url = $null
+
+        if ($repo_type -eq "azure")
         {
-            Write-Host "Nothing to commit, skipping repo $repo_name"
-            set-repo-status -repo_name $repo_name -status $script:STATUS_SKIPPED -message "No changes"
-        }
-        else
-        {
-            $repo_type = get-repo-type $repo_name
-            if ($repo_type -eq "github")
+            $azure_info = get-azure-org-project $repo_name
+            $org = $azure_info.Organization
+            $project = $azure_info.Project
+            Write-Host "  Checking for active PR on branch..." -ForegroundColor Gray
+            $pr_list_output = az repos pr list `
+                --repository $repo_name `
+                --source-branch $new_branch_name `
+                --target-branch master `
+                --status active `
+                --organization $org `
+                --project $project `
+                --output json 2>$null
+            if ($LASTEXITCODE -eq 0 -and $pr_list_output)
             {
-                $pr_url = update-repo-github $repo_name $new_branch_name $description
-                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-                update-fixed-commit $repo_name
-            }
-            elseif ($repo_type -eq "azure")
-            {
-                $pr_url = update-repo-azure $repo_name $new_branch_name $description
-                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-                update-fixed-commit $repo_name
+                $prs = @($pr_list_output | ConvertFrom-Json)
+                if ($prs.Count -gt 0)
+                {
+                    $pr_id = $prs[0].pullRequestId
+                    # az repos pr list doesn't populate repository.webUrl,
+                    # so construct the URL from org/project/repo
+                    $discovered_pr_url = "$org/$project/_git/$repo_name/pullrequest/$pr_id"
+                }
+                else
+                {
+                    # no active PRs for this branch
+                }
             }
             else
             {
-                fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
+                Write-Host "  PR list query failed or returned empty" -ForegroundColor Yellow
+            }
+        }
+        elseif ($repo_type -eq "github")
+        {
+            Push-Location $repo_name
+            $pr_check = gh pr list --head $new_branch_name --state open --json url --jq '.[0].url' 2>$null
+            if ($LASTEXITCODE -eq 0 -and $pr_check)
+            {
+                $discovered_pr_url = $pr_check.Trim()
+            }
+            else
+            {
+                # no active PR for this branch
+            }
+            Pop-Location
+        }
+        else
+        {
+            # unknown repo type
+        }
+
+        if ($discovered_pr_url)
+        {
+            Write-Host "Discovered active PR for branch $new_branch_name`: $discovered_pr_url" -ForegroundColor Cyan
+            Write-Host "Monitoring existing PR..."
+            set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $discovered_pr_url
+
+            if ($repo_type -eq "github")
+            {
+                Push-Location $repo_name
+                $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
+                if (-not $watch_result.Success)
+                {
+                    fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+                }
+                else
+                {
+                    Write-Host "PR checks passed" -ForegroundColor Green
+                }
+                Pop-Location
+            }
+            elseif ($repo_type -eq "azure")
+            {
+                if ($discovered_pr_url -match "/pullrequest/(\d+)")
+                {
+                    $pr_id = [int]$matches[1]
+                    wait-until-complete-azure $pr_id $azure_info.Organization $repo_name
+                }
+                else
+                {
+                    fail-with-status "Could not parse PR ID from URL: $discovered_pr_url"
+                }
+            }
+            else
+            {
+                # shouldn't reach here
+            }
+            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $discovered_pr_url
+            update-fixed-commit $repo_name
+        }
+        else
+        {
+            # No existing PR — do the full update-local-repo + create PR flow
+            $update_result = (update-local-repo $repo_name $new_branch_name)
+            [string]$git_output = $update_result.GitOutput
+            $description = $update_result.Description
+            if($git_output.Contains("nothing to commit"))
+            {
+                Write-Host "Nothing to commit, skipping repo $repo_name"
+                set-repo-status -repo_name $repo_name -status $script:STATUS_SKIPPED -message "No changes"
+            }
+            else
+            {
+                if ($repo_type -eq "github")
+                {
+                    $pr_url = update-repo-github $repo_name $new_branch_name $description
+                    set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+                    update-fixed-commit $repo_name
+                }
+                elseif ($repo_type -eq "azure")
+                {
+                    $pr_url = update-repo-azure $repo_name $new_branch_name $description
+                    set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+                    update-fixed-commit $repo_name
+                }
+                else
+                {
+                    fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
+                }
             }
         }
     }
@@ -282,6 +382,13 @@ function propagate-updates
     $repo_order = $null
     $repo_urls = $null
     $new_branch_name = $null
+
+    # Store state params as globals so fail-with-status can save state before exiting
+    $global:_state_repo_order = $null
+    $global:_state_repo_urls = $null
+    $global:_state_branch_name = $null
+    $global:_state_root_list = $root_list
+    $global:_state_azure_work_item = $azure_work_item
 
     if ($Resume.IsPresent)
     {
@@ -316,6 +423,13 @@ function propagate-updates
         $repo_urls = $saved_state.repo_urls
         $global:fixed_commits = $saved_state.fixed_commits
         $global:work_dir = Split-Path $state_path -Parent
+
+        # Update state globals for fail-with-status
+        $global:_state_branch_name = $new_branch_name
+        $global:_state_repo_order = $repo_order
+        $global:_state_repo_urls = $repo_urls
+        $global:_state_root_list = $saved_state.root_list
+        $global:_state_azure_work_item = $saved_state.azure_work_item
         $azure_work_item = $saved_state.azure_work_item
         $root_list = $saved_state.root_list
 
@@ -385,6 +499,9 @@ function propagate-updates
         $new_branch_name = "new_deps_" + (Get-Date -Format "yyyyMMddHHmmss")
         Write-Host "New branch name: $new_branch_name"
 
+        # Update state globals for fail-with-status
+        $global:_state_branch_name = $new_branch_name
+
         # Create a new directory for this update session
         $global:work_dir = Join-Path (Get-Location).Path $new_branch_name
         New-Item -ItemType Directory -Path $global:work_dir -Force | Out-Null
@@ -405,6 +522,10 @@ function propagate-updates
             # graph built successfully
         }
         Write-Host "Done building dependency graph"
+
+        # Update state globals for fail-with-status
+        $global:_state_repo_order = $repo_order
+        $global:_state_repo_urls = $repo_urls
 
         # Clone any repos that aren't already present (known graph path only clones roots)
         Write-Host "Ensuring all repositories are cloned..."

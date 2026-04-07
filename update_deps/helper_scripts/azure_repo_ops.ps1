@@ -103,8 +103,8 @@ function create-pr-azure
             --output json
         if ($LASTEXITCODE -eq 0)
         {
-            $existing_prs = $existing_pr | ConvertFrom-Json
-            if ($existing_prs -and $existing_prs.Count -gt 0)
+            $existing_prs = @($existing_pr | ConvertFrom-Json)
+            if ($existing_prs.Count -gt 0)
             {
                 Write-Host "Found existing PR, reusing it" -ForegroundColor Cyan
                 $result = $existing_prs[0]
