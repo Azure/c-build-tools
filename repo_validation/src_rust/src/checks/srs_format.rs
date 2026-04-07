@@ -57,7 +57,9 @@ impl Check for SrsFormat {
             Err(_) => return,
         };
 
-        for (line_idx, line) in content.lines().enumerate() {
+        let lines: Vec<&str> = content.lines().collect();
+
+        for (line_idx, line) in lines.iter().enumerate() {
             let line_num = line_idx + 1;
 
             // Trim leading whitespace
@@ -89,7 +91,6 @@ impl Check for SrsFormat {
             }
 
             let has_bold_open = line.contains("[**");
-            let has_bold_close = line.contains("**]**");
 
             if !has_bold_open {
                 println!(
@@ -97,7 +98,35 @@ impl Check for SrsFormat {
                     file.relative_path, line_num, tag
                 );
                 self.violations += 1;
+                continue;
             }
+
+            // Check for **]** closing on this line or subsequent lines
+            let has_bold_close = if line.contains("**]**") {
+                true
+            } else {
+                // Scan subsequent lines for **]** (multi-line tag)
+                let max_scan = std::cmp::min(lines.len(), line_idx + 50);
+                let mut found = false;
+                for subsequent in &lines[line_idx + 1..max_scan] {
+                    let st = subsequent.trim_start();
+                    // Strip optional list markers before checking for new tag
+                    let after_list = if st.starts_with("* ") || st.starts_with("- ") {
+                        st[2..].trim_start()
+                    } else {
+                        st
+                    };
+                    // Stop if we hit another SRS tag definition
+                    if after_list.starts_with("**SRS_") {
+                        break;
+                    }
+                    if subsequent.contains("**]**") {
+                        found = true;
+                        break;
+                    }
+                }
+                found
+            };
 
             if !has_bold_close {
                 if line.contains("]*/") {

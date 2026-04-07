@@ -242,14 +242,12 @@ fn extract_markdown_srs_tags(content: &str, file_path: &str) -> Vec<(String, Mar
                 q += 1;
             }
 
-            // Find "**]**" ending - don't cross newlines (matching PS1 regex behavior)
+            // Find "**]**" ending - scan across newlines (matching PS1 Singleline regex behavior)
+            // Stop if we encounter another **SRS_ tag start to avoid crossing tag boundaries
             let text_start = q;
             let mut text_end = None;
-            while q + 5 <= len {
-                // Stop at newlines
-                if bytes[q] == b'\n' || bytes[q] == b'\r' {
-                    break;
-                }
+            let scan_limit = std::cmp::min(len, text_start + 4096);
+            while q + 5 <= scan_limit {
                 if bytes[q] == b'*'
                     && bytes[q + 1] == b'*'
                     && bytes[q + 2] == b']'
@@ -257,6 +255,18 @@ fn extract_markdown_srs_tags(content: &str, file_path: &str) -> Vec<(String, Mar
                     && bytes[q + 4] == b'*'
                 {
                     text_end = Some(q);
+                    break;
+                }
+                // Stop at another **SRS_ tag (don't cross tag boundaries)
+                if q > text_start
+                    && q + 6 < len
+                    && bytes[q] == b'*'
+                    && bytes[q + 1] == b'*'
+                    && bytes[q + 2] == b'S'
+                    && bytes[q + 3] == b'R'
+                    && bytes[q + 4] == b'S'
+                    && bytes[q + 5] == b'_'
+                {
                     break;
                 }
                 q += 1;
