@@ -110,7 +110,16 @@ function update-submodules-to-fixed-commits
                     if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
                     {
                         $target_sha = $global:fixed_commits[$sub_repo_name]
-                        git fetch origin
+                        # Ensure full history for git log ranges in collect-upstream-changes
+                        $is_shallow = git rev-parse --is-shallow-repository 2>$null
+                        if ($is_shallow -eq "true")
+                        {
+                            git fetch --unshallow origin
+                        }
+                        else
+                        {
+                            git fetch origin
+                        }
 
                         # Check if the submodule is already at or ahead of the target commit
                         $current_sha = (git rev-parse HEAD 2>$null)
