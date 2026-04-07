@@ -811,6 +811,9 @@ function update-local-repo
         $staged_files = git diff --cached --name-only
         if ($staged_files)
         {
+            # Initialize as array so += works correctly
+            $upstream_changes = @()
+
             # Identify what changed: submodule updates and/or file changes
             $changed_submodules = @()
             $changed_files = @()

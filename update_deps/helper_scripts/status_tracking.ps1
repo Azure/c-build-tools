@@ -379,14 +379,14 @@ function show-propagation-status
             Write-Host ", $pending pending" -ForegroundColor DarkGray
             Write-Host ""
 
-            # Return success if no failures
-            if($failed -eq 0)
+            # Return success if no failures and no pending
+            if($failed -eq 0 -and $pending -eq 0)
             {
                 $result = $true
             }
             else
             {
-                # there were failures
+                # there were failures or pending repos
             }
         }
         else
