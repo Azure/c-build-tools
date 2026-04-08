@@ -101,7 +101,8 @@ jobs:
           # - jemalloc + ARM64: jemalloc doesn't support ARM64 on Windows
           # - appverifier + fsanitize: appverifier is incompatible with address sanitizer
           # - appverifier + run_test_suite_without_ctest: appverifier only works with ctest
-          - ${{ if and( or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')), or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(ARCH_TYPE, 'ARM64')), or( ne(APP_VERIFIER, 'ON'), ne(FSANITIZE_TYPE, 'ON')), or( ne(APP_VERIFIER, 'ON'), eq(parameters.run_test_suite_without_ctest, ''))) }}:
+          # - appverifier + ARM64 (when tests are skipped): no point building just to skip tests
+          - ${{ if and( or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')), or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(ARCH_TYPE, 'ARM64')), or( ne(APP_VERIFIER, 'ON'), ne(FSANITIZE_TYPE, 'ON')), or( ne(APP_VERIFIER, 'ON'), eq(parameters.run_test_suite_without_ctest, '')), or( ne(APP_VERIFIER, 'ON'), ne(ARCH_TYPE, 'ARM64'), parameters.run_arm64_tests)) }}:
             - template: build_and_run_tests.yml
               parameters:
                 BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}_APPVERIFIER_${{ APP_VERIFIER }}
