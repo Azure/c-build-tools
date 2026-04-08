@@ -35,21 +35,16 @@ steps:
   - ${{ if parameters.setup_nuget }}:
     - template: setup_nuget_tools.yml
 
-  # ARM64: Verify agent architecture and discover native tools
+  # ARM64: Verify agent architecture
   - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
     - template: verify_agent_architecture.yml
       parameters:
         expected_architecture: 'ARM64'
 
-    - template: discover_native_tools.yml
-      parameters:
-        architecture: 'ARM64'
-
-  # x64/x86: Discover native tools for consistency
-  - ${{ if ne(parameters.ARCH_TYPE, 'ARM64') }}:
-    - template: discover_native_tools.yml
-      parameters:
-        architecture: ${{ parameters.ARCH_TYPE }}
+  # Discover native tools
+  - template: discover_native_tools.yml
+    parameters:
+      architecture: ${{ parameters.ARCH_TYPE }}
 
   # Setup VS environment - use discovered vsPath for correct VS version
   - task: PowerShell@2

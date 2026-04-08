@@ -1,9 +1,9 @@
 ﻿# This is the job template for building the binaries for one configuration. It does:
 # - setup the machine
 # - build binaries for desired configuration
+# - run tests for the desired configuration
 # - upload binaries artifacts for the desired configuration
-# When with_app_verifier is true (and conditions are met), a second parallel job is
-# generated that builds and runs only the AppVerifier CTest.
+# When APP_VERIFIER is ON, only AppVerifier CTest is run (VSTest and regular CTest are skipped).
 
 parameters:
   - name: BUILD_SUFFIX
@@ -23,10 +23,10 @@ parameters:
   - name: run_test_suite_without_ctest
     type: string
     default: ""
-  # Settings to add an app verifier step for ctest
-  - name: with_app_verifier
-    type: boolean
-    default: false
+  # APP_VERIFIER: "ON" runs only AppVerifier CTest, "OFF" runs normal tests (VSTest, CTest)
+  - name: APP_VERIFIER
+    type: string
+    default: "OFF"
   - name: repo_root_override
     default: $(Build.SourcesDirectory)/deps/c-build-tools
   - name: binary_name_suffix
@@ -55,9 +55,8 @@ parameters:
     default: false
 
 jobs:
-# Main job: build + run tests (VSTest, CTest) without AppVerifier
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
-  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}'
+  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}'
   continueOnError: ${{ parameters.is_optional }}
 
   variables:
@@ -88,66 +87,100 @@ jobs:
 
   # skip_tests is only honored for ARM64 builds - x64 always runs tests
   - ${{ if or(not(parameters.skip_tests), ne(parameters.ARCH_TYPE, 'ARM64')) }}:
-    # in the gate address sanitizer has problems running which are not reproducible locally, so skipping Address Sanitizer for vstest (note: ctest is perfectly fine with Address Sanitizer)
-    # here's example:
-    #   vstest.console will output
-    # Starting test execution, please wait...
-    #A total of 257 test files matched the specified pattern.
-    ##[error]The active test run was aborted. Reason: Test host process crashed : AddressSanitizer: CHECK failed: asan_thread.cpp:273 "((tid())) == ((0))" (0x1, 0x0) (tid=11016)
-    # [continues, with none of our code on any stack]
-    
-    # Use wrapper template for VSTest - handles ARM64 (VSTest@3) vs x64 (VSTest@2) transparently
-    - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
-      - template: tasks/vstest.yml
+
+    # When APP_VERIFIER is OFF, run normal tests (VSTest, CTest)
+    - ${{ if eq(parameters.APP_VERIFIER, 'OFF') }}:
+      # in the gate address sanitizer has problems running which are not reproducible locally, so skipping Address Sanitizer for vstest (note: ctest is perfectly fine with Address Sanitizer)
+      # here's example:
+      #   vstest.console will output
+      # Starting test execution, please wait...
+      #A total of 257 test files matched the specified pattern.
+      ##[error]The active test run was aborted. Reason: Test host process crashed : AddressSanitizer: CHECK failed: asan_thread.cpp:273 "((tid())) == ((0))" (0x1, 0x0) (tid=11016)
+      # [continues, with none of our code on any stack]
+
+      # Use wrapper template for VSTest - handles ARM64 (VSTest@3) vs x64 (VSTest@2) transparently
+      - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
+        - template: tasks/vstest.yml
+          parameters:
+            architecture: ${{ parameters.ARCH_TYPE }}
+            testAssemblies: |
+              $(Build.BinariesDirectory)\c\${{ parameters.build_configuration }}\**\*_ut_*.dll
+              $(Build.BinariesDirectory)\${{ parameters.build_configuration }}\**\*_ut_*.dll
+            configuration: '${{ parameters.build_configuration }}'
+            failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
+            codeCoverageEnabled: ${{ ne(parameters.ARCH_TYPE, 'ARM64') }}
+            otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
+            runSettingsFile: '${{ parameters.repo_root_override }}/pipeline_templates/scripts/tests_native.runsettings'
+            resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
+            testRunTitle: 'VsTest Native ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
+            # ARM64 is experimental, continue on error
+            continueOnError: ${{ eq(parameters.ARCH_TYPE, 'ARM64') }}
+
+        # Publish code coverage results from vstest
+        - task: PublishCodeCoverageResults@2
+          displayName: '📰 Publish Code Coverage'
+          inputs:
+            summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
+            pathToSources: '$(Build.SourcesDirectory)'
+
+      # Use wrapper template for CTest - handles ARM64 native tools transparently
+      - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
+        - template: tasks/ctest.yml
+          parameters:
+            architecture: ${{ parameters.ARCH_TYPE }}
+            workingDirectory: '$(Build.BinariesDirectory)/c'
+            configuration: '${{ parameters.build_configuration }}'
+            outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+
+      - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
+        - task: PublishTestResults@2
+          displayName: '📊 Publish ctest results'
+          inputs:
+            testResultsFormat: 'JUnit'
+            searchFolder: $(Build.BinariesDirectory)\c
+            testResultsFiles: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+            testRunTitle: 'ctest${{ parameters.BUILD_SUFFIX }}'
+            buildConfiguration: ${{ parameters.build_configuration }}
+            failTaskOnMissingResultsFile: true
+          condition: always()
+
+      - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
+        - task: CmdLine@2
+          displayName: '🧪 Run ${{ parameters.run_test_suite_without_ctest }}'
+          inputs:
+            script: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}\${{ parameters.run_test_suite_without_ctest }}.exe'
+            workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}'
+
+    # When APP_VERIFIER is ON, run only AppVerifier CTest
+    - ${{ if eq(parameters.APP_VERIFIER, 'ON') }}:
+      - template : run_ctests_with_appverifier.yml
         parameters:
-          architecture: ${{ parameters.ARCH_TYPE }}
-          testAssemblies: |
-            $(Build.BinariesDirectory)\c\${{ parameters.build_configuration }}\**\*_ut_*.dll
-            $(Build.BinariesDirectory)\${{ parameters.build_configuration }}\**\*_ut_*.dll
-          configuration: '${{ parameters.build_configuration }}'
-          failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
-          codeCoverageEnabled: ${{ ne(parameters.ARCH_TYPE, 'ARM64') }}
-          otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
-          runSettingsFile: '${{ parameters.repo_root_override }}/pipeline_templates/scripts/tests_native.runsettings'
-          resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
-          testRunTitle: 'VsTest Native ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
-          # ARM64 is experimental, continue on error
-          continueOnError: ${{ eq(parameters.ARCH_TYPE, 'ARM64') }}
+          ${{ if ne(parameters.repo_root_override, '') }}:
+            repo_root: ${{ parameters.repo_root_override }}
+          binary_name_suffix: ${{ parameters.binary_name_suffix }}
+          ctest_tests_bin_directory: $(Build.BinariesDirectory)\c
+          ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
+            ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
+          test_steps:
+          - template: tasks/ctest.yml
+            parameters:
+              architecture: ${{ parameters.ARCH_TYPE }}
+              workingDirectory: '$(Build.BinariesDirectory)/c'
+              configuration: '${{ parameters.build_configuration }}'
+              outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+              excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
+              noTestsError: ${{ eq(parameters.appverifier_skip_tests_list, '') }}
 
-      # Publish code coverage results from vstest
-      - task: PublishCodeCoverageResults@2
-        displayName: '📰 Publish Code Coverage'
-        inputs:
-          summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
-          pathToSources: '$(Build.SourcesDirectory)'
-
-    # Use wrapper template for CTest - handles ARM64 native tools transparently
-    - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
-      - template: tasks/ctest.yml
-        parameters:
-          architecture: ${{ parameters.ARCH_TYPE }}
-          workingDirectory: '$(Build.BinariesDirectory)/c'
-          configuration: '${{ parameters.build_configuration }}'
-          outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-
-    - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
       - task: PublishTestResults@2
         displayName: '📊 Publish ctest results'
         inputs:
           testResultsFormat: 'JUnit'
           searchFolder: $(Build.BinariesDirectory)\c
-          testResultsFiles: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-          testRunTitle: 'ctest${{ parameters.BUILD_SUFFIX }}'
+          testResultsFiles: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+          testRunTitle: 'CTest${{ parameters.BUILD_SUFFIX }} App Verifier'
           buildConfiguration: ${{ parameters.build_configuration }}
           failTaskOnMissingResultsFile: true
         condition: always()
-
-    - ${{ if not(eq(parameters.run_test_suite_without_ctest, '')) }}:
-      - task: CmdLine@2
-        displayName: '🧪 Run ${{ parameters.run_test_suite_without_ctest }}'
-        inputs:
-          script: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}\${{ parameters.run_test_suite_without_ctest }}.exe'
-          workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}'
 
   - template : build_teardown_steps.yml
     parameters:
@@ -155,75 +188,3 @@ jobs:
       ARCH_TYPE: ${{ parameters.ARCH_TYPE }}
       build_configuration: ${{ parameters.build_configuration }}
       artifact_name_suffix: ${{ parameters.BUILD_SUFFIX }}
-
-# Separate parallel job for CTest with AppVerifier
-- ${{ if parameters.with_app_verifier }}:
-  - ${{ if eq(parameters.FSANITIZE_TYPE, 'OFF') }}:
-    - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
-      - ${{ if or(not(parameters.skip_tests), ne(parameters.ARCH_TYPE, 'ARM64')) }}:
-        - job: build_and_run_tests_appverifier_${{ parameters.BUILD_SUFFIX }}
-          displayName: 'Build and run tests (AppVerifier), build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}'
-          continueOnError: ${{ parameters.is_optional }}
-
-          variables:
-            ${{ if eq(parameters.FSANITIZE_TYPE, 'ON') }}:
-              use_vld_option: '-Duse_vld:bool=OFF'
-            ${{ if eq(parameters.FSANITIZE_TYPE, 'OFF') }}:
-              use_vld_option: '-Duse_vld:bool=ON'
-
-          pool:
-            name: ${{ parameters.pool_name }}
-            demands:
-            - msbuild
-            - visualstudio
-
-          workspace:
-            clean: all
-
-          steps:
-          - template: build_setup_steps.yml
-            parameters:
-              ARCH_TYPE: ${{ parameters.ARCH_TYPE }}
-              repo_root_override: ${{ parameters.repo_root_override }}
-              setup_nuget: ${{ parameters.setup_nuget }}
-              cmake_options: ${{ parameters.cmake_options }}
-              build_configuration: ${{ parameters.build_configuration }}
-              GBALLOC_LL_TYPE: ${{ parameters.GBALLOC_LL_TYPE }}
-              use_vld_option: ${{ variables.use_vld_option }}
-
-          - template : run_ctests_with_appverifier.yml
-            parameters:
-              ${{ if ne(parameters.repo_root_override, '') }}:
-                repo_root: ${{ parameters.repo_root_override }}
-              binary_name_suffix: ${{ parameters.binary_name_suffix }}
-              ctest_tests_bin_directory: $(Build.BinariesDirectory)\c
-              ${{ if ne(parameters.appverifier_skip_tests_list, '') }}:
-                ctest_additional_args: "-E ${{ parameters.appverifier_skip_tests_list }}"
-              test_steps:
-              # Use wrapper template for CTest with AppVerifier
-              - template: tasks/ctest.yml
-                parameters:
-                  architecture: ${{ parameters.ARCH_TYPE }}
-                  workingDirectory: '$(Build.BinariesDirectory)/c'
-                  configuration: '${{ parameters.build_configuration }}'
-                  outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-                  excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
-                  noTestsError: ${{ eq(parameters.appverifier_skip_tests_list, '') }}
-
-          - task: PublishTestResults@2
-            displayName: '📊 Publish ctest results'
-            inputs:
-              testResultsFormat: 'JUnit'
-              searchFolder: $(Build.BinariesDirectory)\c
-              testResultsFiles: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-              testRunTitle: 'CTest${{ parameters.BUILD_SUFFIX }} App Verifier'
-              buildConfiguration: ${{ parameters.build_configuration }}
-              failTaskOnMissingResultsFile: true
-            condition: always()
-
-          - template : build_teardown_steps.yml
-            parameters:
-              repo_root_override: ${{ parameters.repo_root_override }}
-              ARCH_TYPE: ${{ parameters.ARCH_TYPE }}
-              build_configuration: ${{ parameters.build_configuration }}
-              artifact_name_suffix: ${{ parameters.BUILD_SUFFIX }}_appverifier
