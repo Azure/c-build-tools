@@ -56,7 +56,10 @@ parameters:
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
-  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}'
+  ${{ if eq(parameters.APP_VERIFIER, 'ON') }}:
+    displayName: 'Build and run tests (AppVerifier), build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}'
+  ${{ else }}:
+    displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}'
   continueOnError: ${{ parameters.is_optional }}
 
   variables:
