@@ -188,6 +188,27 @@ add_custom_target(test_validate_srs_consistency_tag_placement_test_helper
     COMMENT "Testing that Tests_SRS_ tags are allowed in helper files inside _ut directories"
 )
 
+# Test 19: Verify C# file support - clean validation with correctly formatted .cs files
+add_custom_target(test_validate_srs_consistency_cs_clean
+    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/cs_clean"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing SRS consistency validation on clean C# files"
+)
+
+# Test 20: Verify malformed SRS tag detection (tags missing ': [ text ]' format)
+# This test verifies that the script detects and reports malformed SRS tags like:
+#   // Tests_SRS_FOO_88_002 - some text (uses dash instead of colon + brackets)
+add_custom_target(test_validate_srs_consistency_malformed_srs_tag
+    COMMAND ${POWERSHELL_EXECUTABLE} -NoProfile -ExecutionPolicy Bypass -File
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_malformed_srs_tag_output.ps1"
+        -ScriptPath "${VALIDATE_SRS_CONSISTENCY_SCRIPT}"
+        -FixtureRoot "${CMAKE_CURRENT_SOURCE_DIR}/malformed_srs_tag"
+        -ExpectedTag "Tests_SRS_MALFORMED_TAG_88_002"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing malformed SRS tag detection (missing ': [ text ]' format)"
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -211,6 +232,8 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_tag_placement_output
     test_validate_srs_consistency_tag_placement_single_violation
     test_validate_srs_consistency_tag_placement_test_helper
+    test_validate_srs_consistency_cs_clean
+    test_validate_srs_consistency_malformed_srs_tag
 )
 # Note: We don't add test_validate_srs_consistency_detection or 
 # test_validate_srs_consistency_tag_placement_violations as dependencies because
