@@ -46,6 +46,11 @@ parameters:
   - name: skip_tests
     type: boolean
     default: false
+  # When true, run NuGetAuthenticate and NuGetToolInstaller before cmake
+  # so that execute_process(COMMAND nuget ...) can access private feeds.
+  - name: setup_nuget
+    type: boolean
+    default: false
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -79,6 +84,10 @@ jobs:
   # Shallow submodules - only need the pinned commit, not full history
   - script: git submodule update --init --depth 1
     displayName: 'Shallow checkout submodules'
+
+  # Authenticate NuGet feeds so cmake configure can restore packages
+  - ${{ if parameters.setup_nuget }}:
+    - template: setup_nuget_tools.yml
 
   # ARM64: Verify agent architecture and discover native tools
   - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:

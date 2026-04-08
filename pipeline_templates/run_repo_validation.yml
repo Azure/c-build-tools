@@ -21,6 +21,10 @@ parameters:
     type: string
     default: "Azure-MessagingStore-WinBuildPoolVS2022_1"
 
+  - name: setup_nuget
+    type: boolean
+    default: false
+
 jobs:
 - job: run_repo_validation
   displayName: 'Run repo validation and traceability'
@@ -78,6 +82,10 @@ jobs:
         } else {
           Write-Host "##[warning]vswhere not found"
         }
+
+  # Authenticate NuGet feeds so cmake configure can restore packages
+  - ${{ if parameters.setup_nuget }}:
+    - template: setup_nuget_tools.yml
 
   # CMake generate with repo validation and traceability enabled
   - template: tasks/cmake.yml
