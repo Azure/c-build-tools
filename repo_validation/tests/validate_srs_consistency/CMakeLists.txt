@@ -250,6 +250,14 @@ add_custom_target(test_validate_srs_consistency_cs_clean
     DEPENDS repo_validator_rs
 )
 
+# Test 20: C# file inconsistency detection
+add_custom_target(test_validate_srs_consistency_cs_inconsistent
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/cs_inconsistent" --check srs_consistency
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing SRS consistency detection on inconsistent C# files (should fail)"
+    DEPENDS repo_validator_rs
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -282,4 +290,5 @@ add_custom_target(test_validate_srs_consistency_failures
 add_dependencies(test_validate_srs_consistency_failures
     test_validate_srs_consistency_detection
     test_validate_srs_consistency_tag_placement_violations
+    test_validate_srs_consistency_cs_inconsistent
 )
