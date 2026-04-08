@@ -76,6 +76,88 @@ function snapshot-repo-commits
     return $commits
 }
 
+# Check if resuming with a PR would regress any submodule compared to current master.
+# Returns $true if any submodule on master is already ahead of the fixed commit.
+function check-pr-would-regress
+{
+    param(
+        [string] $repo_name
+    )
+    $would_regress = $false
+
+    Push-Location $repo_name
+
+    # Fetch latest master
+    git fetch origin master 2>$null
+
+    if (Test-Path ".gitmodules")
+    {
+        $submodule_lines = git config --file .gitmodules --get-regexp '\.path$'
+        if ($submodule_lines)
+        {
+            foreach ($line in $submodule_lines)
+            {
+                $sub_path = ($line -split "\s+", 2)[1]
+                $sub_repo_name = Split-Path $sub_path -Leaf
+
+                if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
+                {
+                    $target_sha = $global:fixed_commits[$sub_repo_name]
+
+                    # Get what master currently has for this submodule
+                    $master_sub_sha = git ls-tree origin/master -- $sub_path 2>$null
+                    if ($master_sub_sha -match '([0-9a-f]{40})')
+                    {
+                        $current_sha = $matches[1]
+
+                        if ($current_sha -ne $target_sha)
+                        {
+                            # Check if target is ancestor of current (current is ahead)
+                            Push-Location $sub_path
+                            git fetch origin 2>$null
+                            git merge-base --is-ancestor $target_sha $current_sha 2>$null
+                            if ($LASTEXITCODE -eq 0)
+                            {
+                                Write-Host "  REGRESSION: $sub_repo_name on master is at $($current_sha.Substring(0, 8)) which is AHEAD of fixed commit $($target_sha.Substring(0, 8))" -ForegroundColor Red
+                                Write-Host "  Someone has already updated this repo with newer submodule versions." -ForegroundColor Red
+                                $would_regress = $true
+                            }
+                            else
+                            {
+                                # target is not ancestor of current — not a regression
+                            }
+                            Pop-Location
+                        }
+                        else
+                        {
+                            # same SHA, no issue
+                        }
+                    }
+                    else
+                    {
+                        # couldn't parse submodule SHA from master
+                    }
+                }
+                else
+                {
+                    # no fixed commit for this submodule
+                }
+            }
+        }
+        else
+        {
+            # no submodule lines
+        }
+    }
+    else
+    {
+        # no .gitmodules
+    }
+
+    Pop-Location
+    return $would_regress
+}
+
 # Update each submodule to its fixed commit, or latest master if no fixed commit is available
 function update-submodules-to-fixed-commits
 {

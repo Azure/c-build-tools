@@ -7,6 +7,119 @@
 . "$PSScriptRoot\status_tracking.ps1"
 . "$PSScriptRoot\watch_github_pr.ps1"
 
+
+# Find an active GitHub PR for a given branch. Returns the PR URL or $null.
+function find-active-github-pr
+{
+    param(
+        [string] $repo_name,
+        [string] $branch_name
+    )
+    $result = $null
+
+    Push-Location $repo_name
+    $pr_check = gh pr list --head $branch_name --state open --json url --jq '.[0].url' 2>$null
+    if ($LASTEXITCODE -eq 0 -and $pr_check)
+    {
+        $result = $pr_check.Trim()
+    }
+    else
+    {
+        # no active PR for this branch
+    }
+    Pop-Location
+
+    return $result
+}
+
+
+# Check if a GitHub PR is already merged. Returns $true if merged.
+function check-github-pr-merged
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name
+    )
+    $result = $false
+
+    Push-Location $repo_name
+    $pr_check = gh pr view $pr_url --json state 2>&1
+    if ($LASTEXITCODE -eq 0)
+    {
+        $pr_info = $pr_check | ConvertFrom-Json
+        if ($pr_info.state -eq "MERGED")
+        {
+            $result = $true
+        }
+        else
+        {
+            # PR still active
+        }
+    }
+    else
+    {
+        # couldn't check PR status
+    }
+    Pop-Location
+
+    return $result
+}
+
+
+# Monitor an existing GitHub PR until checks pass.
+function monitor-github-pr
+{
+    param(
+        [string] $repo_name
+    )
+
+    Push-Location $repo_name
+    $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
+    if (-not $watch_result.Success)
+    {
+        Pop-Location
+        fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+    }
+    else
+    {
+        Write-Host "PR checks passed" -ForegroundColor Green
+    }
+    Pop-Location
+}
+
+
+# Close a GitHub PR, checking status first.
+function close-pr-github
+{
+    param(
+        [string] $pr_url
+    )
+
+    $pr_state = gh pr view $pr_url --json state --jq '.state' 2>$null
+    if ($pr_state -eq "MERGED")
+    {
+        Write-Host "GitHub PR is already merged, skipping close" -ForegroundColor Green
+    }
+    elseif ($pr_state -eq "CLOSED")
+    {
+        Write-Host "GitHub PR is already closed, skipping" -ForegroundColor Gray
+    }
+    else
+    {
+        Write-Host "Closing GitHub PR: $pr_url" -ForegroundColor Yellow
+        gh pr close $pr_url
+        if ($LASTEXITCODE -eq 0)
+        {
+            Write-Host "GitHub PR closed successfully" -ForegroundColor Green
+        }
+        else
+        {
+            Write-Host "Warning: Failed to close GitHub PR: $pr_url" -ForegroundColor Yellow
+        }
+    }
+}
+
+
 # update dependencies for Github repo
 # Returns the PR URL for status tracking
 function update-repo-github
@@ -34,7 +147,18 @@ function update-repo-github
         # no description, use defaults
     }
 
-    $create_output = gh pr create --title $pr_title --body $pr_body --head $new_branch_name 2>&1
+    # Write body to temp file to avoid command line length limits
+    $body_file = [System.IO.Path]::GetTempFileName()
+    $pr_body | Set-Content -Path $body_file -Encoding UTF8
+
+    try
+    {
+        $create_output = gh pr create --title $pr_title --body-file $body_file --head $new_branch_name 2>&1
+    }
+    finally
+    {
+        Remove-Item $body_file -ErrorAction SilentlyContinue
+    }
     if ($LASTEXITCODE -ne 0)
     {
         Write-Host "PR creation returned error (may already exist), checking..." -ForegroundColor Yellow

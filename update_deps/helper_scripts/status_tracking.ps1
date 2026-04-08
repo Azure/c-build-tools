@@ -62,8 +62,8 @@ function set-repo-status
     }
 }
 
-# Close/abandon a PR for the given repo
-# Uses get-repo-type and get-azure-org-project to avoid duplicating URL parsing logic
+# Close/abandon a PR for the given repo.
+# Dispatches to platform-specific close functions in azure_repo_ops.ps1 / github_repo_ops.ps1.
 function close-pr
 {
     param(
@@ -79,75 +79,11 @@ function close-pr
         $repo_type = get-repo-type $repo_name
         if ($repo_type -eq "github")
         {
-            # Check PR state before attempting to close
-            $pr_state = gh pr view $pr_url --json state --jq '.state' 2>$null
-            if ($pr_state -eq "MERGED")
-            {
-                Write-Host "GitHub PR is already merged, skipping close" -ForegroundColor Green
-            }
-            elseif ($pr_state -eq "CLOSED")
-            {
-                Write-Host "GitHub PR is already closed, skipping" -ForegroundColor Gray
-            }
-            else
-            {
-                Write-Host "Closing GitHub PR: $pr_url" -ForegroundColor Yellow
-                gh pr close $pr_url
-                if ($LASTEXITCODE -eq 0)
-                {
-                    Write-Host "GitHub PR closed successfully" -ForegroundColor Green
-                }
-                else
-                {
-                    Write-Host "Warning: Failed to close GitHub PR: $pr_url" -ForegroundColor Yellow
-                }
-            }
+            close-pr-github -pr_url $pr_url
         }
         elseif ($repo_type -eq "azure")
         {
-            # Extract PR ID from URL like .../pullrequest/12345
-            if ($pr_url -match "/pullrequest/(\d+)")
-            {
-                $pr_id = $matches[1]
-                $azure_info = get-azure-org-project $repo_name
-                $org = $azure_info.Organization
-
-                # Check PR status before attempting to abandon
-                $pr_json = az repos pr show --id $pr_id --organization $org --output json 2>$null
-                if ($pr_json)
-                {
-                    $pr_obj = $pr_json | ConvertFrom-Json
-                    if ($pr_obj.status -eq "completed")
-                    {
-                        Write-Host "Azure PR $pr_id is already completed (merged), skipping abandon" -ForegroundColor Green
-                    }
-                    elseif ($pr_obj.status -eq "abandoned")
-                    {
-                        Write-Host "Azure PR $pr_id is already abandoned, skipping" -ForegroundColor Gray
-                    }
-                    else
-                    {
-                        Write-Host "Abandoning Azure PR: $pr_url" -ForegroundColor Yellow
-                        az repos pr update --id $pr_id --status abandoned --organization $org --output json | Out-Null
-                        if ($LASTEXITCODE -eq 0)
-                        {
-                            Write-Host "Azure PR abandoned successfully" -ForegroundColor Green
-                        }
-                        else
-                        {
-                            Write-Host "Warning: Failed to abandon Azure PR ID: $pr_id" -ForegroundColor Yellow
-                        }
-                    }
-                }
-                else
-                {
-                    Write-Host "Warning: Could not fetch Azure PR status for ID: $pr_id" -ForegroundColor Yellow
-                }
-            }
-            else
-            {
-                Write-Host "Warning: Could not parse PR ID from URL: $pr_url" -ForegroundColor Yellow
-            }
+            close-pr-azure -pr_url $pr_url -repo_name $repo_name
         }
         else
         {

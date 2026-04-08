@@ -51,6 +51,164 @@ function get-azure-org-project
 }
 
 
+# Find an active Azure PR for a given branch. Returns the PR URL or $null.
+function find-active-azure-pr
+{
+    param(
+        [string] $repo_name,
+        [string] $branch_name
+    )
+    $result = $null
+
+    $azure_info = get-azure-org-project $repo_name
+    $org = $azure_info.Organization
+    $project = $azure_info.Project
+    $pr_list_output = az repos pr list `
+        --repository $repo_name `
+        --source-branch $branch_name `
+        --target-branch master `
+        --status active `
+        --organization $org `
+        --project $project `
+        --output json 2>$null
+    if ($LASTEXITCODE -eq 0 -and $pr_list_output)
+    {
+        $prs = @($pr_list_output | ConvertFrom-Json)
+        if ($prs.Count -gt 0)
+        {
+            $pr_id = $prs[0].pullRequestId
+            # az repos pr list doesn't populate repository.webUrl,
+            # so construct the URL from org/project/repo
+            $result = "$org/$project/_git/$repo_name/pullrequest/$pr_id"
+        }
+        else
+        {
+            # no active PRs for this branch
+        }
+    }
+    else
+    {
+        # couldn't query PRs
+    }
+
+    return $result
+}
+
+
+# Check if an Azure PR is already completed (merged). Returns $true if completed.
+function check-azure-pr-completed
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name
+    )
+    $result = $false
+
+    if ($pr_url -match "/pullrequest/(\d+)")
+    {
+        $pr_id = [int]$matches[1]
+        $azure_info = get-azure-org-project $repo_name
+        $pr_check = az repos pr show --id $pr_id --organization $azure_info.Organization --output json 2>&1
+        if ($LASTEXITCODE -eq 0)
+        {
+            $pr_info = $pr_check | ConvertFrom-Json
+            if ($pr_info.status -eq "completed")
+            {
+                $result = $true
+            }
+            else
+            {
+                # PR still active
+            }
+        }
+        else
+        {
+            # couldn't check PR status
+        }
+    }
+    else
+    {
+        # couldn't parse PR ID from URL
+    }
+
+    return $result
+}
+
+
+# Monitor an existing Azure PR until completion.
+function monitor-azure-pr
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name
+    )
+
+    if ($pr_url -match "/pullrequest/(\d+)")
+    {
+        $pr_id = [int]$matches[1]
+        $azure_info = get-azure-org-project $repo_name
+        wait-until-complete-azure $pr_id $azure_info.Organization $repo_name
+    }
+    else
+    {
+        fail-with-status "Could not parse PR ID from URL: $pr_url"
+    }
+}
+
+
+# Close/abandon an Azure PR, checking status first.
+function close-pr-azure
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name
+    )
+
+    if ($pr_url -match "/pullrequest/(\d+)")
+    {
+        $pr_id = $matches[1]
+        $azure_info = get-azure-org-project $repo_name
+        $org = $azure_info.Organization
+
+        # Check PR status before attempting to abandon
+        $pr_json = az repos pr show --id $pr_id --organization $org --output json 2>$null
+        if ($pr_json)
+        {
+            $pr_obj = $pr_json | ConvertFrom-Json
+            if ($pr_obj.status -eq "completed")
+            {
+                Write-Host "Azure PR $pr_id is already completed (merged), skipping abandon" -ForegroundColor Green
+            }
+            elseif ($pr_obj.status -eq "abandoned")
+            {
+                Write-Host "Azure PR $pr_id is already abandoned, skipping" -ForegroundColor Gray
+            }
+            else
+            {
+                Write-Host "Abandoning Azure PR: $pr_url" -ForegroundColor Yellow
+                az repos pr update --id $pr_id --status abandoned --organization $org --output json | Out-Null
+                if ($LASTEXITCODE -eq 0)
+                {
+                    Write-Host "Azure PR abandoned successfully" -ForegroundColor Green
+                }
+                else
+                {
+                    Write-Host "Warning: Failed to abandon Azure PR ID: $pr_id" -ForegroundColor Yellow
+                }
+            }
+        }
+        else
+        {
+            Write-Host "Warning: Could not fetch Azure PR status for ID: $pr_id" -ForegroundColor Yellow
+        }
+    }
+    else
+    {
+        Write-Host "Warning: Could not parse PR ID from URL: $pr_url" -ForegroundColor Yellow
+    }
+}
+
+
 # create PR to update dependencies for Azure repo using Azure CLI
 function create-pr-azure
 {
@@ -77,6 +235,17 @@ function create-pr-azure
     else
     {
         # no description, use defaults
+    }
+
+    # Truncate body to avoid Windows command line length limits (~8000 chars)
+    $max_body_len = 4000
+    if ($pr_body.Length -gt $max_body_len)
+    {
+        $pr_body = $pr_body.Substring(0, $max_body_len) + "`n`n... (truncated)"
+    }
+    else
+    {
+        # body fits within limits
     }
 
     $pr_output = az repos pr create `
