@@ -352,6 +352,8 @@ function propagate-updates
         [void](show-propagation-status -Final)
         restore-original-directory
         Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
+        Write-Host "To resume from where it stopped, run:" -ForegroundColor Cyan
+        Write-Host "  propagate_updates.ps1 -Resume" -ForegroundColor White
         exit 1
     }
     else

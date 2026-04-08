@@ -152,6 +152,8 @@ function fail-with-status
     restore-original-directory
 
     Write-Error $message
+    Write-Host "`nTo resume from where it stopped, run:" -ForegroundColor Cyan
+    Write-Host "  propagate_updates.ps1 -Resume" -ForegroundColor White
     exit -1
 }
 
