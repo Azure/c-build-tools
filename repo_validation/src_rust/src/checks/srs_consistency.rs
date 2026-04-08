@@ -669,12 +669,19 @@ fn normalize_c_text(text: &str) -> String {
     parts.join(" ")
 }
 
-/// Determine if a file is a test file based on parent directory name ending with _ut or _int
+/// Determine if a file is a test file based on parent directory name ending with _ut or _int,
+/// or for C# files, if the filename starts with "Test" (e.g., TestMyAdapter.cs).
 fn is_test_file(relative_path: &str) -> bool {
     let parts: Vec<&str> = relative_path.split(['/', '\\']).collect();
     // Check all directory components (not the filename)
     for dir in parts.iter().take(parts.len().saturating_sub(1)) {
         if dir.ends_with("_ut") || dir.ends_with("_int") {
+            return true;
+        }
+    }
+    // C# convention: test files start with "Test"
+    if let Some(filename) = parts.last() {
+        if filename.ends_with(".cs") && filename.starts_with("Test") {
             return true;
         }
     }
@@ -853,7 +860,7 @@ impl Check for SrsConsistency {
     }
 
     fn file_types(&self) -> u32 {
-        FILE_TYPE_MD | FILE_TYPE_C
+        FILE_TYPE_MD | FILE_TYPE_C | FILE_TYPE_CS
     }
 
     fn requires_devdoc(&self) -> bool {
@@ -888,8 +895,8 @@ impl Check for SrsConsistency {
             return;
         }
 
-        // Collect C file tags
-        if file.type_flags & FILE_TYPE_C == 0 {
+        // Collect C/C# file tags
+        if file.type_flags & (FILE_TYPE_C | FILE_TYPE_CS) == 0 {
             return;
         }
 

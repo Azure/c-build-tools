@@ -242,6 +242,14 @@ add_custom_target(test_validate_srs_consistency_tag_placement_test_helper
     DEPENDS repo_validator_rs
 )
 
+# Test 19: C# file support - clean validation
+add_custom_target(test_validate_srs_consistency_cs_clean
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/cs_clean" --check srs_consistency
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing SRS consistency validation on clean C# files"
+    DEPENDS repo_validator_rs
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -265,6 +273,7 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_tag_placement_output
     test_validate_srs_consistency_tag_placement_single_violation
     test_validate_srs_consistency_tag_placement_test_helper
+    test_validate_srs_consistency_cs_clean
 )
 # Master target for all expected-failure tests
 add_custom_target(test_validate_srs_consistency_failures
