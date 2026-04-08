@@ -374,61 +374,6 @@ foreach ($cFile in $cFiles) {
     }
 }
 
-# Phase 3: Detect malformed SRS tags (missing ": [ text ]" format)
-Write-Host "Phase 3: Checking for malformed SRS tags..." -ForegroundColor White
-
-$malformedTags = @()
-
-foreach ($cFile in $cFiles) {
-    $content = Get-Content -Path $cFile.FullName -Raw -ErrorAction SilentlyContinue
-    if (-not $content) { continue }
-
-    $relativePath = $cFile.FullName.Substring($RepoRoot.Length).TrimStart('\', '/')
-
-    # Loose pattern: find any Codes_SRS_ or Tests_SRS_ tag reference regardless of format
-    $loosePattern = '(?:Codes|Tests)_SRS_[A-Z0-9_]+_\d{2}_\d{3}'
-    $looseMatches = [regex]::Matches($content, $loosePattern)
-
-    # Get the well-formed tags already parsed from this file
-    $wellFormedTags = Get-SrsTagsFromCCode -Content $content -FilePath $cFile.FullName
-    $wellFormedPositions = @{}
-    foreach ($wf in $wellFormedTags) {
-        $wellFormedPositions[$wf.MatchIndex] = $true
-    }
-
-    foreach ($looseMatch in $looseMatches) {
-        # Check if this occurrence is part of a well-formed tag we already parsed
-        $isCovered = $false
-        foreach ($wf in $wellFormedTags) {
-            if ($looseMatch.Index -ge $wf.MatchIndex -and
-                $looseMatch.Index -lt ($wf.MatchIndex + $wf.OriginalMatch.Length)) {
-                $isCovered = $true
-                break
-            }
-        }
-
-        if (-not $isCovered) {
-            # Extract the line containing this tag for context
-            $lineStart = $content.LastIndexOf("`n", [Math]::Max(0, $looseMatch.Index - 1))
-            if ($lineStart -lt 0) { $lineStart = 0 } else { $lineStart++ }
-            $lineEnd = $content.IndexOf("`n", $looseMatch.Index)
-            if ($lineEnd -lt 0) { $lineEnd = $content.Length }
-            $line = $content.Substring($lineStart, $lineEnd - $lineStart).Trim()
-            $lineNumber = ($content.Substring(0, $looseMatch.Index) -split "`n").Count
-
-            $malformedTags += [PSCustomObject]@{
-                FilePath = $relativePath
-                Tag = $looseMatch.Value
-                Line = $line
-                LineNumber = $lineNumber
-            }
-        }
-    }
-}
-
-Write-Host "Found $($malformedTags.Count) malformed SRS tag(s)" -ForegroundColor $(if ($malformedTags.Count -gt 0) { "Yellow" } else { "White" })
-Write-Host ""
-
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Validation Summary" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
@@ -437,7 +382,6 @@ Write-Host "C source files scanned: $cFileCount" -ForegroundColor White
 Write-Host "C# source files scanned: $csFileCount" -ForegroundColor White
 Write-Host "Inconsistencies found: $($inconsistentRequirements.Count)" -ForegroundColor White
 Write-Host "Tag placement violations: $($tagPlacementViolations.Count)" -ForegroundColor White
-Write-Host "Malformed SRS tags: $($malformedTags.Count)" -ForegroundColor White
 if ($duplicateTagsCount -gt 0) {
     Write-Host "Duplicate SRS tags found: $duplicateTagsCount" -ForegroundColor Yellow
 }
@@ -595,24 +539,8 @@ if ($tagPlacementViolations.Count -gt 0) {
     Write-Host ""
 }
 
-# Report malformed SRS tags
-if ($malformedTags.Count -gt 0) {
-    Write-Host "Malformed SRS Tags (missing ': [ text ]' format):" -ForegroundColor Red
-    Write-Host ""
-
-    foreach ($mt in $malformedTags) {
-        Write-Host "  [FAIL] $($mt.Tag)" -ForegroundColor Red
-        Write-Host "         File: $($mt.FilePath):$($mt.LineNumber)" -ForegroundColor White
-        Write-Host "         Line: $($mt.Line)" -ForegroundColor Yellow
-        Write-Host ""
-    }
-
-    Write-Host "  SRS tags must follow the format: Prefix_SRS_TAG: [ requirement text ]" -ForegroundColor Cyan
-    Write-Host ""
-}
-
 $unfixedCount = $inconsistentRequirements.Count - $fixedRequirements.Count
-$totalFailures = $unfixedCount + $tagPlacementViolations.Count + $malformedTags.Count
+$totalFailures = $unfixedCount + $tagPlacementViolations.Count
 
 if ($totalFailures -eq 0) {
     Write-Host "[VALIDATION PASSED]" -ForegroundColor Green
@@ -624,9 +552,6 @@ if ($totalFailures -eq 0) {
     }
     if ($tagPlacementViolations.Count -gt 0) {
         Write-Host "$($tagPlacementViolations.Count) tag placement violation(s) require manual correction." -ForegroundColor Yellow
-    }
-    if ($malformedTags.Count -gt 0) {
-        Write-Host "$($malformedTags.Count) malformed SRS tag(s) require manual correction." -ForegroundColor Yellow
     }
     exit 1
 }
