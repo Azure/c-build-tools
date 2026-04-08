@@ -4,26 +4,24 @@
 #
 # Tab Validation Tests
 #
-# Tests the validate_no_tabs.ps1 script to ensure it correctly detects tab characters
+# Tests the repo_validator no_tabs check to ensure it correctly detects tab characters
 # and validates the fix functionality works properly.
 #
 
-set(VALIDATE_NO_TABS_SCRIPT "${VALIDATION_SCRIPTS_DIR}/validate_no_tabs.ps1")
-
-# Test 1: Verify script detects tabs in files that have them
+# Test 1: Verify tool detects tabs in files that have them
 add_custom_target(test_validate_no_tabs_detection
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_NO_TABS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/has_tabs"
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_tabs" --check no_tabs
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing tab detection on files with tabs"
+    DEPENDS repo_validator_rs
 )
 
-# Test 2: Verify script passes on files without tabs
+# Test 2: Verify tool passes on files without tabs
 add_custom_target(test_validate_no_tabs_clean
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_NO_TABS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/no_tabs"
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/no_tabs" --check no_tabs
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing tab validation on clean files"
+    DEPENDS repo_validator_rs
 )
 
 # Test 3: Verify fix functionality works (copy test files to temp directory first)
@@ -33,15 +31,13 @@ add_custom_target(test_validate_no_tabs_fix
     COMMAND ${CMAKE_COMMAND} -E copy_directory 
         "${CMAKE_CURRENT_SOURCE_DIR}/has_tabs" 
         "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-    # Run the script with fix mode
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_NO_TABS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-        -Fix
-    # Verify tabs were removed (script should pass now)
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_NO_TABS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
+    # Run the tool with fix mode
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check no_tabs --fix
+    # Verify tabs were removed (tool should pass now)
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test" --check no_tabs
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing tab fix functionality"
+    DEPENDS repo_validator_rs
 )
 
 # Master target for all tab validation tests
@@ -55,6 +51,10 @@ add_dependencies(test_validate_no_tabs
     test_validate_no_tabs_fix
 )
 
-# Note: We don't add test_validate_no_tabs_detection as a dependency because 
-# it should fail with exit code 1 (which would fail the build). 
-# Instead, it's available to run manually to verify detection works.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_no_tabs_failures
+    COMMENT "Running all no_tabs failure detection tests"
+)
+add_dependencies(test_validate_no_tabs_failures
+    test_validate_no_tabs_detection
+)
