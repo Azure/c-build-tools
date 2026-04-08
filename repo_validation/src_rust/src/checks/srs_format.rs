@@ -102,33 +102,49 @@ impl Check for SrsFormat {
             }
 
             // Check for **]** closing on this line or subsequent lines
-            let has_bold_close = if line.contains("**]**") {
-                true
-            } else {
-                // Scan subsequent lines for **]** (multi-line tag)
-                let max_scan = std::cmp::min(lines.len(), line_idx + 50);
-                let mut found = false;
-                for subsequent in &lines[line_idx + 1..max_scan] {
-                    let st = subsequent.trim_start();
-                    // Strip optional list markers before checking for new tag
-                    let after_list = if st.starts_with("* ") || st.starts_with("- ") {
-                        st[2..].trim_start()
-                    } else {
-                        st
-                    };
-                    // Stop if we hit another SRS tag definition
-                    if after_list.starts_with("**SRS_") {
-                        break;
-                    }
-                    if subsequent.contains("**]**") {
-                        found = true;
-                        break;
-                    }
-                }
-                found
-            };
+            if line.contains("**]**") {
+                // Single-line tag, all good
+                continue;
+            }
 
-            if !has_bold_close {
+            // Scan subsequent lines for **]** (multi-line tag)
+            let max_scan = std::cmp::min(lines.len(), line_idx + 50);
+            let mut close_line_idx: Option<usize> = None;
+            for (scan_offset, subsequent) in lines[line_idx + 1..max_scan].iter().enumerate() {
+                let st = subsequent.trim_start();
+                // Strip optional list markers before checking for new tag
+                let after_list = if st.starts_with("* ") || st.starts_with("- ") {
+                    st[2..].trim_start()
+                } else {
+                    st
+                };
+                // Stop if we hit another SRS tag definition
+                if after_list.starts_with("**SRS_") {
+                    break;
+                }
+                if subsequent.contains("**]**") {
+                    close_line_idx = Some(line_idx + 1 + scan_offset);
+                    break;
+                }
+            }
+
+            if let Some(close_idx) = close_line_idx {
+                // Found closing on a subsequent line — check for gratuitous multi-line.
+                // If all intermediate lines are blank AND the close line itself has no
+                // content besides **]**, the tag should have been single-line.
+                let all_intermediate_blank = (line_idx + 1..close_idx)
+                    .all(|i| lines[i].trim().is_empty());
+                let close_has_content =
+                    !lines[close_idx].replace("**]**", "").trim().is_empty();
+                if all_intermediate_blank && !close_has_content {
+                    println!(
+                        "  [ERROR] {}:{} {} - gratuitous multi-line tag (closing **]** should be on same line)",
+                        file.relative_path, line_num, tag
+                    );
+                    self.violations += 1;
+                }
+            } else {
+                // No closing found
                 if line.contains("]*/") {
                     println!(
                         "  [ERROR] {}:{} {} - C-comment-style closing ]*/ (should be **]**)",
