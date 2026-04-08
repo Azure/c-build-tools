@@ -153,7 +153,14 @@ function fail-with-status
 
     Write-Error $message
     Write-Host "`nTo resume from where it stopped, run:" -ForegroundColor Cyan
-    Write-Host "  propagate_updates.ps1 -Resume" -ForegroundColor White
+    if ($global:resume_command)
+    {
+        Write-Host "  $global:resume_command" -ForegroundColor White
+    }
+    else
+    {
+        Write-Host "  propagate_updates.ps1 -Resume" -ForegroundColor White
+    }
     exit -1
 }
 

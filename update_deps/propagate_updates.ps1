@@ -94,6 +94,15 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\propagation_state.ps1"
 . "$helper_scripts\update_repo.ps1"
 
+# Build the resume command from the current invocation args
+$resume_args = @()
+if ($azure_token) { $resume_args += "-azure_token `"$azure_token`"" }
+if ($azure_work_item) { $resume_args += "-azure_work_item $azure_work_item" }
+if ($root_list) { $resume_args += "-root_list $($root_list -join ',')" }
+if ($poll_interval -ne 15) { $resume_args += "-poll_interval $poll_interval" }
+if ($NoCloseFailedPr) { $resume_args += "-NoCloseFailedPr" }
+$global:resume_command = "$($MyInvocation.MyCommand.Path) $($resume_args -join ' ') -Resume"
+
 
 # iterate over all repos and update them
 function propagate-updates
@@ -353,7 +362,7 @@ function propagate-updates
         restore-original-directory
         Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
         Write-Host "To resume from where it stopped, run:" -ForegroundColor Cyan
-        Write-Host "  propagate_updates.ps1 -Resume" -ForegroundColor White
+        Write-Host "  $global:resume_command" -ForegroundColor White
         exit 1
     }
     else
