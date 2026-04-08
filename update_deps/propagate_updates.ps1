@@ -191,29 +191,87 @@ function update-repo
     # Ensure we're in the work directory
     Set-Location $global:work_dir
 
-    # Check if we already have a PR URL from a previous run (resume scenario)
-    # Do this BEFORE update-local-repo to avoid pushing new commits to an existing PR
+    # --- Resolve existing PR URL (resume scenario) ---
+    # Check saved state first, then query remote. Do this BEFORE update-local-repo
+    # to avoid pushing new commits to an existing PR.
     $existing_pr_url = $null
-    if ($global:repo_status.ContainsKey($repo_name))
+    $repo_type = get-repo-type $repo_name
+
+    # Check saved PrUrl from state file
+    if ($global:repo_status.ContainsKey($repo_name) -and $global:repo_status[$repo_name].PrUrl)
     {
         $existing_pr_url = $global:repo_status[$repo_name].PrUrl
+        Write-Host "Found existing PR from previous run: $existing_pr_url" -ForegroundColor Cyan
     }
     else
     {
-        # no existing status
+        # No saved PrUrl — check remote for an active PR on this branch
+        # (handles case where state file was saved before PrUrl was set)
+        Write-Host "  Checking for active PR on branch $new_branch_name..." -ForegroundColor Gray
+        if ($repo_type -eq "azure")
+        {
+            $azure_info = get-azure-org-project $repo_name
+            $org = $azure_info.Organization
+            $project = $azure_info.Project
+            $pr_list_output = az repos pr list `
+                --repository $repo_name `
+                --source-branch $new_branch_name `
+                --target-branch master `
+                --status active `
+                --organization $org `
+                --project $project `
+                --output json 2>$null
+            if ($LASTEXITCODE -eq 0 -and $pr_list_output)
+            {
+                $prs = @($pr_list_output | ConvertFrom-Json)
+                if ($prs.Count -gt 0)
+                {
+                    $pr_id = $prs[0].pullRequestId
+                    # az repos pr list doesn't populate repository.webUrl,
+                    # so construct the URL from org/project/repo
+                    $existing_pr_url = "$org/$project/_git/$repo_name/pullrequest/$pr_id"
+                    Write-Host "Discovered active PR: $existing_pr_url" -ForegroundColor Cyan
+                }
+                else
+                {
+                    # no active PRs for this branch
+                }
+            }
+            else
+            {
+                # couldn't query PRs
+            }
+        }
+        elseif ($repo_type -eq "github")
+        {
+            Push-Location $repo_name
+            $pr_check = gh pr list --head $new_branch_name --state open --json url --jq '.[0].url' 2>$null
+            if ($LASTEXITCODE -eq 0 -and $pr_check)
+            {
+                $existing_pr_url = $pr_check.Trim()
+                Write-Host "Discovered active PR: $existing_pr_url" -ForegroundColor Cyan
+            }
+            else
+            {
+                # no active PR for this branch
+            }
+            Pop-Location
+        }
+        else
+        {
+            # unknown repo type
+        }
     }
 
+    # --- Handle existing PR or create new one ---
     if ($existing_pr_url)
     {
-        Write-Host "Found existing PR from previous run: $existing_pr_url" -ForegroundColor Cyan
-        $repo_type = get-repo-type $repo_name
-
         # Check if the PR is already merged/completed
         $already_merged = $false
         if ($repo_type -eq "azure" -and $existing_pr_url -match "/pullrequest/(\d+)")
         {
             $pr_id = [int]$matches[1]
-            $azure_info = get-azure-org-project $repo_name
+            if (-not $azure_info) { $azure_info = get-azure-org-project $repo_name }
             $pr_check = az repos pr show --id $pr_id --organization $azure_info.Organization --output json 2>&1
             if ($LASTEXITCODE -eq 0)
             {
@@ -279,7 +337,7 @@ function update-repo
             }
 
             Write-Host "Monitoring existing PR..."
-            $pr_url = $existing_pr_url
+            set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $existing_pr_url
             if ($repo_type -eq "github")
             {
                 Push-Location $repo_name
@@ -296,8 +354,7 @@ function update-repo
             }
             elseif ($repo_type -eq "azure")
             {
-                # Extract PR ID and org from the saved URL
-                $azure_info = get-azure-org-project $repo_name
+                if (-not $azure_info) { $azure_info = get-azure-org-project $repo_name }
                 if ($existing_pr_url -match "/pullrequest/(\d+)")
                 {
                     $pr_id = [int]$matches[1]
@@ -312,151 +369,38 @@ function update-repo
             {
                 fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
             }
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
             update-fixed-commit $repo_name
         }
     }
     else
     {
-        # No saved PR URL — check if there's an active PR for this branch on the remote
-        # (handles case where state file was saved before PrUrl was set)
-        Write-Host "  Checking for active PR on branch $new_branch_name..." -ForegroundColor Gray
-        $repo_type = get-repo-type $repo_name
-        $discovered_pr_url = $null
-
-        if ($repo_type -eq "azure")
+        # No existing PR — do the full update-local-repo + create PR flow
+        $update_result = (update-local-repo $repo_name $new_branch_name)
+        [string]$git_output = $update_result.GitOutput
+        $description = $update_result.Description
+        if($git_output.Contains("nothing to commit"))
         {
-            $azure_info = get-azure-org-project $repo_name
-            $org = $azure_info.Organization
-            $project = $azure_info.Project
-            Write-Host "  Checking for active PR on branch..." -ForegroundColor Gray
-            $pr_list_output = az repos pr list `
-                --repository $repo_name `
-                --source-branch $new_branch_name `
-                --target-branch master `
-                --status active `
-                --organization $org `
-                --project $project `
-                --output json 2>$null
-            if ($LASTEXITCODE -eq 0 -and $pr_list_output)
-            {
-                $prs = @($pr_list_output | ConvertFrom-Json)
-                if ($prs.Count -gt 0)
-                {
-                    $pr_id = $prs[0].pullRequestId
-                    # az repos pr list doesn't populate repository.webUrl,
-                    # so construct the URL from org/project/repo
-                    $discovered_pr_url = "$org/$project/_git/$repo_name/pullrequest/$pr_id"
-                }
-                else
-                {
-                    # no active PRs for this branch
-                }
-            }
-            else
-            {
-                Write-Host "  PR list query failed or returned empty" -ForegroundColor Yellow
-            }
-        }
-        elseif ($repo_type -eq "github")
-        {
-            Push-Location $repo_name
-            $pr_check = gh pr list --head $new_branch_name --state open --json url --jq '.[0].url' 2>$null
-            if ($LASTEXITCODE -eq 0 -and $pr_check)
-            {
-                $discovered_pr_url = $pr_check.Trim()
-            }
-            else
-            {
-                # no active PR for this branch
-            }
-            Pop-Location
+            Write-Host "Nothing to commit, skipping repo $repo_name"
+            set-repo-status -repo_name $repo_name -status $script:STATUS_SKIPPED -message "No changes"
         }
         else
         {
-            # unknown repo type
-        }
-
-        if ($discovered_pr_url)
-        {
-            Write-Host "Discovered active PR for branch $new_branch_name`: $discovered_pr_url" -ForegroundColor Cyan
-
-            # Check for regression before monitoring
-            $would_regress = check-pr-would-regress -repo_name $repo_name
-            if ($would_regress)
-            {
-                fail-with-status "PR for $repo_name would regress submodules. Someone has already updated this repo with newer versions. Abandon the PR and start a new propagation."
-            }
-            else
-            {
-                # no regression, safe to monitor
-            }
-
-            Write-Host "Monitoring existing PR..."
-            set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $discovered_pr_url
-
             if ($repo_type -eq "github")
             {
-                Push-Location $repo_name
-                $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
-                if (-not $watch_result.Success)
-                {
-                    fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
-                }
-                else
-                {
-                    Write-Host "PR checks passed" -ForegroundColor Green
-                }
-                Pop-Location
+                $pr_url = update-repo-github $repo_name $new_branch_name $description
+                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+                update-fixed-commit $repo_name
             }
             elseif ($repo_type -eq "azure")
             {
-                if ($discovered_pr_url -match "/pullrequest/(\d+)")
-                {
-                    $pr_id = [int]$matches[1]
-                    wait-until-complete-azure $pr_id $azure_info.Organization $repo_name
-                }
-                else
-                {
-                    fail-with-status "Could not parse PR ID from URL: $discovered_pr_url"
-                }
+                $pr_url = update-repo-azure $repo_name $new_branch_name $description
+                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+                update-fixed-commit $repo_name
             }
             else
             {
-                # shouldn't reach here
-            }
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $discovered_pr_url
-            update-fixed-commit $repo_name
-        }
-        else
-        {
-            # No existing PR — do the full update-local-repo + create PR flow
-            $update_result = (update-local-repo $repo_name $new_branch_name)
-            [string]$git_output = $update_result.GitOutput
-            $description = $update_result.Description
-            if($git_output.Contains("nothing to commit"))
-            {
-                Write-Host "Nothing to commit, skipping repo $repo_name"
-                set-repo-status -repo_name $repo_name -status $script:STATUS_SKIPPED -message "No changes"
-            }
-            else
-            {
-                if ($repo_type -eq "github")
-                {
-                    $pr_url = update-repo-github $repo_name $new_branch_name $description
-                    set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-                    update-fixed-commit $repo_name
-                }
-                elseif ($repo_type -eq "azure")
-                {
-                    $pr_url = update-repo-azure $repo_name $new_branch_name $description
-                    set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-                    update-fixed-commit $repo_name
-                }
-                else
-                {
-                    fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
-                }
+                fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
             }
         }
     }
