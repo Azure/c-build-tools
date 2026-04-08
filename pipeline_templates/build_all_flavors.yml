@@ -114,8 +114,8 @@ jobs:
                 ${{ if not(parameters.run_arm64_tests) }}:
                   skip_tests: true
 
-          # Separate parallel job for CTest with AppVerifier (only for FSANITIZE=OFF and ctest-based test runs)
-          - ${{ if and(parameters.with_app_verifier, eq(FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
+          # Separate parallel job for CTest with AppVerifier (only for FSANITIZE=OFF, ctest-based test runs, and architectures that actually run tests)
+          - ${{ if and(parameters.with_app_verifier, eq(FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, ''), or(ne(ARCH_TYPE, 'ARM64'), parameters.run_arm64_tests)) }}:
             - template: build_and_run_tests.yml
               parameters:
                 BUILD_SUFFIX: _appverifier_${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}
