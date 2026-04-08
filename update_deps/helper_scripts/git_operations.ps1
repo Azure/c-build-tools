@@ -76,6 +76,45 @@ function snapshot-repo-commits
     return $commits
 }
 
+# Check if a submodule's current commit is ahead of a target commit.
+# Must be called from inside the submodule directory.
+# Returns $true if current HEAD is strictly ahead of target_sha.
+function test-submodule-is-ahead
+{
+    param(
+        [string] $target_sha
+    )
+    $result = $false
+
+    $current_sha = (git rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $current_sha)
+    {
+        $current_sha = $current_sha.Trim()
+        if ($current_sha -ne $target_sha)
+        {
+            git merge-base --is-ancestor $target_sha $current_sha 2>$null
+            if ($LASTEXITCODE -eq 0)
+            {
+                $result = $true
+            }
+            else
+            {
+                # target is not ancestor of current
+            }
+        }
+        else
+        {
+            # same SHA
+        }
+    }
+    else
+    {
+        # couldn't determine current SHA
+    }
+
+    return $result
+}
+
 # Check if resuming with a PR would regress any submodule compared to current master.
 # Returns $true if any submodule on master is already ahead of the fixed commit.
 function check-pr-would-regress
@@ -112,11 +151,11 @@ function check-pr-would-regress
 
                         if ($current_sha -ne $target_sha)
                         {
-                            # Check if target is ancestor of current (current is ahead)
+                            # Check if current master is ahead of target
                             Push-Location $sub_path
                             git fetch origin 2>$null
-                            git merge-base --is-ancestor $target_sha $current_sha 2>$null
-                            if ($LASTEXITCODE -eq 0)
+                            $is_ahead = test-submodule-is-ahead -target_sha $target_sha
+                            if ($is_ahead)
                             {
                                 Write-Host "  REGRESSION: $sub_repo_name on master is at $($current_sha.Substring(0, 8)) which is AHEAD of fixed commit $($target_sha.Substring(0, 8))" -ForegroundColor Red
                                 Write-Host "  Someone has already updated this repo with newer submodule versions." -ForegroundColor Red
@@ -211,9 +250,8 @@ function update-submodules-to-fixed-commits
                         }
                         elseif ($current_sha)
                         {
-                            # Check if target_sha is an ancestor of current — meaning current is newer
-                            git merge-base --is-ancestor $target_sha $current_sha 2>$null
-                            if ($LASTEXITCODE -eq 0)
+                            $is_ahead = test-submodule-is-ahead -target_sha $target_sha
+                            if ($is_ahead)
                             {
                                 # Current commit is ahead of target — do NOT downgrade
                                 Write-Host "  $sub_path is already at $($current_sha.Substring(0, 8)) which is ahead of fixed commit $($target_sha.Substring(0, 8)), keeping current" -ForegroundColor Yellow

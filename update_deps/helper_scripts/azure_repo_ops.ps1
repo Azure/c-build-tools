@@ -260,33 +260,9 @@ function create-pr-azure
 
     if($LASTEXITCODE -ne 0)
     {
-        # Check if a PR already exists for this branch (e.g., from a cancelled run)
-        Write-Host "PR creation failed, checking for existing PR..." -ForegroundColor Yellow
-        $existing_pr = az repos pr list `
-            --repository $repo_name `
-            --source-branch $new_branch_name `
-            --target-branch master `
-            --status active `
-            --organization $org `
-            --project $project `
-            --output json
-        if ($LASTEXITCODE -eq 0)
-        {
-            $existing_prs = @($existing_pr | ConvertFrom-Json)
-            if ($existing_prs.Count -gt 0)
-            {
-                Write-Host "Found existing PR, reusing it" -ForegroundColor Cyan
-                $result = $existing_prs[0]
-            }
-            else
-            {
-                fail-with-status "Failed to create PR for repo $repo_name"
-            }
-        }
-        else
-        {
-            fail-with-status "Failed to create PR for repo $repo_name"
-        }
+        # Existing PRs are already detected by update-repo before reaching here.
+        # If creation still fails, it's an unexpected error — fail immediately.
+        fail-with-status "Failed to create PR for repo $repo_name"
     }
     else
     {

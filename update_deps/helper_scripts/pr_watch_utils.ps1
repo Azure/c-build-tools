@@ -27,22 +27,15 @@ function global:show-pr-notification
 
     try
     {
-        # Use Windows PowerShell 5.1 for WinRT toast support (not available in pwsh 7)
-        $escaped_url = $pr_url -replace '&', '&amp;'
-        $toast_script = @"
-[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null
-`$xml = '<toast activationType="protocol" launch="$escaped_url"><visual><binding template="ToastGeneric"><text>$message</text><text>$repo_name</text><text>$escaped_url</text></binding></visual></toast>'
-`$doc = New-Object Windows.Data.Xml.Dom.XmlDocument
-`$doc.LoadXml(`$xml)
-`$appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
-`$toast = [Windows.UI.Notifications.ToastNotification]::new(`$doc)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(`$appId).Show(`$toast)
-"@
-        # Write to temp file and execute — Start-Process -Command doesn't handle multi-line scripts well
-        $temp_file = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
-        $toast_script | Set-Content -Path $temp_file -Encoding UTF8
-        Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $temp_file -WindowStyle Hidden
+        Add-Type -AssemblyName System.Windows.Forms
+        $notify = New-Object System.Windows.Forms.NotifyIcon
+        $notify.Icon = [System.Drawing.SystemIcons]::Information
+        $notify.Visible = $true
+        $notify.BalloonTipTitle = $message
+        $notify.BalloonTipText = "$repo_name`n$pr_url"
+        $notify.ShowBalloonTip(5000)
+        # Clean up after a delay so the notification stays visible
+        Start-Sleep -Milliseconds 100
     }
     catch
     {
