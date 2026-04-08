@@ -8,7 +8,7 @@ mod file_walker;
 use config::ValidatorConfig;
 use std::process;
 
-fn print_usage(program_name: &str) {
+fn print_usage(program_name: &str, checks: &[Box<dyn checks::Check>]) {
     println!("Usage: {} --repo-root <path> [options]\n", program_name);
     println!("Options:");
     println!("  --repo-root <path>        Repository root directory (required)");
@@ -19,14 +19,9 @@ fn print_usage(program_name: &str) {
     println!("  --list-checks              List all available checks");
     println!("  --help                     Show this help message");
     println!("\nAvailable checks:");
-    println!("  no_tabs                    Validates files contain no tab characters");
-    println!("  file_endings               Validates files end with CRLF newline");
-    println!("  requirements_naming        Validates requirement document naming");
-    println!("  srs_uniqueness             Validates SRS tags are unique");
-    println!("  enable_mocks               Validates ENABLE_MOCKS include pattern");
-    println!("  no_vld_include             Validates files do not include vld.h");
-    println!("  no_backticks_in_srs        Validates SRS comments have no backticks");
-    println!("  test_spec_tags             Validates TEST_FUNCTION has spec tags");
+    for check in checks {
+        println!("  {:<25} {}", check.name(), check.description());
+    }
 }
 
 fn main() {
@@ -79,7 +74,7 @@ fn main() {
                 list_checks = true;
             }
             "--help" | "-h" => {
-                print_usage(program_name);
+                print_usage(program_name, &all_checks);
                 process::exit(0);
             }
             _ => {}
@@ -99,7 +94,7 @@ fn main() {
         Some(r) => r,
         None => {
             eprintln!("Error: --repo-root is required\n");
-            print_usage(program_name);
+            print_usage(program_name, &all_checks);
             process::exit(1);
         }
     };
