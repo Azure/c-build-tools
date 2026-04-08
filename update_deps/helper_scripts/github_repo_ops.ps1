@@ -85,10 +85,22 @@ function monitor-github-pr
 function close-pr-github
 {
     param(
-        [string] $pr_url
+        [string] $pr_url,
+        [string] $repo_name = ""
     )
 
-    $pr_state = gh pr view $pr_url --json state --jq '.state' 2>$null
+    # If repo_name provided, use get-github-pr-status; otherwise query directly
+    $pr_state = "OPEN"
+    if ($repo_name)
+    {
+        $pr_state = get-github-pr-status -pr_url $pr_url -repo_name $repo_name
+    }
+    else
+    {
+        $state_output = gh pr view $pr_url --json state --jq '.state' 2>$null
+        if ($LASTEXITCODE -eq 0 -and $state_output) { $pr_state = $state_output.Trim() }
+    }
+
     if ($pr_state -eq "MERGED")
     {
         Write-Host "GitHub PR is already merged, skipping close" -ForegroundColor Green
