@@ -8,11 +8,19 @@
 # raw backticks in SRS requirements and validates the fix functionality works properly.
 #
 
-# Test 1: Verify tool detects backticks in SRS requirements
+# Test 1: Verify tool detects backticks in SRS requirements (C/H files)
 add_custom_target(test_validate_no_backticks_detection
     COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_backticks" --check no_backticks_in_srs
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing backticks detection in SRS requirements (should fail)"
+    COMMENT "Testing backticks detection in C/H SRS requirements (should fail)"
+    DEPENDS repo_validator_rs
+)
+
+# Test 1b: Verify tool detects backticks in C# SRS requirements
+add_custom_target(test_validate_no_backticks_detection_cs
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_backticks_cs" --check no_backticks_in_srs
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing backticks detection in C# SRS requirements (should fail)"
     DEPENDS repo_validator_rs
 )
 
@@ -57,4 +65,5 @@ add_custom_target(test_validate_no_backticks_in_srs_failures
 )
 add_dependencies(test_validate_no_backticks_in_srs_failures
     test_validate_no_backticks_detection
+    test_validate_no_backticks_detection_cs
 )
