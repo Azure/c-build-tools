@@ -11,17 +11,15 @@ cmake_minimum_required(VERSION 3.18)
 #   add_repo_validation(<project_name> [EXCLUDE_FOLDERS <folder1> <folder2> ...])
 #
 # Arguments:
-#   project_name - The name of the project (used in status messages)
+#   project_name - The name of the project (used to create a unique target name)
 #   EXCLUDE_FOLDERS - Optional list of directories to exclude from validation (default: cmake deps)
 #
 # CMake Options:
 #   run_repo_validation - Set to ON to enable the validation target (default is OFF)
 #   fix_repo_validation_errors - Set to ON to automatically fix validation errors (default is OFF)
 #
-# The function will create a target named "repo_validation" that runs all validation
-# scripts located in the repo_validation/scripts directory. The target name is fixed
-# (not per-project) because the top-level guard ensures only one such target can exist
-# per build, and this allows the pipeline template to reference it without configuration.
+# The function will create a target named <project_name>_repo_validation that runs
+# all validation scripts located in the repo_validation/scripts directory.
 # If fix_repo_validation_errors is ON, scripts will be called with -Fix argument.
 #
 # Note: 
@@ -86,10 +84,8 @@ function(add_repo_validation project_name)
         )
     endforeach()
     
-    # Create the validation target with a fixed name. The top-level guard above
-    # ensures only one repo_validation target exists per build, so no project-name
-    # prefix is needed. This lets the pipeline template hardcode /t:repo_validation.
-    add_custom_target(repo_validation ALL
+    # Create the validation target
+    add_custom_target(${project_name}_repo_validation ALL
         ${VALIDATION_COMMANDS}
         WORKING_DIRECTORY ${REPO_ROOT}
         COMMENT "Running repository validation for ${project_name}"
@@ -97,7 +93,7 @@ function(add_repo_validation project_name)
     )
     
     # Add a message to indicate the target was created
-    message(STATUS "Added repository validation target: repo_validation (excluding: ${REPO_VAL_EXCLUDE_FOLDERS})")
+    message(STATUS "Added repository validation target: ${project_name}_repo_validation (excluding: ${REPO_VAL_EXCLUDE_FOLDERS})")
 endfunction()
 
 # Include testing framework if tests directory exists and testing is enabled
