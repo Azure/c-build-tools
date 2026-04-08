@@ -376,7 +376,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Validation Summary" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Total SRS requirements: $totalRequirements" -ForegroundColor White
-Write-Host "C source files scanned: $($cFiles.Count)" -ForegroundColor White
+Write-Host "Source files scanned (C/C#): $($cFiles.Count)" -ForegroundColor White
 Write-Host "Inconsistencies found: $($inconsistentRequirements.Count)" -ForegroundColor White
 Write-Host "Tag placement violations: $($tagPlacementViolations.Count)" -ForegroundColor White
 if ($duplicateTagsCount -gt 0) {
