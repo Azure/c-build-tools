@@ -309,8 +309,10 @@ Write-Host "Phase 2: Scanning source files..." -ForegroundColor White
 $cFiles = Get-ChildItem -Path $RepoRoot -Recurse -Include "*.c", "*.cs" -ErrorAction SilentlyContinue | Where-Object {
     -not (Test-IsExcluded $_.FullName $RepoRoot $excludeDirs)
 }
+$cFileCount = ($cFiles | Where-Object { $_.Extension -eq ".c" }).Count
+$csFileCount = ($cFiles | Where-Object { $_.Extension -eq ".cs" }).Count
 
-Write-Host "Found $($cFiles.Count) source files to scan" -ForegroundColor White
+Write-Host "Found $cFileCount C source files and $csFileCount C# source files to scan" -ForegroundColor White
 Write-Host ""
 
 $filesWithInconsistencies = @{}
@@ -376,7 +378,8 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Validation Summary" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Total SRS requirements: $totalRequirements" -ForegroundColor White
-Write-Host "Source files scanned (C/C#): $($cFiles.Count)" -ForegroundColor White
+Write-Host "C source files scanned: $cFileCount" -ForegroundColor White
+Write-Host "C# source files scanned: $csFileCount" -ForegroundColor White
 Write-Host "Inconsistencies found: $($inconsistentRequirements.Count)" -ForegroundColor White
 Write-Host "Tag placement violations: $($tagPlacementViolations.Count)" -ForegroundColor White
 if ($duplicateTagsCount -gt 0) {
