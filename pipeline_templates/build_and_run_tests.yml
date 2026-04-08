@@ -88,11 +88,6 @@ jobs:
 
   # skip_tests is only honored for ARM64 builds - x64 always runs tests
   - ${{ if or(not(parameters.skip_tests), ne(parameters.ARCH_TYPE, 'ARM64')) }}:
-    - template : start_logman.yml
-      parameters:
-        ${{ if ne(parameters.repo_root_override, '') }}:
-          repo_root: ${{ parameters.repo_root_override }}
-
     # in the gate address sanitizer has problems running which are not reproducible locally, so skipping Address Sanitizer for vstest (note: ctest is perfectly fine with Address Sanitizer)
     # here's example:
     #   vstest.console will output
@@ -154,20 +149,12 @@ jobs:
           script: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}\${{ parameters.run_test_suite_without_ctest }}.exe'
           workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.build_configuration }}\${{ parameters.run_test_suite_without_ctest }}'
 
-    - template : stop_logman.yml
-      parameters:
-        ${{ if ne(parameters.repo_root_override, '') }}:
-          repo_root: ${{ parameters.repo_root_override }}
-
-  - task: PublishPipelineArtifact@1
-    displayName: 'Publish ${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration}} Artifacts'
-    inputs:
-      targetPath: $(Build.BinariesDirectory)
-      artifactName: ${{ parameters.BUILD_SUFFIX }}_artifacts
-      parallel: true
-    condition: failed()
-
-  - template : clean_ado_folders.yml
+  - template : build_teardown_steps.yml
+    parameters:
+      repo_root_override: ${{ parameters.repo_root_override }}
+      ARCH_TYPE: ${{ parameters.ARCH_TYPE }}
+      build_configuration: ${{ parameters.build_configuration }}
+      artifact_name_suffix: ${{ parameters.BUILD_SUFFIX }}
 
 # Separate parallel job for CTest with AppVerifier
 - ${{ if parameters.with_app_verifier }}:
@@ -203,11 +190,6 @@ jobs:
               build_configuration: ${{ parameters.build_configuration }}
               GBALLOC_LL_TYPE: ${{ parameters.GBALLOC_LL_TYPE }}
               use_vld_option: ${{ variables.use_vld_option }}
-
-          - template : start_logman.yml
-            parameters:
-              ${{ if ne(parameters.repo_root_override, '') }}:
-                repo_root: ${{ parameters.repo_root_override }}
 
           - template : run_ctests_with_appverifier.yml
             parameters:

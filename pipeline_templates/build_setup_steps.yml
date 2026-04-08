@@ -107,3 +107,8 @@ steps:
       solution: '$(Build.BinariesDirectory)/c/*.sln*'
       configuration: '${{ parameters.build_configuration }}'
       msbuildArgs: '/t:restore /t:build'
+
+  - template : start_logman.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
