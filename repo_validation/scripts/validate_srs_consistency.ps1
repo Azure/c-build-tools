@@ -3,15 +3,17 @@
 
 <#
 .SYNOPSIS
-    Validates SRS requirement consistency and tag placement between markdown files and C code.
+    Validates SRS requirement consistency and tag placement between markdown files and C/C# code.
 
 .DESCRIPTION
     This script performs two validations:
 
     1. **Consistency**: Checks that SRS tags have identical text content in both requirement
-       documents (*.md in devdoc/) and implementation files (*.c, *_ut.c, *_int.c).
+       documents (*.md in devdoc/) and implementation files (*.c, *_ut.c, *_int.c, *.cs).
     2. **Tag Placement**: Checks that Codes_SRS_ tags only appear in production code and
        Tests_SRS_ tags only appear in test files.
+       For C files, test files are detected by directory name ending in _ut or _int.
+       For C# files, test files are detected by filename starting with "Test".
 
     The script:
     1. Finds all SRS tags in requirement markdown files
@@ -251,6 +253,12 @@ function Test-IsTestFile {
         return $true
     }
 
+    # C# convention: test files start with "Test" (e.g., TestAsyncCallInAdapter.cs)
+    $fileName = [System.IO.Path]::GetFileName($FilePath)
+    if ($fileName -like "Test*.cs") {
+        return $true
+    }
+
     return $false
 }
 
@@ -295,14 +303,14 @@ foreach ($mdFile in $requirementFiles) {
 Write-Host "Found $totalRequirements unique SRS requirements" -ForegroundColor White
 Write-Host ""
 
-Write-Host "Phase 2: Scanning C source files..." -ForegroundColor White
+Write-Host "Phase 2: Scanning source files..." -ForegroundColor White
 
-# Get all C source files
-$cFiles = Get-ChildItem -Path $RepoRoot -Recurse -Include "*.c" -ErrorAction SilentlyContinue | Where-Object {
+# Get all C and C# source files
+$cFiles = Get-ChildItem -Path $RepoRoot -Recurse -Include "*.c", "*.cs" -ErrorAction SilentlyContinue | Where-Object {
     -not (Test-IsExcluded $_.FullName $RepoRoot $excludeDirs)
 }
 
-Write-Host "Found $($cFiles.Count) C source files to scan" -ForegroundColor White
+Write-Host "Found $($cFiles.Count) source files to scan" -ForegroundColor White
 Write-Host ""
 
 $filesWithInconsistencies = @{}

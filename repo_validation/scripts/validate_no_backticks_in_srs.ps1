@@ -6,7 +6,7 @@
     Validates that SRS requirements in code comments do not contain raw backticks.
 
 .DESCRIPTION
-    This script checks all source code files (.h, .hpp, .c, .cpp) to ensure that
+    This script checks all source code files (.h, .hpp, .c, .cpp, .cs) to ensure that
     SRS requirement comments do not contain raw markdown backticks. When requirements
     are copy-pasted from markdown documentation into code comments, the backticks
     should be stripped to show the rendered form.
@@ -102,7 +102,7 @@ if ($isGitRepo) {
     
     # Use git grep for fast initial scan
     # Note: We use cmd /c to avoid PowerShell's backtick escaping issues
-    $gitGrepCmd = "git grep -l -E `"$gitGrepPattern`" -- *.c *.h *.cpp *.hpp $gitExcludes 2>&1"
+    $gitGrepCmd = "git grep -l -E `"$gitGrepPattern`" -- *.c *.h *.cpp *.hpp *.cs $gitExcludes 2>&1"
     $matchingFiles = @()
     
     try {
@@ -205,7 +205,7 @@ Pop-Location
 if (-not $isGitRepo) {
     Write-Host "Scanning file system..." -ForegroundColor White
     
-    $extensions = @("*.h", "*.hpp", "*.c", "*.cpp")
+    $extensions = @("*.h", "*.hpp", "*.c", "*.cpp", "*.cs")
     $allFiles = @()
     foreach ($ext in $extensions) {
         $allFiles += Get-ChildItem -Path $RepoRoot -Recurse -Filter $ext -ErrorAction SilentlyContinue
