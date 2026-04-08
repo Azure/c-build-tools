@@ -54,23 +54,47 @@ function resolve-existing-pr
 }
 
 
-# Check if a PR is already merged/completed. Returns $true if merged.
-function check-pr-merged
+# Get the disposition of a PR: "merged", "abandoned", or "active".
+function get-pr-disposition
 {
     param(
         [string] $pr_url,
         [string] $repo_name,
         [string] $repo_type
     )
-    $result = $false
+    $result = "active"
 
     if ($repo_type -eq "azure")
     {
-        $result = check-azure-pr-completed -pr_url $pr_url -repo_name $repo_name
+        $status = get-azure-pr-status -pr_url $pr_url -repo_name $repo_name
+        if ($status -eq "completed")
+        {
+            $result = "merged"
+        }
+        elseif ($status -eq "abandoned")
+        {
+            $result = "abandoned"
+        }
+        else
+        {
+            $result = "active"
+        }
     }
     elseif ($repo_type -eq "github")
     {
-        $result = check-github-pr-merged -pr_url $pr_url -repo_name $repo_name
+        $status = get-github-pr-status -pr_url $pr_url -repo_name $repo_name
+        if ($status -eq "MERGED")
+        {
+            $result = "merged"
+        }
+        elseif ($status -eq "CLOSED")
+        {
+            $result = "abandoned"
+        }
+        else
+        {
+            $result = "active"
+        }
     }
     else
     {
@@ -127,14 +151,22 @@ function update-repo
 
     if ($existing_pr_url)
     {
-        # Check if the PR is already merged/completed
-        $already_merged = check-pr-merged -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
+        # Check PR disposition: merged, abandoned, or active
+        $disposition = get-pr-disposition -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
 
-        if ($already_merged)
+        if ($disposition -eq "merged")
         {
             Write-Host "PR already merged, skipping repo" -ForegroundColor Green
             set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
             update-fixed-commit $repo_name
+        }
+        elseif ($disposition -eq "abandoned")
+        {
+            # PR was abandoned — someone else may have merged the changes.
+            # Fall through to fresh update to check if changes are still needed.
+            Write-Host "Previous PR was abandoned: $existing_pr_url" -ForegroundColor Yellow
+            Write-Host "Checking if changes are still needed..." -ForegroundColor Yellow
+            $existing_pr_url = $null
         }
         else
         {
@@ -156,7 +188,11 @@ function update-repo
             update-fixed-commit $repo_name
         }
     }
-    else
+
+    # Fresh update path: no existing PR, or previous PR was abandoned
+    if (-not $existing_pr_url -and
+        $global:repo_status[$repo_name].Status -ne $script:STATUS_UPDATED -and
+        $global:repo_status[$repo_name].Status -ne $script:STATUS_SKIPPED)
     {
         # No existing PR — do the full update-local-repo + create PR flow
         $update_result = (update-local-repo $repo_name $new_branch_name)

@@ -95,14 +95,14 @@ function find-active-azure-pr
 }
 
 
-# Check if an Azure PR is already completed (merged). Returns $true if completed.
-function check-azure-pr-completed
+# Get the status of an Azure PR. Returns "completed", "abandoned", or "active".
+function get-azure-pr-status
 {
     param(
         [string] $pr_url,
         [string] $repo_name
     )
-    $result = $false
+    $result = "active"
 
     if ($pr_url -match "/pullrequest/(\d+)")
     {
@@ -112,18 +112,11 @@ function check-azure-pr-completed
         if ($LASTEXITCODE -eq 0)
         {
             $pr_info = $pr_check | ConvertFrom-Json
-            if ($pr_info.status -eq "completed")
-            {
-                $result = $true
-            }
-            else
-            {
-                # PR still active
-            }
+            $result = $pr_info.status
         }
         else
         {
-            # couldn't check PR status
+            # couldn't check PR status, assume active
         }
     }
     else

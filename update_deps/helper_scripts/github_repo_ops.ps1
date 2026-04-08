@@ -33,32 +33,25 @@ function find-active-github-pr
 }
 
 
-# Check if a GitHub PR is already merged. Returns $true if merged.
-function check-github-pr-merged
+# Get the status of a GitHub PR. Returns "MERGED", "CLOSED", or "OPEN".
+function get-github-pr-status
 {
     param(
         [string] $pr_url,
         [string] $repo_name
     )
-    $result = $false
+    $result = "OPEN"
 
     Push-Location $repo_name
     $pr_check = gh pr view $pr_url --json state 2>&1
     if ($LASTEXITCODE -eq 0)
     {
         $pr_info = $pr_check | ConvertFrom-Json
-        if ($pr_info.state -eq "MERGED")
-        {
-            $result = $true
-        }
-        else
-        {
-            # PR still active
-        }
+        $result = $pr_info.state
     }
     else
     {
-        # couldn't check PR status
+        # couldn't check PR status, assume open
     }
     Pop-Location
 
