@@ -466,7 +466,7 @@ function wait-until-complete-azure
             if(!$done -and -not $global:propagation_cancelled)
             {
                 # Build failed — try autofix if enabled
-                if ($global:auto_fix -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
+                if ($global:auto_fix -and -not $global:propagation_cancelled -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
                 {
                     $autofix_attempts++
                     Write-Host "`n  AutoFix attempt $autofix_attempts of $global:MAX_AUTOFIX_ATTEMPTS" -ForegroundColor Magenta
