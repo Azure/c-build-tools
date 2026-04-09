@@ -39,8 +39,9 @@ Important:
 
     try
     {
-        # Run Copilot with output streaming to the console so the user can follow along
-        copilot -p $prompt --autopilot --allow-all --no-ask-user
+        # Run Copilot with output streaming to the console.
+        # Use Out-Host to prevent PowerShell from capturing stdout as function return value.
+        copilot -p $prompt --autopilot --allow-all --no-ask-user | Out-Host
         $copilot_exit = $LASTEXITCODE
 
         if ($copilot_exit -eq 0)
