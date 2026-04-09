@@ -60,6 +60,14 @@ add_custom_target(test_validate_aaa_comments_parameterized_detection
     DEPENDS repo_validator_rs
 )
 
+# Test 6: Verify tool detects partial AAA (2 out of 3 comments present)
+add_custom_target(test_validate_aaa_comments_partial_detection
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa_partial" --check aaa_comments
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing AAA comment detection on tests with only 2 of 3 AAA comments"
+    DEPENDS repo_validator_rs
+)
+
 # Master target for all expected-failure tests
 add_custom_target(test_validate_aaa_comments_failures
     COMMENT "Running all aaa_comments failure detection tests"
@@ -67,4 +75,5 @@ add_custom_target(test_validate_aaa_comments_failures
 add_dependencies(test_validate_aaa_comments_failures
     test_validate_aaa_comments_detection
     test_validate_aaa_comments_parameterized_detection
+    test_validate_aaa_comments_partial_detection
 )
