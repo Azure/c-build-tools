@@ -110,8 +110,7 @@ function fail-with-status
         set-repo-status -repo_name $global:current_repo -status $script:STATUS_FAILED -message $message
 
         # Close/abandon the failed PR if the flag is set and a PR URL exists
-        # Don't close if autofix is enabled — resume will fix it
-        if ($global:close_failed_pr -and -not $global:auto_fix)
+        if ($global:close_failed_pr)
         {
             $pr_url = $global:repo_status[$global:current_repo].PrUrl
             if ($pr_url)

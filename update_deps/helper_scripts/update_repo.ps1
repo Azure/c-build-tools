@@ -247,11 +247,50 @@ function update-repo
         }
         elseif ($disposition -eq "abandoned")
         {
-            # PR was abandoned — someone else may have merged the changes.
-            # Fall through to fresh update to check if changes are still needed.
-            Write-Host "Previous PR was abandoned: $existing_pr_url" -ForegroundColor Yellow
-            Write-Host "Checking if changes are still needed..." -ForegroundColor Yellow
-            $existing_pr_url = $null
+            if ($global:auto_fix)
+            {
+                # Reopen the PR so autofix can fix it
+                Write-Host "Previous PR was abandoned — reopening for autofix..." -ForegroundColor Magenta
+                if ($repo_type -eq "github")
+                {
+                    reopen-pr-github -pr_url $existing_pr_url
+                }
+                elseif ($repo_type -eq "azure")
+                {
+                    reopen-pr-azure -pr_url $existing_pr_url -repo_name $repo_name
+                }
+                else
+                {
+                    fail-with-status "Unable to reopen PR for $repo_name. Unknown repo type."
+                }
+
+                # Now treat as active — run autofix + monitor
+                Write-Host "Running AutoFix on reopened PR..." -ForegroundColor Magenta
+                Push-Location $repo_name
+                $branch_name = git rev-parse --abbrev-ref HEAD 2>$null
+                $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $existing_pr_url
+                Pop-Location
+                if (-not $fix_result)
+                {
+                    fail-with-status "AutoFix could not resolve build failure for $repo_name."
+                }
+                else
+                {
+                    Write-Host "  AutoFix pushed a fix, monitoring PR..." -ForegroundColor Magenta
+                }
+
+                set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $existing_pr_url
+                monitor-pr -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
+                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
+                update-fixed-commit $repo_name
+            }
+            else
+            {
+                # No autofix — fall through to fresh update to check if changes are still needed.
+                Write-Host "Previous PR was abandoned: $existing_pr_url" -ForegroundColor Yellow
+                Write-Host "Checking if changes are still needed..." -ForegroundColor Yellow
+                $existing_pr_url = $null
+            }
         }
         else
         {

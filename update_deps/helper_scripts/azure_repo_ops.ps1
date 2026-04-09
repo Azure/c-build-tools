@@ -191,6 +191,36 @@ function close-pr-azure
 }
 
 
+# Reopen an abandoned Azure PR.
+function reopen-pr-azure
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name
+    )
+
+    if ($pr_url -match "/pullrequest/(\d+)")
+    {
+        $pr_id = $matches[1]
+        $azure_info = get-azure-org-project $repo_name
+        Write-Host "Reactivating Azure PR $pr_id..." -ForegroundColor Cyan
+        az repos pr update --id $pr_id --status active --organization $azure_info.Organization --output json | Out-Null
+        if ($LASTEXITCODE -eq 0)
+        {
+            Write-Host "Azure PR reactivated successfully" -ForegroundColor Green
+        }
+        else
+        {
+            Write-Host "Warning: Failed to reactivate Azure PR ID: $pr_id" -ForegroundColor Yellow
+        }
+    }
+    else
+    {
+        Write-Host "Warning: Could not parse PR ID from URL: $pr_url" -ForegroundColor Yellow
+    }
+}
+
+
 # create PR to update dependencies for Azure repo using Azure CLI
 function create-pr-azure
 {

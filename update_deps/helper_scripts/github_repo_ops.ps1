@@ -154,6 +154,26 @@ function close-pr-github
 }
 
 
+# Reopen a closed GitHub PR.
+function reopen-pr-github
+{
+    param(
+        [string] $pr_url
+    )
+
+    Write-Host "Reopening GitHub PR: $pr_url" -ForegroundColor Cyan
+    gh pr reopen $pr_url
+    if ($LASTEXITCODE -eq 0)
+    {
+        Write-Host "GitHub PR reopened successfully" -ForegroundColor Green
+    }
+    else
+    {
+        Write-Host "Warning: Failed to reopen GitHub PR: $pr_url" -ForegroundColor Yellow
+    }
+}
+
+
 # update dependencies for Github repo
 # Returns the PR URL for status tracking
 function update-repo-github
