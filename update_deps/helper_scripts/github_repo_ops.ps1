@@ -283,81 +283,106 @@ function update-repo-github
         # checks started
     }
 
-    Write-Host "Waiting for build to complete"
-    $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
-
-    # Check if PR was auto-merged
-    $pr_state = gh pr view --json state 2>&1
+    $autofix_attempts = 0
     $merged = $false
-    if($LASTEXITCODE -eq 0)
-    {
-        $state_data = $pr_state | ConvertFrom-Json
-        if($state_data.state -eq "MERGED")
-        {
-            $merged = $true
-            Write-Host "PR auto-merged successfully" -ForegroundColor Green
-        }
-        else
-        {
-            # PR not merged yet
-        }
-    }
-    else
-    {
-        # couldn't get PR state
-    }
 
-    if(-not $merged)
+    while (-not $merged)
     {
-        # Auto-merge didn't happen — required checks may have failed
-        if(-not $watch_result.Success)
+        Write-Host "Waiting for build to complete"
+        $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
+
+        # Check if PR was auto-merged
+        $pr_state = gh pr view --json state 2>&1
+        if($LASTEXITCODE -eq 0)
         {
-            fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+            $state_data = $pr_state | ConvertFrom-Json
+            if($state_data.state -eq "MERGED")
+            {
+                $merged = $true
+                Write-Host "PR auto-merged successfully" -ForegroundColor Green
+            }
+            else
+            {
+                # PR not merged yet
+            }
         }
         else
         {
-            # Checks passed but auto-merge hasn't triggered yet, wait and retry
-            Write-Host "Waiting for auto-merge to complete..."
-            $max_wait = 120
-            $waited = 0
-            while($waited -lt $max_wait -and -not $merged)
+            # couldn't get PR state
+        }
+
+        if(-not $merged)
+        {
+            if(-not $watch_result.Success)
             {
-                $cancelled = wait-or-cancel -seconds 2
-                if ($cancelled) { $global:propagation_cancelled = $true; break }
-                $waited += 2
-                $pr_state = gh pr view --json state 2>&1
-                if($LASTEXITCODE -eq 0)
+                # Build failed — try autofix if enabled
+                if ($global:auto_fix -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
                 {
-                    $state_data = $pr_state | ConvertFrom-Json
-                    if($state_data.state -eq "MERGED")
+                    $autofix_attempts++
+                    Write-Host "`n  AutoFix attempt $autofix_attempts of $global:MAX_AUTOFIX_ATTEMPTS" -ForegroundColor Magenta
+                    $branch_name = git rev-parse --abbrev-ref HEAD 2>$null
+                    $current_pr_url = gh pr view --json url --jq '.url' 2>$null
+                    $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $current_pr_url
+                    if ($fix_result)
                     {
-                        $merged = $true
-                        Write-Host "PR auto-merged successfully" -ForegroundColor Green
+                        Write-Host "  AutoFix pushed a fix, restarting watch..." -ForegroundColor Magenta
+                        # Loop continues — will re-enter watch
                     }
                     else
                     {
-                        # still waiting
+                        fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message). AutoFix could not resolve."
                     }
                 }
                 else
                 {
-                    # couldn't get PR state
+                    fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
                 }
-            }
-
-            if(-not $merged)
-            {
-                fail-with-status "PR for repo $repo_name was not merged after waiting ${max_wait}s"
             }
             else
             {
-                # already logged success
+                # Checks passed but auto-merge hasn't triggered yet, wait and retry
+                Write-Host "Waiting for auto-merge to complete..."
+                $max_wait = 120
+                $waited = 0
+                while($waited -lt $max_wait -and -not $merged)
+                {
+                    $cancelled = wait-or-cancel -seconds 2
+                    if ($cancelled) { $global:propagation_cancelled = $true; break }
+                    $waited += 2
+                    $pr_state = gh pr view --json state 2>&1
+                    if($LASTEXITCODE -eq 0)
+                    {
+                        $state_data = $pr_state | ConvertFrom-Json
+                        if($state_data.state -eq "MERGED")
+                        {
+                            $merged = $true
+                            Write-Host "PR auto-merged successfully" -ForegroundColor Green
+                        }
+                        else
+                        {
+                            # still waiting
+                        }
+                    }
+                    else
+                    {
+                        # couldn't get PR state
+                    }
+                }
+
+                if(-not $merged)
+                {
+                    fail-with-status "PR for repo $repo_name was not merged after waiting ${max_wait}s"
+                }
+                else
+                {
+                    # already logged success
+                }
             }
         }
-    }
-    else
-    {
-        # already merged
+        else
+        {
+            # already merged
+        }
     }
 
     # Wait for merge to settle
