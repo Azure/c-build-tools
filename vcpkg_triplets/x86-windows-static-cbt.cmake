@@ -1,11 +1,7 @@
 set(VCPKG_TARGET_ARCHITECTURE x86)
 set(VCPKG_CRT_LINKAGE dynamic)
 set(VCPKG_LIBRARY_LINKAGE static)
-
-if(NOT "$ENV{PROCESSOR_ARCHITECTURE}" STREQUAL "ARM64")
-     set(VCPKG_PLATFORM_TOOLSET v143)
- endif(
-
+set(VCPKG_PLATFORM_TOOLSET v143)
 # Unfortunately we have to workaround an issue introduced in Visual Studio 17.10 where due to a change in mutex a break in the ABI seems to exist
 # https://github.com/microsoft/STL/releases/tag/vs-2022-17.10
 # Fixed mutex's constructor to be constexpr. #3824 #4000 #4339
