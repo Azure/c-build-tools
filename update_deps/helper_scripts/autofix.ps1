@@ -104,6 +104,19 @@ Do NOT try other generators or configurations. The generator above is correct.
             if ($local_sha -eq $remote_sha)
             {
                 Write-Host "  AutoFix: Copilot pushed a fix" -ForegroundColor Green
+
+                # Trigger CI pipeline for GitHub repos (Azure pipelines trigger automatically on push)
+                $repo_type = get-repo-type $repo_name
+                if ($repo_type -eq "github")
+                {
+                    Write-Host "  AutoFix: Triggering pipeline..." -ForegroundColor Magenta
+                    $null = gh pr comment --body "/AzurePipelines run" 2>&1
+                }
+                else
+                {
+                    # Azure repos trigger CI automatically on push
+                }
+
                 $result = $true
             }
             else
