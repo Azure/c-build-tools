@@ -997,16 +997,25 @@ function update-local-repo
         # no body, subject only
     }
 
-    $git_output = git commit -m $commit_message 2>&1
-    $commit_result = $LASTEXITCODE
-    # Only push if commit succeeded (there were changes)
-    if($commit_result -eq 0)
+    # Check if there are actually staged changes before committing
+    $staged_diff = git diff --cached --name-only
+    if (-not $staged_diff)
     {
-        git push -f origin $new_branch_name
+        $git_output = "nothing to commit, working tree clean"
     }
     else
     {
-        # nothing to push
+        $git_output = git commit -m $commit_message 2>&1
+        $commit_result = $LASTEXITCODE
+        # Only push if commit succeeded (there were changes)
+        if($commit_result -eq 0)
+        {
+            git push -f origin $new_branch_name
+        }
+        else
+        {
+            # nothing to push
+        }
     }
     Pop-Location
 
