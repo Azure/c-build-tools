@@ -392,74 +392,35 @@ function wait-until-complete-azure
         [string] $repo_name
     )
     $done = $false
+    $autofix_attempts = 0
 
-    Write-Host "Waiting for build to complete"
-    Write-Host "`nWatching PR policies..."
-    $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval $global:poll_interval -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
-
-    if(!$success)
+    while (-not $done)
     {
-        # Policy watch reported failure — but this could be a non-blocking/optional
-        # policy. Autocomplete will still merge the PR if all required policies pass.
-        # Wait for autocomplete before giving up.
-        $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
-        if($pr_info -and $pr_info.status -eq "completed")
+        Write-Host "Waiting for build to complete"
+        Write-Host "`nWatching PR policies..."
+        $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval $global:poll_interval -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
+
+        if(!$success)
         {
-            Write-Host "PR completed successfully" -ForegroundColor Green
-            $done = $true
-        }
-        else
-        {
-            Write-Host "Waiting for PR to auto-complete despite policy status..." -ForegroundColor Yellow
-            $max_wait = 120
-            $waited = 0
-            while($waited -lt $max_wait -and !$done)
+            # Policy watch reported failure — but this could be a non-blocking/optional
+            # policy. Autocomplete will still merge the PR if all required policies pass.
+            # Wait for autocomplete before giving up.
+            $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
+            if($pr_info -and $pr_info.status -eq "completed")
             {
-                $cancelled = wait-or-cancel -seconds 5
-                if ($cancelled) { $global:propagation_cancelled = $true; break }
-                $waited += 5
-                $pr_check = get-pr-status-with-retry -pr_id $pr_id -org $org -max_retries 1
-                if($pr_check -and $pr_check.status -eq "completed")
-                {
-                    Write-Host "PR completed successfully" -ForegroundColor Green
-                    $done = $true
-                }
-                else
-                {
-                    # keep waiting
-                }
+                Write-Host "PR completed successfully" -ForegroundColor Green
+                $done = $true
             }
-        }
-        if(!$done -and -not $global:propagation_cancelled)
-        {
-            fail-with-status "PR $pr_id failed to complete. Check policy status above."
-        }
-        else
-        {
-            # already done or cancelled
-        }
-    }
-    else
-    {
-        # Verify PR is completed
-        $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
-        if(-not $pr_info)
-        {
-            fail-with-status "Failed to get PR status for ID: $pr_id after retries"
-        }
-        else
-        {
-            if($pr_info.status -ne "completed")
+            else
             {
-                # PR policies passed but PR not yet merged - wait a bit for autocomplete
-                Write-Host "Waiting for PR to auto-complete..."
-                $max_wait = 60
+                Write-Host "Waiting for PR to auto-complete despite policy status..." -ForegroundColor Yellow
+                $max_wait = 120
                 $waited = 0
                 while($waited -lt $max_wait -and !$done)
                 {
-                    $cancelled = wait-or-cancel -seconds 2
+                    $cancelled = wait-or-cancel -seconds 5
                     if ($cancelled) { $global:propagation_cancelled = $true; break }
-                    $waited += 2
+                    $waited += 5
                     $pr_check = get-pr-status-with-retry -pr_id $pr_id -org $org -max_retries 1
                     if($pr_check -and $pr_check.status -eq "completed")
                     {
@@ -471,18 +432,85 @@ function wait-until-complete-azure
                         # keep waiting
                     }
                 }
-                if(!$done)
+            }
+            if(!$done -and -not $global:propagation_cancelled)
+            {
+                # Build failed — try autofix if enabled
+                if ($global:auto_fix -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
                 {
-                    Write-Host "Warning: PR policies passed but PR status is: $($pr_info.status)" -ForegroundColor Yellow
+                    $autofix_attempts++
+                    Write-Host "`n  AutoFix attempt $autofix_attempts of $global:MAX_AUTOFIX_ATTEMPTS" -ForegroundColor Magenta
+                    Push-Location $repo_name
+                    $branch_name = git rev-parse --abbrev-ref HEAD 2>$null
+                    $pr_url_for_fix = "$org/One/_git/$repo_name/pullrequest/$pr_id"
+                    $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $pr_url_for_fix
+                    Pop-Location
+                    if ($fix_result)
+                    {
+                        Write-Host "  AutoFix pushed a fix, restarting watch..." -ForegroundColor Magenta
+                        # Loop continues — will re-enter watch
+                    }
+                    else
+                    {
+                        fail-with-status "PR $pr_id failed to complete. AutoFix could not resolve the build failure."
+                    }
                 }
                 else
                 {
-                    # already logged success
+                    fail-with-status "PR $pr_id failed to complete. Check policy status above."
                 }
             }
             else
             {
-                Write-Host "PR completed successfully" -ForegroundColor Green
+                # already done or cancelled
+            }
+        }
+        else
+        {
+            # Verify PR is completed
+            $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
+            if(-not $pr_info)
+            {
+                fail-with-status "Failed to get PR status for ID: $pr_id after retries"
+            }
+            else
+            {
+                if($pr_info.status -ne "completed")
+                {
+                    # PR policies passed but PR not yet merged - wait a bit for autocomplete
+                    Write-Host "Waiting for PR to auto-complete..."
+                    $max_wait = 60
+                    $waited = 0
+                    while($waited -lt $max_wait -and !$done)
+                    {
+                        $cancelled = wait-or-cancel -seconds 2
+                        if ($cancelled) { $global:propagation_cancelled = $true; break }
+                        $waited += 2
+                        $pr_check = get-pr-status-with-retry -pr_id $pr_id -org $org -max_retries 1
+                        if($pr_check -and $pr_check.status -eq "completed")
+                        {
+                            Write-Host "PR completed successfully" -ForegroundColor Green
+                            $done = $true
+                        }
+                        else
+                        {
+                            # keep waiting
+                        }
+                    }
+                    if(!$done)
+                    {
+                        Write-Host "Warning: PR policies passed but PR status is: $($pr_info.status)" -ForegroundColor Yellow
+                    }
+                    else
+                    {
+                        # already logged success
+                    }
+                }
+                else
+                {
+                    Write-Host "PR completed successfully" -ForegroundColor Green
+                    $done = $true
+                }
             }
         }
     }

@@ -74,6 +74,7 @@ param(
     [switch]$NoCloseFailedPr, # keep the PR open if it fails (default: close/abandon failed PRs)
     [switch]$ForceBuildGraph, # force graph rebuild even if known graph matches
     [switch]$Resume, # resume a previously failed propagation run
+    [switch]$AutoFix, # use Copilot CLI to auto-fix build failures
     [Parameter(Mandatory=$false)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
 
@@ -93,6 +94,7 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\success_animation.ps1"
 . "$helper_scripts\propagation_state.ps1"
 . "$helper_scripts\update_repo.ps1"
+. "$helper_scripts\autofix.ps1"
 
 # Build the resume command from the current invocation args
 $resume_args = @()
@@ -101,6 +103,7 @@ if ($azure_work_item) { $resume_args += "-azure_work_item $azure_work_item" }
 if ($root_list) { $resume_args += "-root_list $($root_list -join ',')" }
 if ($poll_interval -ne 15) { $resume_args += "-poll_interval $poll_interval" }
 if ($NoCloseFailedPr) { $resume_args += "-NoCloseFailedPr" }
+if ($AutoFix) { $resume_args += "-AutoFix" }
 $global:resume_command = "$($MyInvocation.MyCommand.Path) $($resume_args -join ' ') -Resume"
 
 
@@ -115,6 +118,9 @@ function propagate-updates
 
     # Store poll interval for use by repo ops functions
     $global:poll_interval = $poll_interval
+
+    # Store auto-fix flag for use by repo ops functions
+    $global:auto_fix = $AutoFix.IsPresent
 
     # Check PowerShell version first
     check-powershell-version

@@ -65,18 +65,47 @@ function monitor-github-pr
     param(
         [string] $repo_name
     )
+    $autofix_attempts = 0
 
     Push-Location $repo_name
-    $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
-    if (-not $watch_result.Success)
+
+    while ($true)
     {
-        Pop-Location
-        fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+        $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
+        if (-not $watch_result.Success)
+        {
+            # Try autofix if enabled
+            if ($global:auto_fix -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
+            {
+                $autofix_attempts++
+                Write-Host "`n  AutoFix attempt $autofix_attempts of $global:MAX_AUTOFIX_ATTEMPTS" -ForegroundColor Magenta
+                $branch_name = git rev-parse --abbrev-ref HEAD 2>$null
+                $pr_url = gh pr view --json url --jq '.url' 2>$null
+                $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $pr_url
+                if ($fix_result)
+                {
+                    Write-Host "  AutoFix pushed a fix, restarting watch..." -ForegroundColor Magenta
+                    # Loop continues — will re-enter watch
+                }
+                else
+                {
+                    Pop-Location
+                    fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message). AutoFix could not resolve."
+                }
+            }
+            else
+            {
+                Pop-Location
+                fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+            }
+        }
+        else
+        {
+            Write-Host "PR checks passed" -ForegroundColor Green
+            break
+        }
     }
-    else
-    {
-        Write-Host "PR checks passed" -ForegroundColor Green
-    }
+
     Pop-Location
 }
 
