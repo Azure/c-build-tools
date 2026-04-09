@@ -7,6 +7,8 @@
 
 
 # Resolve an existing PR URL for a repo — from saved state or by querying the remote.
+# Always checks the remote first for an active PR on the branch (the latest one),
+# then falls back to the saved PrUrl if no active PR exists.
 # Returns the PR URL or $null.
 function resolve-existing-pr
 {
@@ -16,33 +18,33 @@ function resolve-existing-pr
     )
     $result = $null
 
-    # Check saved PrUrl from state file
-    if ($global:repo_status.ContainsKey($repo_name) -and $global:repo_status[$repo_name].PrUrl)
+    # Always check remote first — there may be a newer PR than what's saved
+    Write-Host "  Checking for active PR on branch $new_branch_name..." -ForegroundColor Gray
+    $repo_type = get-repo-type $repo_name
+    if ($repo_type -eq "azure")
     {
-        $result = $global:repo_status[$repo_name].PrUrl
-        Write-Host "Found existing PR from previous run: $result" -ForegroundColor Cyan
+        $result = find-active-azure-pr -repo_name $repo_name -branch_name $new_branch_name
+    }
+    elseif ($repo_type -eq "github")
+    {
+        $result = find-active-github-pr -repo_name $repo_name -branch_name $new_branch_name
     }
     else
     {
-        # No saved PrUrl — check remote for an active PR on this branch
-        Write-Host "  Checking for active PR on branch $new_branch_name..." -ForegroundColor Gray
-        $repo_type = get-repo-type $repo_name
-        if ($repo_type -eq "azure")
-        {
-            $result = find-active-azure-pr -repo_name $repo_name -branch_name $new_branch_name
-        }
-        elseif ($repo_type -eq "github")
-        {
-            $result = find-active-github-pr -repo_name $repo_name -branch_name $new_branch_name
-        }
-        else
-        {
-            # unknown repo type
-        }
+        # unknown repo type
+    }
 
-        if ($result)
+    if ($result)
+    {
+        Write-Host "Found active PR on branch: $result" -ForegroundColor Cyan
+    }
+    else
+    {
+        # No active PR on remote — check saved PrUrl (may be closed/abandoned)
+        if ($global:repo_status.ContainsKey($repo_name) -and $global:repo_status[$repo_name].PrUrl)
         {
-            Write-Host "Discovered active PR: $result" -ForegroundColor Cyan
+            $result = $global:repo_status[$repo_name].PrUrl
+            Write-Host "Found saved PR from previous run: $result" -ForegroundColor Cyan
         }
         else
         {
