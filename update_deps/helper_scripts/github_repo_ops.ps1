@@ -391,7 +391,18 @@ function update-repo-github
 
                 if(-not $merged)
                 {
-                    fail-with-status "PR for repo $repo_name was not merged after waiting ${max_wait}s"
+                    # Auto-merge didn't fire — try merging directly
+                    Write-Host "Auto-merge did not complete, attempting direct merge..." -ForegroundColor Yellow
+                    $null = gh pr merge --squash --delete-branch 2>&1
+                    if ($LASTEXITCODE -eq 0)
+                    {
+                        $merged = $true
+                        Write-Host "PR merged successfully" -ForegroundColor Green
+                    }
+                    else
+                    {
+                        fail-with-status "PR for repo $repo_name could not be merged. Check PR status."
+                    }
                 }
                 else
                 {
