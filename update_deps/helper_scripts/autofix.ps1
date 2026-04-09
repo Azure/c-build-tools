@@ -39,8 +39,8 @@ Important:
 
     try
     {
-        $copilot_exit = $null
-        copilot -p $prompt --autopilot --allow-all --no-ask-user 2>&1
+        # Run Copilot with output streaming to the console so the user can follow along
+        copilot -p $prompt --autopilot --allow-all --no-ask-user
         $copilot_exit = $LASTEXITCODE
 
         if ($copilot_exit -eq 0)
