@@ -102,6 +102,75 @@ function monitor-github-pr
         else
         {
             Write-Host "PR checks passed" -ForegroundColor Green
+
+            # Wait for auto-merge to complete
+            $merged = $false
+            $pr_state = gh pr view --json state 2>&1
+            if ($LASTEXITCODE -eq 0)
+            {
+                $state_data = $pr_state | ConvertFrom-Json
+                if ($state_data.state -eq "MERGED") { $merged = $true }
+            }
+            else
+            {
+                # couldn't get PR state
+            }
+
+            if (-not $merged)
+            {
+                Write-Host "Waiting for auto-merge to complete..."
+                $max_wait = 120
+                $waited = 0
+                while ($waited -lt $max_wait -and -not $merged)
+                {
+                    $cancelled = wait-or-cancel -seconds 2
+                    if ($cancelled) { $global:propagation_cancelled = $true; break }
+                    $waited += 2
+                    $pr_state = gh pr view --json state 2>&1
+                    if ($LASTEXITCODE -eq 0)
+                    {
+                        $state_data = $pr_state | ConvertFrom-Json
+                        if ($state_data.state -eq "MERGED")
+                        {
+                            $merged = $true
+                            Write-Host "PR auto-merged successfully" -ForegroundColor Green
+                        }
+                        else
+                        {
+                            # still waiting
+                        }
+                    }
+                    else
+                    {
+                        # couldn't get PR state
+                    }
+                }
+
+                if (-not $merged -and -not $global:propagation_cancelled)
+                {
+                    Write-Host "Auto-merge did not complete, attempting direct merge..." -ForegroundColor Yellow
+                    $null = gh pr merge --squash --delete-branch 2>&1
+                    if ($LASTEXITCODE -eq 0)
+                    {
+                        $merged = $true
+                        Write-Host "PR merged successfully" -ForegroundColor Green
+                    }
+                    else
+                    {
+                        Pop-Location
+                        fail-with-status "PR for repo $repo_name could not be merged. Check PR status."
+                    }
+                }
+                else
+                {
+                    # merged or cancelled
+                }
+            }
+            else
+            {
+                Write-Host "PR already merged" -ForegroundColor Green
+            }
+
             break
         }
     }
