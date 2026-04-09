@@ -122,9 +122,17 @@ fn find_test_functions(content: &[u8]) -> Vec<TestFuncMatch> {
                     if p > name_start {
                         let test_name =
                             String::from_utf8_lossy(&content[name_start..p]).to_string();
-                        // Skip to closing paren (might have comma for PARAMETERIZED)
-                        while p < len && content[p] != b')' {
-                            p += 1;
+                        // Skip to closing paren (handle nested parens for PARAMETERIZED)
+                        let mut paren_depth = 1;
+                        while p < len && paren_depth > 0 {
+                            if content[p] == b'(' {
+                                paren_depth += 1;
+                            } else if content[p] == b')' {
+                                paren_depth -= 1;
+                            }
+                            if paren_depth > 0 {
+                                p += 1;
+                            }
                         }
                         if p < len {
                             p += 1; // skip ')'
