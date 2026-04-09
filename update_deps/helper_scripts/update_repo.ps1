@@ -345,6 +345,10 @@ function update-repo
             {
                 Push-Location $repo_name
                 $null = gh pr merge $existing_pr_url --auto --squash --delete-branch 2>&1
+                # Trigger pipeline AFTER enabling auto-merge to avoid
+                # "PR was updated after run command" rejection
+                Write-Host "Triggering pipeline..." -ForegroundColor Cyan
+                $null = gh pr comment $existing_pr_url --body "/AzurePipelines run" 2>&1
                 Pop-Location
             }
             elseif ($repo_type -eq "azure" -and $existing_pr_url -match "/pullrequest/(\d+)")

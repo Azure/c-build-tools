@@ -247,6 +247,10 @@ function reopen-pr-github
         {
             Write-Host "Warning: Could not re-enable auto-merge" -ForegroundColor Yellow
         }
+
+        # Trigger pipeline AFTER enabling auto-merge
+        Write-Host "Triggering pipeline..." -ForegroundColor Cyan
+        $null = gh pr comment $pr_url --body "/AzurePipelines run" 2>&1
     }
     else
     {
