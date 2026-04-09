@@ -19,6 +19,26 @@ function invoke-copilot-autofix
 
     Write-Host "`n  AutoFix: Launching Copilot CLI to diagnose build failure..." -ForegroundColor Magenta
 
+    # Detect the default CMake Visual Studio generator
+    $vs_generator = "Visual Studio 17 2022"
+    $cmake_help = cmake --help 2>$null
+    if ($cmake_help)
+    {
+        $default_gen = $cmake_help | Select-String '^\*\s+(Visual Studio .+?)\s+=' | Select-Object -First 1
+        if ($default_gen -and $default_gen.Matches[0].Groups[1].Value)
+        {
+            $vs_generator = $default_gen.Matches[0].Groups[1].Value
+        }
+        else
+        {
+            # no default VS generator found, use fallback
+        }
+    }
+    else
+    {
+        # cmake not found, use fallback
+    }
+
     $prompt = @"
 The CI build failed for a pull request in this repository.
 PR: $pr_url
@@ -26,10 +46,10 @@ Branch: $branch_name
 
 ## How to configure and build this repo
 
-This is a C repository that uses CMake. Follow these steps:
+This is a C repository that uses CMake with the "$vs_generator" generator. Use EXACTLY these commands:
 
-1. Configure CMake (generate into cmake/ directory, use Visual Studio generator):
-   cmake -S . -B cmake -G "Visual Studio 17 2022" -A x64 -Drun_unittests=ON -Drun_repo_validation=ON -Duse_ltcg=OFF
+1. Configure CMake:
+   cmake -S . -B cmake -G "$vs_generator" -A x64 -Drun_unittests=ON -Drun_repo_validation=ON -Duse_ltcg=OFF
 
 2. Build the solution:
    cmake --build cmake --config Debug
@@ -40,6 +60,8 @@ This is a C repository that uses CMake. Follow these steps:
 4. If repo validation or traceability fails, build those targets:
    cmake --build cmake --config Debug --target <project>_repo_validation
    cmake --build cmake --config Debug --target <project>_traceability
+
+Do NOT try other generators or configurations. The generator above is correct.
 
 ## Your task
 
