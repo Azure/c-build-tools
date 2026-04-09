@@ -24,17 +24,38 @@ The CI build failed for a pull request in this repository.
 PR: $pr_url
 Branch: $branch_name
 
-Your task:
-1. Build the project locally to reproduce the failure (use cmake and the build system in this repo)
-2. Diagnose the build errors from the output
-3. Fix the code to resolve the build errors
-4. Commit the fix with message "AutoFix: resolve build errors"
-5. Push the fix to the branch: git push origin $branch_name
+## How to configure and build this repo
 
-Important:
+This is a C repository that uses CMake. Follow these steps:
+
+1. Configure CMake (generate into cmake/ directory, use Visual Studio generator):
+   cmake -S . -B cmake -G "Visual Studio 17 2022" -A x64 -Drun_unittests=ON -Drun_repo_validation=ON -Duse_ltcg=OFF
+
+2. Build the solution:
+   cmake --build cmake --config Debug
+
+3. If only specific targets fail, build just those targets:
+   cmake --build cmake --config Debug --target <target_name>
+
+4. If repo validation or traceability fails, build those targets:
+   cmake --build cmake --config Debug --target <project>_repo_validation
+   cmake --build cmake --config Debug --target <project>_traceability
+
+## Your task
+
+1. Build the project locally to reproduce the CI failure
+2. Read the build errors carefully and diagnose the root cause
+3. Fix the code to resolve the build errors
+4. Verify the fix by rebuilding
+5. Commit the fix with message "AutoFix: resolve build errors"
+6. Push the fix to the branch: git push origin $branch_name
+
+## Important rules
+
 - Only fix build errors, do not refactor or change unrelated code
 - If you cannot reproduce or fix the error, exit without making changes
 - The branch already exists and is checked out
+- Do not use any custom skills or external tools — use only the shell commands above
 "@
 
     try
@@ -46,7 +67,7 @@ Important:
         # Run Copilot with output visible to user.
         # Use ForEach-Object + Write-Host to prevent PowerShell from capturing
         # stdout as function return value while preserving UTF-8 encoding.
-        copilot -p $prompt --autopilot --allow-all --no-ask-user 2>&1 | ForEach-Object { Write-Host $_ }
+        copilot -p $prompt --autopilot --allow-all --no-ask-user --no-custom-instructions 2>&1 | ForEach-Object { Write-Host $_ }
         $copilot_exit = $LASTEXITCODE
 
         [Console]::OutputEncoding = $prev_encoding
