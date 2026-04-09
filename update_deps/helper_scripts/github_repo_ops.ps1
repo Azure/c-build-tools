@@ -235,6 +235,18 @@ function reopen-pr-github
     if ($LASTEXITCODE -eq 0)
     {
         Write-Host "GitHub PR reopened successfully" -ForegroundColor Green
+
+        # Re-enable auto-merge (closing a PR cancels it)
+        Write-Host "Re-enabling auto-merge..." -ForegroundColor Cyan
+        $null = gh pr merge $pr_url --auto --squash --delete-branch 2>&1
+        if ($LASTEXITCODE -eq 0)
+        {
+            Write-Host "Auto-merge re-enabled" -ForegroundColor Green
+        }
+        else
+        {
+            Write-Host "Warning: Could not re-enable auto-merge" -ForegroundColor Yellow
+        }
     }
     else
     {

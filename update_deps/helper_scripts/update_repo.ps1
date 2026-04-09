@@ -340,6 +340,23 @@ function update-repo
             }
 
             Write-Host "Monitoring existing PR..."
+            # Re-enable auto-merge in case it was lost (e.g., PR was closed and reopened)
+            if ($repo_type -eq "github")
+            {
+                Push-Location $repo_name
+                $null = gh pr merge $existing_pr_url --auto --squash --delete-branch 2>&1
+                Pop-Location
+            }
+            elseif ($repo_type -eq "azure" -and $existing_pr_url -match "/pullrequest/(\d+)")
+            {
+                $pr_id = [int]$matches[1]
+                $azure_info = get-azure-org-project $repo_name
+                set-autocomplete-azure $pr_id $azure_info.Organization
+            }
+            else
+            {
+                # unknown repo type
+            }
             set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $existing_pr_url
             monitor-pr -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
             set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
