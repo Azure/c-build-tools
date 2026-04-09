@@ -105,6 +105,91 @@ function get-pr-disposition
 }
 
 
+# Check if a PR's checks have already failed (complete + unsuccessful).
+# Returns a hashtable with AlreadyFailed ($true/$false) and Message.
+# Used on resume to skip straight to autofix instead of re-watching.
+function test-pr-checks-already-failed
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name,
+        [string] $repo_type
+    )
+    $result = @{ AlreadyFailed = $false; Message = "" }
+
+    if ($repo_type -eq "github")
+    {
+        Push-Location $repo_name
+        $checks_output = gh pr checks $pr_url --json name,state,bucket 2>$null
+        if ($LASTEXITCODE -eq 0 -and $checks_output -and $checks_output -ne "[]")
+        {
+            $checks = $checks_output | ConvertFrom-Json
+            # Normalize to the format Test-ChecksComplete expects
+            $normalized = @()
+            foreach ($check in $checks)
+            {
+                $normalized += [PSCustomObject]@{
+                    Name = $check.name
+                    Status = (convert-github-bucket-to-normalized -bucket $check.bucket)
+                    IsBlocking = $null
+                }
+            }
+            $completion = Test-ChecksComplete -checks $normalized
+            if ($completion.Complete -and -not $completion.Success)
+            {
+                $result.AlreadyFailed = $true
+                $result.Message = $completion.Message
+            }
+            else
+            {
+                # checks not complete or already passed
+            }
+        }
+        else
+        {
+            # no checks data
+        }
+        Pop-Location
+    }
+    elseif ($repo_type -eq "azure")
+    {
+        if ($pr_url -match "/pullrequest/(\d+)")
+        {
+            $pr_id = [int]$matches[1]
+            $azure_info = get-azure-org-project $repo_name
+            $display_data = get-policy-display-data -pr_id $pr_id -org $azure_info.Organization
+            if ($display_data -and $display_data.Checks)
+            {
+                $completion = Test-ChecksComplete -checks $display_data.Checks
+                if ($completion.Complete -and -not $completion.Success)
+                {
+                    $result.AlreadyFailed = $true
+                    $result.Message = $completion.Message
+                }
+                else
+                {
+                    # checks not complete or already passed
+                }
+            }
+            else
+            {
+                # no policy data
+            }
+        }
+        else
+        {
+            # couldn't parse PR ID
+        }
+    }
+    else
+    {
+        # unknown repo type
+    }
+
+    return $result
+}
+
+
 # Monitor an existing PR until completion.
 function monitor-pr
 {
@@ -179,6 +264,38 @@ function update-repo
             else
             {
                 # no regression, safe to monitor
+            }
+
+            # If autofix is enabled, check if the PR's checks have already failed.
+            # If so, run autofix immediately instead of re-watching a known-bad build.
+            if ($global:auto_fix)
+            {
+                $check_status = test-pr-checks-already-failed -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
+                if ($check_status.AlreadyFailed)
+                {
+                    Write-Host "PR checks already failed: $($check_status.Message)" -ForegroundColor Yellow
+                    Write-Host "Running AutoFix before re-watching..." -ForegroundColor Magenta
+                    Push-Location $repo_name
+                    $branch_name = git rev-parse --abbrev-ref HEAD 2>$null
+                    $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $existing_pr_url
+                    Pop-Location
+                    if (-not $fix_result)
+                    {
+                        fail-with-status "PR checks failed for repo ${repo_name}: $($check_status.Message). AutoFix could not resolve."
+                    }
+                    else
+                    {
+                        Write-Host "  AutoFix pushed a fix, monitoring PR..." -ForegroundColor Magenta
+                    }
+                }
+                else
+                {
+                    # checks not failed yet, proceed to normal monitoring
+                }
+            }
+            else
+            {
+                # autofix not enabled
             }
 
             Write-Host "Monitoring existing PR..."
