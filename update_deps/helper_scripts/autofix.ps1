@@ -39,10 +39,17 @@ Important:
 
     try
     {
-        # Run Copilot with output streaming to the console.
-        # Use Out-Host to prevent PowerShell from capturing stdout as function return value.
-        copilot -p $prompt --autopilot --allow-all --no-ask-user | Out-Host
+        # Set console encoding to UTF-8 so Copilot's emoji/icons render correctly
+        $prev_encoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+        # Run Copilot with output visible to user.
+        # Use ForEach-Object + Write-Host to prevent PowerShell from capturing
+        # stdout as function return value while preserving UTF-8 encoding.
+        copilot -p $prompt --autopilot --allow-all --no-ask-user 2>&1 | ForEach-Object { Write-Host $_ }
         $copilot_exit = $LASTEXITCODE
+
+        [Console]::OutputEncoding = $prev_encoding
 
         if ($copilot_exit -eq 0)
         {
