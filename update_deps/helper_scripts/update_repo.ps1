@@ -107,9 +107,10 @@ function get-pr-disposition
 }
 
 
-# Check if a PR's checks have already failed (complete + unsuccessful).
+# Check if a PR's BUILD checks have already failed (complete + unsuccessful).
+# Only considers Build-type checks — Status, Required reviewers, etc. are not
+# fixable by autofix and should not trigger it.
 # Returns a hashtable with AlreadyFailed ($true/$false) and Message.
-# Used on resume to skip straight to autofix instead of re-watching.
 function test-pr-checks-already-failed
 {
     param(
@@ -126,25 +127,21 @@ function test-pr-checks-already-failed
         if ($LASTEXITCODE -eq 0 -and $checks_output -and $checks_output -ne "[]")
         {
             $checks = $checks_output | ConvertFrom-Json
-            # Normalize to the format Test-ChecksComplete expects
-            $normalized = @()
-            foreach ($check in $checks)
+            # Only consider build/CI checks — filter out non-build checks
+            $build_checks = @($checks | Where-Object {
+                $_.name -match "Gate|Build|build|CI|ci" -and
+                $_.name -notmatch "license|cla|proof.of.presence"
+            })
+            $failed_builds = @($build_checks | Where-Object { $_.bucket -eq "fail" })
+            if ($failed_builds.Count -gt 0)
             {
-                $normalized += [PSCustomObject]@{
-                    Name = $check.name
-                    Status = (convert-github-bucket-to-normalized -bucket $check.bucket)
-                    IsBlocking = $null
-                }
-            }
-            $completion = Test-ChecksComplete -checks $normalized
-            if ($completion.Complete -and -not $completion.Success)
-            {
+                $failed_names = ($failed_builds | ForEach-Object { $_.name }) -join ", "
                 $result.AlreadyFailed = $true
-                $result.Message = $completion.Message
+                $result.Message = "Failed: $failed_names"
             }
             else
             {
-                # checks not complete or already passed
+                # no build checks have failed
             }
         }
         else
@@ -162,15 +159,21 @@ function test-pr-checks-already-failed
             $display_data = get-policy-display-data -pr_id $pr_id -org $azure_info.Organization
             if ($display_data -and $display_data.Checks)
             {
-                $completion = Test-ChecksComplete -checks $display_data.Checks
-                if ($completion.Complete -and -not $completion.Success)
+                # Only consider Build policies — not Status, Required reviewers, etc.
+                $build_checks = @($display_data.Checks | Where-Object {
+                    $_.Name -match "Build" -and
+                    $_.Name -notmatch "license|cla|proof.of.presence"
+                })
+                $failed_builds = @($build_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed })
+                if ($failed_builds.Count -gt 0)
                 {
+                    $failed_names = ($failed_builds | ForEach-Object { $_.Name }) -join ", "
                     $result.AlreadyFailed = $true
-                    $result.Message = $completion.Message
+                    $result.Message = "Failed: $failed_names"
                 }
                 else
                 {
-                    # checks not complete or already passed
+                    # no build checks have failed
                 }
             }
             else
