@@ -686,7 +686,7 @@ function update-local-repo
     {
         # no deps folder
     }
-    git submodule update --init
+    git submodule update --init --jobs 20
     # update all submodules to their fixed commits (or latest master as fallback)
     update-submodules-to-fixed-commits
     # Update c-build-tools YAML refs to match new submodule SHA
