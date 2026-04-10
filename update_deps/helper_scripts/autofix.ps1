@@ -5,6 +5,94 @@
 
 $global:MAX_AUTOFIX_ATTEMPTS = 2
 
+# Fetch failure details from an Azure DevOps build (validation errors + failed step issues).
+# Returns an array of log lines.
+function get-azure-build-failure-details
+{
+    param(
+        [int] $build_id,
+        [string] $org
+    )
+    $log_lines = @()
+
+    # Try all projects that might contain the build (One is most common)
+    $projects = @("One")
+    foreach ($project in $projects)
+    {
+        $log_output = az devops invoke `
+            --area build `
+            --resource builds `
+            --route-parameters project=$project buildId=$build_id `
+            --org $org `
+            --api-version 7.1 `
+            --query "{result:result, validationResults:validationResults}" `
+            -o json 2>$null
+        if ($LASTEXITCODE -eq 0 -and $log_output)
+        {
+            $build_info = $log_output | ConvertFrom-Json
+            $log_lines += ""
+            $log_lines += "Build ID: $build_id, Result: $($build_info.result)"
+
+            # Include validation errors (YAML validation failures show here)
+            if ($build_info.validationResults)
+            {
+                $log_lines += ""
+                $log_lines += "Validation errors:"
+                foreach ($v in $build_info.validationResults)
+                {
+                    $log_lines += "- $($v.message)"
+                }
+            }
+            else
+            {
+                # no validation results
+            }
+
+            # Get timeline for failed job/step details
+            $timeline = az devops invoke `
+                --area build `
+                --resource timeline `
+                --route-parameters project=$project buildId=$build_id `
+                --org $org `
+                --api-version 7.1 `
+                -o json 2>$null
+            if ($LASTEXITCODE -eq 0 -and $timeline)
+            {
+                $records = ($timeline | ConvertFrom-Json).records
+                $failed_records = @($records | Where-Object { $_.result -eq "failed" -and $_.issues })
+                if ($failed_records.Count -gt 0)
+                {
+                    $log_lines += ""
+                    $log_lines += "Failed steps:"
+                    foreach ($rec in $failed_records)
+                    {
+                        $log_lines += "- $($rec.name):"
+                        foreach ($issue in $rec.issues)
+                        {
+                            $log_lines += "    $($issue.message)"
+                        }
+                    }
+                }
+                else
+                {
+                    # no failed records with issues
+                }
+            }
+            else
+            {
+                # couldn't get timeline
+            }
+            break  # found the build, no need to try other projects
+        }
+        else
+        {
+            # build not found in this project
+        }
+    }
+
+    return $log_lines
+}
+
 # Fetch build logs for failed checks. Returns a string with error context.
 function get-failed-build-logs
 {
@@ -18,8 +106,10 @@ function get-failed-build-logs
 
     if ($repo_type -eq "github")
     {
-        # Get failed check details from GitHub
+        # GitHub repos use Azure Pipelines for CI — extract build ID from check URLs
+        Push-Location $repo_name
         $checks_output = gh pr checks --json name,state,bucket,link 2>$null
+        Pop-Location
         if ($LASTEXITCODE -eq 0 -and $checks_output)
         {
             $checks = $checks_output | ConvertFrom-Json
@@ -32,29 +122,48 @@ function get-failed-build-logs
                     $log_lines += "- $($check.name): $($check.link)"
                 }
 
-                # Try to get job logs for the failed run
-                $run_output = gh run list --branch (git rev-parse --abbrev-ref HEAD 2>$null) --status failure --limit 1 --json databaseId --jq '.[0].databaseId' 2>$null
-                if ($LASTEXITCODE -eq 0 -and $run_output)
+                # Extract Azure DevOps build ID from check URL and fetch logs
+                foreach ($check in $failed)
                 {
-                    $run_id = $run_output.Trim()
-                    $job_logs = gh run view $run_id --log-failed 2>$null
-                    if ($LASTEXITCODE -eq 0 -and $job_logs)
+                    if ($check.link -match "buildId=(\d+)")
                     {
-                        # Truncate to last 200 lines to keep prompt manageable
-                        $log_tail = ($job_logs -split "`n" | Select-Object -Last 200) -join "`n"
-                        $log_lines += ""
-                        $log_lines += "Build log (last 200 lines):"
-                        $log_lines += $log_tail
+                        $build_id = [int]$matches[1]
+                        # Extract org URL from the check link
+                        $ado_org = $null
+                        if ($check.link -match '^(https://[^/]+)')
+                        {
+                            $ado_org = $matches[1]
+                            # Convert visualstudio.com to dev.azure.com format
+                            if ($ado_org -match '([^/]+)\.visualstudio\.com')
+                            {
+                                $ado_org = "https://dev.azure.com/$($matches[1])"
+                            }
+                            else
+                            {
+                                # already in dev.azure.com format
+                            }
+                        }
+                        else
+                        {
+                            # can't parse org
+                        }
+
+                        if ($ado_org)
+                        {
+                            $log_lines += get-azure-build-failure-details -build_id $build_id -org $ado_org
+                        }
+                        else
+                        {
+                            # no org to query
+                        }
+                        break  # only need logs from one failed build
                     }
                     else
                     {
-                        # couldn't get logs
+                        # no build ID in URL
                     }
                 }
-                else
-                {
-                    # no failed run found
-                }
+
                 $logs = $log_lines -join "`n"
             }
             else
@@ -88,77 +197,9 @@ function get-failed-build-logs
                 $build_ids = @($policies | Where-Object { $_.BuildId } | ForEach-Object { $_.BuildId })
                 if ($build_ids.Count -gt 0)
                 {
-                    $build_id = $build_ids[0]
-                    # Get the build log
-                    $log_output = az devops invoke `
-                        --area build `
-                        --resource builds `
-                        --route-parameters project=$($azure_info.Project) buildId=$build_id `
-                        --org $org `
-                        --api-version 7.1 `
-                        --query "{result:result, validationResults:validationResults}" `
-                        -o json 2>$null
-                    if ($LASTEXITCODE -eq 0 -and $log_output)
-                    {
-                        $build_info = $log_output | ConvertFrom-Json
-                        $log_lines = @("Build ID: $build_id, Result: $($build_info.result)")
-
-                        # Include validation errors (YAML validation failures show here)
-                        if ($build_info.validationResults)
-                        {
-                            $log_lines += ""
-                            $log_lines += "Validation errors:"
-                            foreach ($v in $build_info.validationResults)
-                            {
-                                $log_lines += "- $($v.message)"
-                            }
-                        }
-                        else
-                        {
-                            # no validation results
-                        }
-
-                        # Try to get the timeline for failed job details
-                        $timeline = az devops invoke `
-                            --area build `
-                            --resource timeline `
-                            --route-parameters project=$($azure_info.Project) buildId=$build_id `
-                            --org $org `
-                            --api-version 7.1 `
-                            -o json 2>$null
-                        if ($LASTEXITCODE -eq 0 -and $timeline)
-                        {
-                            $records = ($timeline | ConvertFrom-Json).records
-                            $failed_records = @($records | Where-Object { $_.result -eq "failed" -and $_.issues })
-                            if ($failed_records.Count -gt 0)
-                            {
-                                $log_lines += ""
-                                $log_lines += "Failed steps:"
-                                foreach ($rec in $failed_records)
-                                {
-                                    $log_lines += "- $($rec.name):"
-                                    foreach ($issue in $rec.issues)
-                                    {
-                                        $log_lines += "    $($issue.message)"
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                # no failed records with issues
-                            }
-                        }
-                        else
-                        {
-                            # couldn't get timeline
-                        }
-
-                        $logs = $log_lines -join "`n"
-                    }
-                    else
-                    {
-                        # couldn't get build info
-                    }
+                    $log_lines = @("Failed build logs:")
+                    $log_lines += get-azure-build-failure-details -build_id $build_ids[0] -org $org
+                    $logs = $log_lines -join "`n"
                 }
                 else
                 {
