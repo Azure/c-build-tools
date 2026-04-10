@@ -231,10 +231,20 @@ function update-repo
     # Ensure we're in the work directory
     Set-Location $global:work_dir
 
-    # --- Resolve existing PR URL (resume scenario) ---
-    # Do this BEFORE update-local-repo to avoid pushing new commits to an existing PR.
-    $existing_pr_url = resolve-existing-pr -repo_name $repo_name -new_branch_name $new_branch_name
+    # --- Resolve existing PR (resume only) ---
+    # On fresh runs the branch is new, so no PR can exist.
+    # On resume, check for an existing PR to avoid duplicate pushes/PRs.
+    $existing_pr_url = $null
     $repo_type = get-repo-type $repo_name
+
+    if ($global:is_resume)
+    {
+        $existing_pr_url = resolve-existing-pr -repo_name $repo_name -new_branch_name $new_branch_name
+    }
+    else
+    {
+        # fresh run — skip PR lookup
+    }
 
     if ($existing_pr_url)
     {

@@ -75,7 +75,7 @@ function monitor-github-pr
         if (-not $watch_result.Success)
         {
             # Try autofix if enabled
-            if ($global:auto_fix -and -not $global:propagation_cancelled -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
+            if ($global:auto_fix -and -not $global:propagation_cancelled -and $watch_result.Message -match "^Failed:" -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
             {
                 $autofix_attempts++
                 Write-Host "`n  AutoFix attempt $autofix_attempts of $global:MAX_AUTOFIX_ATTEMPTS" -ForegroundColor Magenta
@@ -429,7 +429,7 @@ function update-repo-github
             if(-not $watch_result.Success)
             {
                 # Build failed — try autofix if enabled
-                if ($global:auto_fix -and -not $global:propagation_cancelled -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
+                if ($global:auto_fix -and -not $global:propagation_cancelled -and $watch_result.Message -match "^Failed:" -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
                 {
                     $autofix_attempts++
                     Write-Host "`n  AutoFix attempt $autofix_attempts of $global:MAX_AUTOFIX_ATTEMPTS" -ForegroundColor Magenta

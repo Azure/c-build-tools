@@ -122,6 +122,9 @@ function propagate-updates
     # Store auto-fix flag for use by repo ops functions
     $global:auto_fix = $AutoFix.IsPresent
 
+    # Store resume flag so update-repo knows whether to look for existing PRs
+    $global:is_resume = $Resume.IsPresent
+
     # Check PowerShell version first
     check-powershell-version
 
