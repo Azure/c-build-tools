@@ -669,19 +669,30 @@ fn normalize_c_text(text: &str) -> String {
     parts.join(" ")
 }
 
-/// Determine if a file is a test file based on parent directory name ending with _ut or _int,
-/// or for C# files, if the filename starts with "Test" (e.g., TestMyAdapter.cs).
+/// Determine if a file is a test file based on:
+/// - C convention: parent directory name ending with _ut or _int
+/// - C# convention: parent directory ending with UnitTests, IntTests, .UnitTests,
+///   or .IntTests (e.g., MyProject.UnitTests\SomeTests.cs)
+/// - C# convention: filename starting with "Test" (e.g., TestMyAdapter.cs)
+///   or ending with "Tests.cs" (e.g., AllocateAsyncOperationTests.cs)
 fn is_test_file(relative_path: &str) -> bool {
     let parts: Vec<&str> = relative_path.split(['/', '\\']).collect();
     // Check all directory components (not the filename)
     for dir in parts.iter().take(parts.len().saturating_sub(1)) {
+        // C convention: directory ends with _ut or _int
         if dir.ends_with("_ut") || dir.ends_with("_int") {
             return true;
         }
+        // C# convention: directory ends with UnitTests or IntTests
+        if dir.ends_with("UnitTests") || dir.ends_with("IntTests") {
+            return true;
+        }
     }
-    // C# convention: test files start with "Test"
+    // C# convention: filename starts with "Test" or ends with "Tests.cs"
     if let Some(filename) = parts.last() {
-        if filename.ends_with(".cs") && filename.starts_with("Test") {
+        if filename.ends_with(".cs")
+            && (filename.starts_with("Test") || filename.ends_with("Tests.cs"))
+        {
             return true;
         }
     }

@@ -258,6 +258,14 @@ add_custom_target(test_validate_srs_consistency_cs_inconsistent
     DEPENDS repo_validator_rs
 )
 
+# Test 21: C# .NET-style naming (*.UnitTests, *.IntTests dirs, *Tests.cs filenames)
+add_custom_target(test_validate_srs_consistency_cs_clean_dotnet_naming
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/cs_clean_dotnet_naming" --check srs_consistency
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing SRS consistency with .NET-style test naming conventions"
+    DEPENDS repo_validator_rs
+)
+
 # Master target for all SRS consistency validation tests
 add_custom_target(test_validate_srs_consistency
     COMMENT "Running all SRS consistency validation tests"
@@ -282,6 +290,7 @@ add_dependencies(test_validate_srs_consistency
     test_validate_srs_consistency_tag_placement_single_violation
     test_validate_srs_consistency_tag_placement_test_helper
     test_validate_srs_consistency_cs_clean
+    test_validate_srs_consistency_cs_clean_dotnet_naming
 )
 # Master target for all expected-failure tests
 add_custom_target(test_validate_srs_consistency_failures
