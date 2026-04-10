@@ -432,9 +432,7 @@ function wait-until-complete-azure
 
         if(!$success)
         {
-            # Policy watch reported failure — but this could be a non-blocking/optional
-            # policy. Autocomplete will still merge the PR if all required policies pass.
-            # Wait for autocomplete before giving up.
+            # Policy watch reported failure — check if PR already completed
             $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
             if($pr_info -and $pr_info.status -eq "completed")
             {
@@ -443,7 +441,7 @@ function wait-until-complete-azure
             }
             else
             {
-                Write-Host "Waiting for PR to auto-complete despite policy status..." -ForegroundColor Yellow
+                # Wait for autocomplete (non-blocking policy may have failed while build passed)
                 $max_wait = 120
                 $waited = 0
                 while($waited -lt $max_wait -and !$done)
