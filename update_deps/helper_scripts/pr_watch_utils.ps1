@@ -602,11 +602,15 @@ function global:Test-ChecksComplete
                 $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
             }
 
-        # Check if any blocking check has failed — no need to wait for others
-        $failed = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed }
-        if($failed.Count -gt 0)
+        # Check if any blocking BUILD check has failed — no need to wait for others.
+        # Only fail-fast on Build checks, not Status/policy checks which may fail
+        # independently of the actual build (e.g., external status checks).
+        $failed_builds = $blocking_checks | Where-Object {
+            $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
+        }
+        if($failed_builds.Count -gt 0)
         {
-            $failed_names = ($failed | ForEach-Object { $_.Name }) -join ", "
+            $failed_names = ($failed_builds | ForEach-Object { $_.Name }) -join ", "
             $result = @{ Complete = $true; Success = $false; Message = "Failed: $failed_names" }
         }
         else
