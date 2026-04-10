@@ -601,35 +601,39 @@ function global:Test-ChecksComplete
                 $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
             }
 
-        # Check if any blocking check is still in progress
-        $in_progress = $blocking_checks | Where-Object {
-            $_.Status -eq [PrCheckStatus]::Running -or $_.Status -eq [PrCheckStatus]::Pending
-        }
-
-        if($in_progress.Count -gt 0)
+        # Check if any blocking check has failed — no need to wait for others
+        $failed = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed }
+        if($failed.Count -gt 0)
         {
-            $in_progress_names = ($in_progress | ForEach-Object { $_.Name }) -join ", "
-            $result = @{ Complete = $false; Success = $false; Message = "Waiting for: $in_progress_names" }
+            $failed_names = ($failed | ForEach-Object { $_.Name }) -join ", "
+            $result = @{ Complete = $true; Success = $false; Message = "Failed: $failed_names" }
         }
         else
         {
-            # All checks have reached terminal state - check if any failed
-            $failed = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed }
-            $cancelled = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Cancelled }
-            $succeeded = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Succeeded }
-
-            if($failed.Count -gt 0)
-            {
-                $failed_names = ($failed | ForEach-Object { $_.Name }) -join ", "
-                $result = @{ Complete = $true; Success = $false; Message = "Failed: $failed_names" }
+            # Check if any blocking check is still in progress
+            $in_progress = $blocking_checks | Where-Object {
+                $_.Status -eq [PrCheckStatus]::Running -or $_.Status -eq [PrCheckStatus]::Pending
             }
-            elseif($cancelled.Count -gt 0 -and $succeeded.Count -eq 0)
+
+            if($in_progress.Count -gt 0)
             {
-                $result = @{ Complete = $true; Success = $false; Message = "Checks were cancelled" }
+                $in_progress_names = ($in_progress | ForEach-Object { $_.Name }) -join ", "
+                $result = @{ Complete = $false; Success = $false; Message = "Waiting for: $in_progress_names" }
             }
             else
             {
-                $result = @{ Complete = $true; Success = $true; Message = "All checks passed" }
+                # All checks have reached terminal state with no failures
+                $cancelled = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Cancelled }
+                $succeeded = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Succeeded }
+
+                if($cancelled.Count -gt 0 -and $succeeded.Count -eq 0)
+                {
+                    $result = @{ Complete = $true; Success = $false; Message = "Checks were cancelled" }
+                }
+                else
+                {
+                    $result = @{ Complete = $true; Success = $true; Message = "All checks passed" }
+                }
             }
         }
         }
