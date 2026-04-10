@@ -586,8 +586,9 @@ function global:Test-ChecksComplete
     }
     else
     {
-        # Filter out license/CLA checks — these pass immediately and don't indicate CI status
-        $ci_checks = $checks | Where-Object { $_.Name -notmatch "license|cla" }
+        # Filter out license/CLA checks and manual approval checks (e.g., Proof Of Presence)
+        # — these don't indicate CI build status
+        $ci_checks = $checks | Where-Object { $_.Name -notmatch "license|cla|proof.of.presence" }
 
         if (-not $ci_checks -or $ci_checks.Count -eq 0)
         {
