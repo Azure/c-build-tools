@@ -9,13 +9,24 @@ namespace MyProject.UnitTests
         // Tests_SRS_DOTNET_MODULE_88_001: [ DotnetModule.Create shall validate the input parameters. ]
         public void WhenNameIsNullThenCreateThrows()
         {
-            Assert.ThrowsException<ArgumentNullException>(() => DotnetModule.Create(null));
+            // arrange
+            string name = null;
+
+            // act
+            // assert
+            Assert.ThrowsException<ArgumentNullException>(() => DotnetModule.Create(name));
         }
 
         // Tests_SRS_DOTNET_MODULE_88_002: [ DotnetModule.Create shall allocate resources. ]
         public void WhenAllOkThenCreateSucceeds()
         {
-            var module = DotnetModule.Create("test");
+            // arrange
+            string name = "test";
+
+            // act
+            var module = DotnetModule.Create(name);
+
+            // assert
             Assert.IsNotNull(module);
         }
     }

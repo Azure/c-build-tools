@@ -8,8 +8,13 @@ namespace MyProject.IntTests
         // Tests_SRS_DOTNET_MODULE_88_003: [ DotnetModule.Dispose shall release all resources. ]
         public void WhenDisposedThenResourcesAreReleased()
         {
+            // arrange
             var module = DotnetModule.Create("test");
+
+            // act
             module.Dispose();
+
+            // assert
         }
     }
 }
