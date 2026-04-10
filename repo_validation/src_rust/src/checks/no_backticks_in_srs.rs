@@ -168,7 +168,7 @@ impl Check for NoBackticksInSrs {
     }
 
     fn file_types(&self) -> u32 {
-        FILE_TYPE_C | FILE_TYPE_H | FILE_TYPE_CPP | FILE_TYPE_HPP
+        FILE_TYPE_C | FILE_TYPE_H | FILE_TYPE_CPP | FILE_TYPE_HPP | FILE_TYPE_CS
     }
 
     fn requires_devdoc(&self) -> bool {
