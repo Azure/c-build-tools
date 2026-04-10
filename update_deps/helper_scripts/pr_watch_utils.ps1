@@ -602,10 +602,10 @@ function global:Test-ChecksComplete
                 $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
             }
 
-        # Check if any blocking BUILD check has failed — no need to wait for others.
-        # Only fail-fast on Build checks, not Status/policy checks which may fail
-        # independently of the actual build (e.g., external status checks).
-        $failed_builds = $blocking_checks | Where-Object {
+        # Check if any BUILD check has failed — no need to wait for others.
+        # Check all Build checks regardless of IsBlocking — a failed build is
+        # always actionable, even if the policy is marked non-blocking.
+        $failed_builds = $ci_checks | Where-Object {
             $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
         }
         if($failed_builds.Count -gt 0)
