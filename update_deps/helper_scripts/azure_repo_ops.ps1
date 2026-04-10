@@ -487,7 +487,15 @@ function wait-until-complete-azure
                 }
                 else
                 {
-                    fail-with-status "PR $pr_id failed to complete. Check policy status above."
+                    if ($global:propagation_cancelled)
+                    {
+                        # User cancelled — just break, don't close the PR
+                        $done = $true
+                    }
+                    else
+                    {
+                        fail-with-status "PR $pr_id failed to complete. Check policy status above."
+                    }
                 }
             }
             else

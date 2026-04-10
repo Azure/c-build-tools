@@ -95,8 +95,16 @@ function monitor-github-pr
             }
             else
             {
-                Pop-Location
-                fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+                if ($global:propagation_cancelled)
+                {
+                    # User cancelled — just break, don't close the PR
+                    break
+                }
+                else
+                {
+                    Pop-Location
+                    fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+                }
             }
         }
         else
@@ -440,7 +448,15 @@ function update-repo-github
                 }
                 else
                 {
-                    fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+                    if ($global:propagation_cancelled)
+                    {
+                        # User cancelled — just break, don't close the PR
+                        break
+                    }
+                    else
+                    {
+                        fail-with-status "PR checks failed for repo ${repo_name}: $($watch_result.Message)"
+                    }
                 }
             }
             else
