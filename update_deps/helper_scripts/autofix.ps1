@@ -5,8 +5,8 @@
 
 $global:MAX_AUTOFIX_ATTEMPTS = 2
 
-# Fetch failure details from an Azure DevOps build (validation errors + failed step issues).
-# Returns an array of log lines.
+# Fetch failure details from an Azure DevOps build (validation errors + failed task logs).
+# Returns an array of log lines with actionable error context.
 function get-azure-build-failure-details
 {
     param(
@@ -15,78 +15,145 @@ function get-azure-build-failure-details
     )
     $log_lines = @()
 
-    # Try all projects that might contain the build (One is most common)
-    $projects = @("One")
-    foreach ($project in $projects)
-    {
-        $log_output = az devops invoke `
-            --area build `
-            --resource builds `
-            --route-parameters project=$project buildId=$build_id `
-            --org $org `
-            --api-version 7.1 `
-            --query "{result:result, validationResults:validationResults}" `
-            -o json 2>$null
-        if ($LASTEXITCODE -eq 0 -and $log_output)
-        {
-            $build_info = $log_output | ConvertFrom-Json
-            $log_lines += ""
-            $log_lines += "Build ID: $build_id, Result: $($build_info.result)"
+    $project = "One"
 
-            # Include validation errors (YAML validation failures show here)
-            if ($build_info.validationResults)
+    # Get build status and validation results
+    $log_output = az devops invoke `
+        --area build `
+        --resource builds `
+        --route-parameters project=$project buildId=$build_id `
+        --org $org `
+        --api-version 7.1 `
+        --query "{result:result, validationResults:validationResults}" `
+        -o json 2>$null
+    if (-not ($LASTEXITCODE -eq 0 -and $log_output))
+    {
+        return $log_lines
+    }
+
+    $build_info = $log_output | ConvertFrom-Json
+    $log_lines += "Build ID: $build_id, Result: $($build_info.result)"
+
+    # Include validation errors (YAML validation failures show here)
+    if ($build_info.validationResults)
+    {
+        $log_lines += ""
+        $log_lines += "Validation errors:"
+        foreach ($v in $build_info.validationResults)
+        {
+            $log_lines += "- $($v.message)"
+        }
+    }
+    else
+    {
+        # no validation results
+    }
+
+    # Get timeline to find failed tasks and their log IDs
+    $timeline = az devops invoke `
+        --area build `
+        --resource timeline `
+        --route-parameters project=$project buildId=$build_id `
+        --org $org `
+        --api-version 7.1 `
+        -o json 2>$null
+    if (-not ($LASTEXITCODE -eq 0 -and $timeline))
+    {
+        return $log_lines
+    }
+
+    $records = ($timeline | ConvertFrom-Json).records
+
+    # Find failed Task records that have log IDs
+    $failed_tasks = @($records | Where-Object {
+        $_.result -eq "failed" -and $_.type -eq "Task" -and $_.log -and $_.log.id
+    })
+
+    if ($failed_tasks.Count -eq 0)
+    {
+        # Fall back to failed records with issues
+        $failed_with_issues = @($records | Where-Object { $_.result -eq "failed" -and $_.issues })
+        if ($failed_with_issues.Count -gt 0)
+        {
+            $log_lines += ""
+            $log_lines += "Failed steps:"
+            foreach ($rec in $failed_with_issues)
             {
-                $log_lines += ""
-                $log_lines += "Validation errors:"
-                foreach ($v in $build_info.validationResults)
+                $log_lines += "- $($rec.name):"
+                foreach ($issue in $rec.issues)
                 {
-                    $log_lines += "- $($v.message)"
+                    $log_lines += "    $($issue.message)"
                 }
             }
-            else
-            {
-                # no validation results
-            }
+        }
+        else
+        {
+            # no actionable failure info
+        }
+    }
+    else
+    {
+        # Fetch the tail of each failed task's log (last 200 lines)
+        foreach ($task in $failed_tasks)
+        {
+            $logId = $task.log.id
+            $log_lines += ""
+            $log_lines += "=== Failed task: $($task.name) (logId=$logId) ==="
 
-            # Get timeline for failed job/step details
-            $timeline = az devops invoke `
+            # Get log line count first
+            $log_meta = az devops invoke `
                 --area build `
-                --resource timeline `
+                --resource logs `
                 --route-parameters project=$project buildId=$build_id `
                 --org $org `
                 --api-version 7.1 `
+                --query "value[?id==``$logId``].lineCount | [0]" `
                 -o json 2>$null
-            if ($LASTEXITCODE -eq 0 -and $timeline)
+            $line_count = 0
+            if ($LASTEXITCODE -eq 0 -and $log_meta)
             {
-                $records = ($timeline | ConvertFrom-Json).records
-                $failed_records = @($records | Where-Object { $_.result -eq "failed" -and $_.issues })
-                if ($failed_records.Count -gt 0)
+                $line_count = [int]($log_meta | ConvertFrom-Json)
+            }
+            else
+            {
+                # couldn't get line count
+            }
+
+            if ($line_count -gt 0)
+            {
+                $start_line = [Math]::Max(1, $line_count - 200)
+                $log_content = az devops invoke `
+                    --area build `
+                    --resource logs `
+                    --route-parameters project=$project buildId=$build_id logId=$logId `
+                    --org $org `
+                    --api-version 7.1 `
+                    --query-parameters startLine=$start_line endLine=$line_count `
+                    -o json 2>$null
+                if ($LASTEXITCODE -eq 0 -and $log_content)
                 {
-                    $log_lines += ""
-                    $log_lines += "Failed steps:"
-                    foreach ($rec in $failed_records)
+                    $content = ($log_content | ConvertFrom-Json).value
+                    if ($content)
                     {
-                        $log_lines += "- $($rec.name):"
-                        foreach ($issue in $rec.issues)
+                        foreach ($line in $content)
                         {
-                            $log_lines += "    $($issue.message)"
+                            $log_lines += $line
                         }
+                    }
+                    else
+                    {
+                        # no log content
                     }
                 }
                 else
                 {
-                    # no failed records with issues
+                    $log_lines += "(could not fetch log content)"
                 }
             }
             else
             {
-                # couldn't get timeline
+                $log_lines += "(could not determine log line count)"
             }
-            break  # found the build, no need to try other projects
-        }
-        else
-        {
-            # build not found in this project
         }
     }
 
