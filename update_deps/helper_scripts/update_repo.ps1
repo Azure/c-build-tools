@@ -278,9 +278,10 @@ function update-repo
 
                 # Now treat as active — run autofix + monitor
                 Write-Host "Running AutoFix on reopened PR..." -ForegroundColor Magenta
+                $logs = get-failed-build-logs -repo_name $repo_name -pr_url $existing_pr_url
                 Push-Location $repo_name
                 $branch_name = git rev-parse --abbrev-ref HEAD 2>$null
-                $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $existing_pr_url
+                $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $existing_pr_url -build_logs $logs
                 Pop-Location
                 if (-not $fix_result)
                 {
@@ -326,9 +327,10 @@ function update-repo
                 {
                     Write-Host "PR checks already failed: $($check_status.Message)" -ForegroundColor Yellow
                     Write-Host "Running AutoFix before re-watching..." -ForegroundColor Magenta
+                    $logs = get-failed-build-logs -repo_name $repo_name -pr_url $existing_pr_url
                     Push-Location $repo_name
                     $branch_name = git rev-parse --abbrev-ref HEAD 2>$null
-                    $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $existing_pr_url
+                    $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $existing_pr_url -build_logs $logs
                     Pop-Location
                     if (-not $fix_result)
                     {

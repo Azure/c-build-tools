@@ -191,15 +191,25 @@ function invoke-copilot-autofix
     param(
         [string] $repo_name,
         [string] $branch_name,
-        [string] $pr_url
+        [string] $pr_url,
+        [string] $build_logs = ""
     )
     $result = $false
 
     Write-Host "`n  AutoFix: Launching Copilot CLI to diagnose build failure..." -ForegroundColor Magenta
 
-    # Fetch build logs from the failed CI run
-    Write-Host "  AutoFix: Fetching build logs..." -ForegroundColor Magenta
-    $build_logs = get-failed-build-logs -repo_name $repo_name -pr_url $pr_url
+    # Fetch build logs if not provided by caller
+    if (-not $build_logs)
+    {
+        Write-Host "  AutoFix: Fetching build logs..." -ForegroundColor Magenta
+        Push-Location $global:work_dir
+        $build_logs = get-failed-build-logs -repo_name $repo_name -pr_url $pr_url
+        Pop-Location
+    }
+    else
+    {
+        # logs provided by caller
+    }
     if ($build_logs)
     {
         Write-Host "  AutoFix: Got build logs ($($build_logs.Length) chars)" -ForegroundColor Magenta
@@ -207,7 +217,7 @@ function invoke-copilot-autofix
     else
     {
         Write-Host "  AutoFix: No build logs available, Copilot will build locally" -ForegroundColor Yellow
-        $build_logs = "(no build logs available — build locally to reproduce)"
+        $build_logs = "(no build logs available - build locally to reproduce)"
     }
 
     # Detect the default CMake Visual Studio generator
