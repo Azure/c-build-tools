@@ -5,6 +5,184 @@
 
 $global:MAX_AUTOFIX_ATTEMPTS = 2
 
+# Fetch build logs for failed checks. Returns a string with error context.
+function get-failed-build-logs
+{
+    param(
+        [string] $repo_name,
+        [string] $pr_url
+    )
+    $logs = ""
+
+    $repo_type = get-repo-type $repo_name
+
+    if ($repo_type -eq "github")
+    {
+        # Get failed check details from GitHub
+        $checks_output = gh pr checks --json name,state,bucket,link 2>$null
+        if ($LASTEXITCODE -eq 0 -and $checks_output)
+        {
+            $checks = $checks_output | ConvertFrom-Json
+            $failed = @($checks | Where-Object { $_.bucket -eq "fail" })
+            if ($failed.Count -gt 0)
+            {
+                $log_lines = @("Failed checks:")
+                foreach ($check in $failed)
+                {
+                    $log_lines += "- $($check.name): $($check.link)"
+                }
+
+                # Try to get job logs for the failed run
+                $run_output = gh run list --branch (git rev-parse --abbrev-ref HEAD 2>$null) --status failure --limit 1 --json databaseId --jq '.[0].databaseId' 2>$null
+                if ($LASTEXITCODE -eq 0 -and $run_output)
+                {
+                    $run_id = $run_output.Trim()
+                    $job_logs = gh run view $run_id --log-failed 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $job_logs)
+                    {
+                        # Truncate to last 200 lines to keep prompt manageable
+                        $log_tail = ($job_logs -split "`n" | Select-Object -Last 200) -join "`n"
+                        $log_lines += ""
+                        $log_lines += "Build log (last 200 lines):"
+                        $log_lines += $log_tail
+                    }
+                    else
+                    {
+                        # couldn't get logs
+                    }
+                }
+                else
+                {
+                    # no failed run found
+                }
+                $logs = $log_lines -join "`n"
+            }
+            else
+            {
+                # no failed checks
+            }
+        }
+        else
+        {
+            # couldn't get check data
+        }
+    }
+    elseif ($repo_type -eq "azure")
+    {
+        # Get build logs from Azure DevOps
+        if ($pr_url -match "/pullrequest/(\d+)")
+        {
+            $pr_id = [int]$matches[1]
+            $azure_info = get-azure-org-project $repo_name
+            $org = $azure_info.Organization
+
+            # Get policies to find the failed build ID
+            $policy_output = az repos pr policy list `
+                --id $pr_id `
+                --organization $org `
+                --query "[?status=='rejected'].{BuildId:context.buildId}" `
+                --output json 2>$null
+            if ($LASTEXITCODE -eq 0 -and $policy_output)
+            {
+                $policies = @($policy_output | ConvertFrom-Json)
+                $build_ids = @($policies | Where-Object { $_.BuildId } | ForEach-Object { $_.BuildId })
+                if ($build_ids.Count -gt 0)
+                {
+                    $build_id = $build_ids[0]
+                    # Get the build log
+                    $log_output = az devops invoke `
+                        --area build `
+                        --resource builds `
+                        --route-parameters project=$($azure_info.Project) buildId=$build_id `
+                        --org $org `
+                        --api-version 7.1 `
+                        --query "{result:result, validationResults:validationResults}" `
+                        -o json 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $log_output)
+                    {
+                        $build_info = $log_output | ConvertFrom-Json
+                        $log_lines = @("Build ID: $build_id, Result: $($build_info.result)")
+
+                        # Include validation errors (YAML validation failures show here)
+                        if ($build_info.validationResults)
+                        {
+                            $log_lines += ""
+                            $log_lines += "Validation errors:"
+                            foreach ($v in $build_info.validationResults)
+                            {
+                                $log_lines += "- $($v.message)"
+                            }
+                        }
+                        else
+                        {
+                            # no validation results
+                        }
+
+                        # Try to get the timeline for failed job details
+                        $timeline = az devops invoke `
+                            --area build `
+                            --resource timeline `
+                            --route-parameters project=$($azure_info.Project) buildId=$build_id `
+                            --org $org `
+                            --api-version 7.1 `
+                            -o json 2>$null
+                        if ($LASTEXITCODE -eq 0 -and $timeline)
+                        {
+                            $records = ($timeline | ConvertFrom-Json).records
+                            $failed_records = @($records | Where-Object { $_.result -eq "failed" -and $_.issues })
+                            if ($failed_records.Count -gt 0)
+                            {
+                                $log_lines += ""
+                                $log_lines += "Failed steps:"
+                                foreach ($rec in $failed_records)
+                                {
+                                    $log_lines += "- $($rec.name):"
+                                    foreach ($issue in $rec.issues)
+                                    {
+                                        $log_lines += "    $($issue.message)"
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                # no failed records with issues
+                            }
+                        }
+                        else
+                        {
+                            # couldn't get timeline
+                        }
+
+                        $logs = $log_lines -join "`n"
+                    }
+                    else
+                    {
+                        # couldn't get build info
+                    }
+                }
+                else
+                {
+                    # no failed builds found
+                }
+            }
+            else
+            {
+                # couldn't get policies
+            }
+        }
+        else
+        {
+            # couldn't parse PR ID
+        }
+    }
+    else
+    {
+        # unknown repo type
+    }
+
+    return $logs
+}
+
 # Invoke Copilot CLI to fix build errors in the current repo.
 # Must be called from inside the repo directory on the PR branch.
 # Returns $true if Copilot ran and pushed a fix, $false otherwise.
@@ -18,6 +196,19 @@ function invoke-copilot-autofix
     $result = $false
 
     Write-Host "`n  AutoFix: Launching Copilot CLI to diagnose build failure..." -ForegroundColor Magenta
+
+    # Fetch build logs from the failed CI run
+    Write-Host "  AutoFix: Fetching build logs..." -ForegroundColor Magenta
+    $build_logs = get-failed-build-logs -repo_name $repo_name -pr_url $pr_url
+    if ($build_logs)
+    {
+        Write-Host "  AutoFix: Got build logs ($($build_logs.Length) chars)" -ForegroundColor Magenta
+    }
+    else
+    {
+        Write-Host "  AutoFix: No build logs available, Copilot will build locally" -ForegroundColor Yellow
+        $build_logs = "(no build logs available — build locally to reproduce)"
+    }
 
     # Detect the default CMake Visual Studio generator
     $vs_generator = "Visual Studio 17 2022"
@@ -63,14 +254,19 @@ This is a C repository that uses CMake with the "$vs_generator" generator. Use E
 
 Do NOT try other generators or configurations. The generator above is correct.
 
+## CI build failure logs
+
+$build_logs
+
 ## Your task
 
-1. Build the project locally to reproduce the CI failure
-2. Read the build errors carefully and diagnose the root cause
-3. Fix the code to resolve the build errors
-4. Verify the fix by rebuilding
-5. Commit the fix with message "AutoFix: resolve build errors"
-6. Push the fix to the branch: git push origin $branch_name
+1. Read the CI build failure logs above carefully
+2. If the error is clear from the logs (e.g., YAML validation error), fix it directly
+3. If the error requires local reproduction, build the project locally using the commands above
+4. Fix the code to resolve the errors
+5. Verify the fix by rebuilding locally
+6. Commit the fix with message "AutoFix: resolve build errors"
+7. Push the fix to the branch: git push origin $branch_name
 
 ## Important rules
 
