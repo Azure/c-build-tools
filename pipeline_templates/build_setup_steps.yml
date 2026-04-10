@@ -31,7 +31,7 @@ steps:
   - script: git submodule update --init --depth 1 --jobs 20
     displayName: 'Shallow checkout submodules'
 
-  # Authenticate NuGet feedsso cmake configure can restore packages
+  # Authenticate NuGet feed so cmake configure can restore packages
   - ${{ if parameters.setup_nuget }}:
     - template: setup_nuget_tools.yml
 
