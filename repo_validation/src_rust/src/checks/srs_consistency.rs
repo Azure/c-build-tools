@@ -673,8 +673,9 @@ fn normalize_c_text(text: &str) -> String {
 /// - C convention: parent directory name ending with _ut or _int
 /// - C# convention: parent directory ending with UnitTests, IntTests, .UnitTests,
 ///   or .IntTests (e.g., MyProject.UnitTests\SomeTests.cs)
-/// - C# convention: filename starting with "Test" (e.g., TestMyAdapter.cs)
-///   or ending with "Tests.cs" (e.g., AllocateAsyncOperationTests.cs)
+/// - C# convention: filename starting with "Test" (e.g., TestMyAdapter.cs),
+///   ending with "Tests.cs" (e.g., AllocateAsyncOperationTests.cs),
+///   or ending with "Test.cs" (e.g., AllocateAsyncOperationTest.cs)
 fn is_test_file(relative_path: &str) -> bool {
     let parts: Vec<&str> = relative_path.split(['/', '\\']).collect();
     // Check all directory components (not the filename)
@@ -688,10 +689,12 @@ fn is_test_file(relative_path: &str) -> bool {
             return true;
         }
     }
-    // C# convention: filename starts with "Test" or ends with "Tests.cs"
+    // C# convention: filename starts with "Test", ends with "Tests.cs", or ends with "Test.cs"
     if let Some(filename) = parts.last() {
         if filename.ends_with(".cs")
-            && (filename.starts_with("Test") || filename.ends_with("Tests.cs"))
+            && (filename.starts_with("Test")
+                || filename.ends_with("Tests.cs")
+                || filename.ends_with("Test.cs"))
         {
             return true;
         }
