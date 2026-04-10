@@ -116,13 +116,15 @@ function test-submodule-is-ahead
 }
 
 # Check if resuming with a PR would regress any submodule compared to current master.
-# Returns $true if any submodule on master is already ahead of the fixed commit.
+# Also detects if master already has all changes (PR is redundant).
+# Returns a hashtable: { WouldRegress = $bool; AlreadyUpToDate = $bool }
 function check-pr-would-regress
 {
     param(
         [string] $repo_name
     )
     $would_regress = $false
+    $all_up_to_date = $true
 
     Push-Location $repo_name
 
@@ -149,7 +151,11 @@ function check-pr-would-regress
                     {
                         $current_sha = $matches[1]
 
-                        if ($current_sha -ne $target_sha)
+                        if ($current_sha -eq $target_sha)
+                        {
+                            # master already at the target — this submodule is up to date
+                        }
+                        else
                         {
                             # Check if current master is ahead of target
                             Push-Location $sub_path
@@ -163,38 +169,38 @@ function check-pr-would-regress
                             }
                             else
                             {
-                                # target is not ancestor of current — not a regression
+                                # target is newer than current — this submodule still needs updating
+                                $all_up_to_date = $false
                             }
                             Pop-Location
-                        }
-                        else
-                        {
-                            # same SHA, no issue
                         }
                     }
                     else
                     {
                         # couldn't parse submodule SHA from master
+                        $all_up_to_date = $false
                     }
                 }
                 else
                 {
-                    # no fixed commit for this submodule
+                    # no fixed commit for this submodule — can't determine if up to date
                 }
             }
         }
         else
         {
             # no submodule lines
+            $all_up_to_date = $false
         }
     }
     else
     {
         # no .gitmodules
+        $all_up_to_date = $false
     }
 
     Pop-Location
-    return $would_regress
+    return @{ WouldRegress = $would_regress; AlreadyUpToDate = $all_up_to_date }
 }
 
 # Update each submodule to its fixed commit, or latest master if no fixed commit is available

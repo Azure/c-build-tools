@@ -307,16 +307,22 @@ function update-repo
         }
         else
         {
-            # PR is still active — check for regression before monitoring
-            $would_regress = check-pr-would-regress -repo_name $repo_name
-            if ($would_regress)
+            # PR is still active — check for regression or redundancy
+            $pr_check = check-pr-would-regress -repo_name $repo_name
+            if ($pr_check.WouldRegress)
             {
                 fail-with-status "PR for $repo_name would regress submodules. Someone has already updated this repo with newer versions. Abandon the PR and start a new propagation."
             }
+            elseif ($pr_check.AlreadyUpToDate)
+            {
+                Write-Host "Master already has all the submodule versions this PR would set. Closing PR and skipping." -ForegroundColor Green
+                close-pr -repo_name $repo_name -pr_url $existing_pr_url
+                set-repo-status -repo_name $repo_name -status $script:STATUS_SKIPPED -message "Already up to date"
+                update-fixed-commit $repo_name
+            }
             else
             {
-                # no regression, safe to monitor
-            }
+                # PR still has changes to contribute
 
             # If autofix is enabled, check if the PR's checks have already failed.
             # If so, run autofix immediately instead of re-watching a known-bad build.
@@ -377,6 +383,7 @@ function update-repo
             monitor-pr -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
             set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
             update-fixed-commit $repo_name
+            }
         }
     }
 
