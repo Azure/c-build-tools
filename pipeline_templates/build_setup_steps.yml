@@ -28,10 +28,10 @@ steps:
     fetchDepth: 1
 
   # Shallow submodules - only need the pinned commit, not full history
-  - script: git submodule update --init --depth 1
+  - script: git submodule update --init --depth 1 --jobs 20
     displayName: 'Shallow checkout submodules'
 
-  # Authenticate NuGet feeds so cmake configure can restore packages
+  # Authenticate NuGet feedsso cmake configure can restore packages
   - ${{ if parameters.setup_nuget }}:
     - template: setup_nuget_tools.yml
 
