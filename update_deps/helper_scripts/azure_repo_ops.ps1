@@ -463,8 +463,22 @@ function wait-until-complete-azure
             }
             if(!$done -and -not $global:propagation_cancelled)
             {
-                # Build failed — try autofix if enabled
-                if ($global:auto_fix -and -not $global:propagation_cancelled -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
+                # Check if a Build check actually failed (vs timeout or non-build policy failure)
+                $has_build_failure = $false
+                $recheck_data = get-policy-display-data -pr_id $pr_id -org $org -ShowBuildDetails
+                if ($recheck_data -and $recheck_data.Checks)
+                {
+                    $failed_build_checks = @($recheck_data.Checks | Where-Object {
+                        $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
+                    })
+                    $has_build_failure = $failed_build_checks.Count -gt 0
+                }
+                else
+                {
+                    # couldn't recheck
+                }
+
+                if ($has_build_failure -and $global:auto_fix -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
                 {
                     $autofix_attempts++
                     Write-Host "`n  AutoFix attempt $autofix_attempts of $global:MAX_AUTOFIX_ATTEMPTS" -ForegroundColor Magenta
