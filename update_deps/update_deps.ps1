@@ -3,7 +3,7 @@
 
 git checkout master
 git pull
-git submodule update --init
+git submodule update --init --jobs 20
 git submodule foreach "git checkout master && git pull"
 git branch -D new_deps
 git checkout -b new_deps

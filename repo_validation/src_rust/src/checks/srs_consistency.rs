@@ -669,12 +669,33 @@ fn normalize_c_text(text: &str) -> String {
     parts.join(" ")
 }
 
-/// Determine if a file is a test file based on parent directory name ending with _ut or _int
+/// Determine if a file is a test file based on:
+/// - C convention: parent directory name ending with _ut or _int
+/// - C# convention: parent directory ending with UnitTests, IntTests, .UnitTests,
+///   or .IntTests (e.g., MyProject.UnitTests\SomeTests.cs)
+/// - C# convention: filename starting with "Test" (e.g., TestMyAdapter.cs),
+///   ending with "Tests.cs" (e.g., AllocateAsyncOperationTests.cs),
+///   or ending with "Test.cs" (e.g., AllocateAsyncOperationTest.cs)
 fn is_test_file(relative_path: &str) -> bool {
     let parts: Vec<&str> = relative_path.split(['/', '\\']).collect();
     // Check all directory components (not the filename)
     for dir in parts.iter().take(parts.len().saturating_sub(1)) {
+        // C convention: directory ends with _ut or _int
         if dir.ends_with("_ut") || dir.ends_with("_int") {
+            return true;
+        }
+        // C# convention: directory ends with UnitTests or IntTests
+        if dir.ends_with("UnitTests") || dir.ends_with("IntTests") {
+            return true;
+        }
+    }
+    // C# convention: filename starts with "Test", ends with "Tests.cs", or ends with "Test.cs"
+    if let Some(filename) = parts.last() {
+        if filename.ends_with(".cs")
+            && (filename.starts_with("Test")
+                || filename.ends_with("Tests.cs")
+                || filename.ends_with("Test.cs"))
+        {
             return true;
         }
     }
@@ -853,7 +874,7 @@ impl Check for SrsConsistency {
     }
 
     fn file_types(&self) -> u32 {
-        FILE_TYPE_MD | FILE_TYPE_C
+        FILE_TYPE_MD | FILE_TYPE_C | FILE_TYPE_CS
     }
 
     fn requires_devdoc(&self) -> bool {
@@ -888,8 +909,8 @@ impl Check for SrsConsistency {
             return;
         }
 
-        // Collect C file tags
-        if file.type_flags & FILE_TYPE_C == 0 {
+        // Collect C/C# file tags
+        if file.type_flags & (FILE_TYPE_C | FILE_TYPE_CS) == 0 {
             return;
         }
 
