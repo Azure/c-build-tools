@@ -366,6 +366,7 @@ function update-repo-github
         $cancelled = wait-or-cancel -seconds 5
         if ($cancelled) { $global:propagation_cancelled = $true; return $pr_url }
         $waited += 5
+        Write-Host "`r  Waited ${waited}s / ${max_wait}s..." -NoNewline -ForegroundColor Gray
         $checks_output = gh pr checks --json name,state 2>&1
         if ($LASTEXITCODE -eq 0 -and $checks_output -ne "[]" -and $checks_output -ne "")
         {
@@ -375,6 +376,7 @@ function update-repo-github
             if ($ci_checks.Count -gt 0)
             {
                 $checks_started = $true
+                Write-Host ""
                 Write-Host "CI checks detected after ${waited}s ($($ci_checks.Count) check(s))" -ForegroundColor Green
             }
             else
@@ -389,6 +391,7 @@ function update-repo-github
     }
     if (-not $checks_started)
     {
+        Write-Host ""
         Write-Host "No checks detected after ${max_wait}s, proceeding to watch anyway" -ForegroundColor Yellow
     }
     else
