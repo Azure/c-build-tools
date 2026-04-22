@@ -1,0 +1,28 @@
+# Reusable step template for build teardown: stop trace collection, publish artifacts on failure, and clean up.
+# Used by build_and_run_tests.yml for both the main test job and the AppVerifier job.
+
+parameters:
+  - name: repo_root_override
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
+  - name: ARCH_TYPE
+    default: "x64"
+  - name: build_configuration
+    default: "Debug"
+  - name: artifact_name_suffix
+    type: string
+
+steps:
+  - template : stop_logman.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish ${{ parameters.ARCH_TYPE }} ${{ parameters.build_configuration}} Artifacts'
+    inputs:
+      targetPath: $(Build.BinariesDirectory)
+      artifactName: ${{ parameters.artifact_name_suffix }}_artifacts
+      parallel: true
+    condition: failed()
+
+  - template : clean_ado_folders.yml

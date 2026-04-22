@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft. All rights reserved.
+﻿# Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 # Git operations functions for propagate_updates.ps1
@@ -717,7 +717,8 @@ function collect-upstream-changes
                             {
                                 foreach ($upstream_change in $global:repo_change_descriptions[$sub_repo_name])
                                 {
-                                    if (-not $seen_shas.ContainsKey($upstream_change.SHA))
+                                    if ($upstream_change.SHA -and
+                                        -not $seen_shas.ContainsKey($upstream_change.SHA))
                                     {
                                         $seen_shas[$upstream_change.SHA] = $true
                                         $changes += $upstream_change
@@ -916,7 +917,7 @@ function update-local-repo
     {
         # no deps folder
     }
-    git submodule update --init
+    git submodule update --init --jobs 20
     # update all submodules to their fixed commits (or latest master as fallback)
     update-submodules-to-fixed-commits
     # Update c-build-tools YAML refs to match new submodule SHA
@@ -990,7 +991,7 @@ function update-local-repo
     {
         $global:repo_change_descriptions = @{}
     }
-    $global:repo_change_descriptions[$repo_name] = $upstream_changes
+    $global:repo_change_descriptions[$repo_name] = @($upstream_changes)
 
     # Build commit message with subject and body
     $commit_message = $description.CommitSubject
