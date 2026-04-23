@@ -76,6 +76,133 @@ function snapshot-repo-commits
     return $commits
 }
 
+# Check if a submodule's current commit is ahead of a target commit.
+# Must be called from inside the submodule directory.
+# Returns $true if current HEAD is strictly ahead of target_sha.
+function test-submodule-is-ahead
+{
+    param(
+        [string] $target_sha
+    )
+    $result = $false
+
+    $current_sha = (git rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $current_sha)
+    {
+        $current_sha = $current_sha.Trim()
+        if ($current_sha -ne $target_sha)
+        {
+            git merge-base --is-ancestor $target_sha $current_sha 2>$null
+            if ($LASTEXITCODE -eq 0)
+            {
+                $result = $true
+            }
+            else
+            {
+                # target is not ancestor of current
+            }
+        }
+        else
+        {
+            # same SHA
+        }
+    }
+    else
+    {
+        # couldn't determine current SHA
+    }
+
+    return $result
+}
+
+# Check if resuming with a PR would regress any submodule compared to current master.
+# Also detects if master already has all changes (PR is redundant).
+# Returns a hashtable: { WouldRegress = $bool; AlreadyUpToDate = $bool }
+function check-pr-would-regress
+{
+    param(
+        [string] $repo_name
+    )
+    $would_regress = $false
+    $all_up_to_date = $true
+
+    Push-Location $repo_name
+
+    # Fetch latest master
+    git fetch origin master 2>$null
+
+    if (Test-Path ".gitmodules")
+    {
+        $submodule_lines = git config --file .gitmodules --get-regexp '\.path$'
+        if ($submodule_lines)
+        {
+            foreach ($line in $submodule_lines)
+            {
+                $sub_path = ($line -split "\s+", 2)[1]
+                $sub_repo_name = Split-Path $sub_path -Leaf
+
+                if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
+                {
+                    $target_sha = $global:fixed_commits[$sub_repo_name]
+
+                    # Get what master currently has for this submodule
+                    $master_sub_sha = git ls-tree origin/master -- $sub_path 2>$null
+                    if ($master_sub_sha -match '([0-9a-f]{40})')
+                    {
+                        $current_sha = $matches[1]
+
+                        if ($current_sha -eq $target_sha)
+                        {
+                            # master already at the target — this submodule is up to date
+                        }
+                        else
+                        {
+                            # Check if current master is ahead of target
+                            Push-Location $sub_path
+                            git fetch origin 2>$null
+                            $is_ahead = test-submodule-is-ahead -target_sha $target_sha
+                            if ($is_ahead)
+                            {
+                                Write-Host "  REGRESSION: $sub_repo_name on master is at $($current_sha.Substring(0, 8)) which is AHEAD of fixed commit $($target_sha.Substring(0, 8))" -ForegroundColor Red
+                                Write-Host "  Someone has already updated this repo with newer submodule versions." -ForegroundColor Red
+                                $would_regress = $true
+                            }
+                            else
+                            {
+                                # target is newer than current — this submodule still needs updating
+                                $all_up_to_date = $false
+                            }
+                            Pop-Location
+                        }
+                    }
+                    else
+                    {
+                        # couldn't parse submodule SHA from master
+                        $all_up_to_date = $false
+                    }
+                }
+                else
+                {
+                    # no fixed commit for this submodule — can't determine if up to date
+                }
+            }
+        }
+        else
+        {
+            # no submodule lines
+            $all_up_to_date = $false
+        }
+    }
+    else
+    {
+        # no .gitmodules
+        $all_up_to_date = $false
+    }
+
+    Pop-Location
+    return @{ WouldRegress = $would_regress; AlreadyUpToDate = $all_up_to_date }
+}
+
 # Update each submodule to its fixed commit, or latest master if no fixed commit is available
 function update-submodules-to-fixed-commits
 {
@@ -110,11 +237,47 @@ function update-submodules-to-fixed-commits
                     if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
                     {
                         $target_sha = $global:fixed_commits[$sub_repo_name]
-                        Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
                         git fetch origin
-                        git checkout $target_sha
-                        # Reset console color — git checkout may leave ANSI color codes active
-                        Write-Host "`e[0m" -NoNewline
+
+                        # Check if the submodule is already at or ahead of the target commit
+                        $current_sha = (git rev-parse HEAD 2>$null)
+                        if ($LASTEXITCODE -eq 0 -and $current_sha)
+                        {
+                            $current_sha = $current_sha.Trim()
+                        }
+                        else
+                        {
+                            $current_sha = $null
+                        }
+
+                        if ($current_sha -eq $target_sha)
+                        {
+                            Write-Host "  $sub_path already at fixed commit $($target_sha.Substring(0, 8))"
+                        }
+                        elseif ($current_sha)
+                        {
+                            $is_ahead = test-submodule-is-ahead -target_sha $target_sha
+                            if ($is_ahead)
+                            {
+                                # Current commit is ahead of target — do NOT downgrade
+                                Write-Host "  $sub_path is already at $($current_sha.Substring(0, 8)) which is ahead of fixed commit $($target_sha.Substring(0, 8)), keeping current" -ForegroundColor Yellow
+                            }
+                            else
+                            {
+                                # Target is not an ancestor of current — could be a different branch or target is newer
+                                Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
+                                git checkout $target_sha
+                                # Reset console color — git checkout may leave ANSI color codes active
+                                Write-Host "`e[0m" -NoNewline
+                            }
+                        }
+                        else
+                        {
+                            # Couldn't determine current SHA — proceed with checkout
+                            Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
+                            git checkout $target_sha
+                            Write-Host "`e[0m" -NoNewline
+                        }
 
                         # Warn if remote master has moved ahead of the fixed commit
                         $remote_sha = (git rev-parse origin/master 2>$null)
@@ -487,6 +650,29 @@ function collect-upstream-changes
                                         $commit_sha = $matches[1]
                                         $commit_subject = $matches[2]
 
+                                        # Replace GitHub PR references like (#123) with full
+                                        # URLs to prevent Azure DevOps from auto-linking them
+                                        # as ADO work items
+                                        if ($commit_subject -match '\(#(\d+)\)')
+                                        {
+                                            $sub_remote_url = (git config --get remote.origin.url 2>$null)
+                                            if ($sub_remote_url -match 'github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$')
+                                            {
+                                                $gh_slug = $matches[1]
+                                                $commit_subject = [regex]::Replace($commit_subject, '\(#(\d+)\)', { param($m) "(https://github.com/$gh_slug/pull/$($m.Groups[1].Value))" })
+                                            }
+                                            else
+                                            {
+                                                # not a GitHub repo, just strip the reference
+                                                $commit_subject = $commit_subject -replace '\s*\(#\d+\)\s*', ' '
+                                                $commit_subject = $commit_subject.Trim()
+                                            }
+                                        }
+                                        else
+                                        {
+                                            # no PR reference to replace
+                                        }
+
                                         # Filter out dep-update commits produced by this script
                                         if ($commit_subject -eq "Update dependencies" -or
                                             $commit_subject -like "Update deps:*" -or
@@ -657,6 +843,39 @@ function build-propagation-description
             }
             $pr_body_lines += ""
         }
+
+        # Add links to PRs created by this propagation run
+        if ($global:repo_status)
+        {
+            $pr_links = @()
+            foreach ($r in $global:repo_order_list)
+            {
+                if ($global:repo_status.ContainsKey($r) -and $global:repo_status[$r].PrUrl)
+                {
+                    $pr_links += "- [$r]($($global:repo_status[$r].PrUrl))"
+                }
+                else
+                {
+                    # no PR for this repo
+                }
+            }
+            if ($pr_links.Count -gt 0)
+            {
+                $pr_body_lines += "## Related PRs"
+                $pr_body_lines += ""
+                $pr_body_lines += $pr_links
+                $pr_body_lines += ""
+            }
+            else
+            {
+                # no PR links to add
+            }
+        }
+        else
+        {
+            # no repo status available
+        }
+
         $result.PrBody = $pr_body_lines -join "`n"
     }
 
@@ -676,6 +895,17 @@ function update-local-repo
     Push-Location $repo_name
     git checkout master
     Write-Host "`e[0m" -NoNewline
+    # Unshallow if this is a shallow clone (e.g., from build_graph.ps1 --depth 1)
+    $is_shallow = git rev-parse --is-shallow-repository 2>$null
+    if ($is_shallow -eq "true")
+    {
+        Write-Host "  Unshallowing repository..."
+        git fetch --unshallow
+    }
+    else
+    {
+        # full clone, no unshallowing needed
+    }
     git pull
     # Sometimes git fails to detect updates in submodules
     # Fix is to delete the submodule and reinitializes it
@@ -700,6 +930,60 @@ function update-local-repo
 
     # Collect upstream changes and build description
     $upstream_changes = collect-upstream-changes $repo_name
+
+    # If no upstream changes were found but there are staged changes,
+    # build a fallback description from the staged diff
+    if ((-not $upstream_changes -or $upstream_changes.Count -eq 0))
+    {
+        $staged_files = git diff --cached --name-only
+        if ($staged_files)
+        {
+            # Initialize as array so += works correctly
+            $upstream_changes = @()
+
+            # Identify what changed: submodule updates and/or file changes
+            $changed_submodules = @()
+            $changed_files = @()
+            foreach ($f in $staged_files)
+            {
+                if ($f -match "^deps/")
+                {
+                    $sub_name = ($f -replace "^deps/", "").Split("/")[0]
+                    if ($sub_name -notin $changed_submodules) { $changed_submodules += $sub_name }
+                }
+                else
+                {
+                    $changed_files += $f
+                }
+            }
+            # Build fallback change entries
+            foreach ($sub in $changed_submodules)
+            {
+                $upstream_changes += @{
+                    Repo = $sub
+                    SHA = ""
+                    Subject = "updated to latest"
+                }
+            }
+            foreach ($f in $changed_files)
+            {
+                $upstream_changes += @{
+                    Repo = $repo_name
+                    SHA = ""
+                    Subject = "updated $f"
+                }
+            }
+        }
+        else
+        {
+            # no staged changes
+        }
+    }
+    else
+    {
+        # upstream changes found
+    }
+
     $description = build-propagation-description $upstream_changes
 
     # Store change descriptions for downstream repos to reference
@@ -720,16 +1004,25 @@ function update-local-repo
         # no body, subject only
     }
 
-    $git_output = git commit -m $commit_message 2>&1
-    $commit_result = $LASTEXITCODE
-    # Only push if commit succeeded (there were changes)
-    if($commit_result -eq 0)
+    # Check if there are actually staged changes before committing
+    $staged_diff = git diff --cached --name-only
+    if (-not $staged_diff)
     {
-        git push -f origin $new_branch_name
+        $git_output = "nothing to commit, working tree clean"
     }
     else
     {
-        # nothing to push
+        $git_output = git commit -m $commit_message 2>&1
+        $commit_result = $LASTEXITCODE
+        # Only push if commit succeeded (there were changes)
+        if($commit_result -eq 0)
+        {
+            git push -f origin $new_branch_name
+        }
+        else
+        {
+            # nothing to push
+        }
     }
     Pop-Location
 

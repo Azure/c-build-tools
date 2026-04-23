@@ -74,6 +74,7 @@ param(
     [switch]$NoCloseFailedPr, # keep the PR open if it fails (default: close/abandon failed PRs)
     [switch]$ForceBuildGraph, # force graph rebuild even if known graph matches
     [switch]$Resume, # resume a previously failed propagation run
+    [switch]$AutoFix, # use Copilot CLI to auto-fix build failures
     [Parameter(Mandatory=$false)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
 
@@ -92,53 +93,19 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\github_repo_ops.ps1"
 . "$helper_scripts\success_animation.ps1"
 . "$helper_scripts\propagation_state.ps1"
+. "$helper_scripts\update_repo.ps1"
+. "$helper_scripts\autofix.ps1"
 
+# Build the resume command from the current invocation args
+$resume_args = @()
+if ($azure_token) { $resume_args += "-azure_token `"$azure_token`"" }
+if ($azure_work_item) { $resume_args += "-azure_work_item $azure_work_item" }
+if ($root_list) { $resume_args += "-root_list $($root_list -join ',')" }
+if ($poll_interval -ne 15) { $resume_args += "-poll_interval $poll_interval" }
+if ($NoCloseFailedPr) { $resume_args += "-NoCloseFailedPr" }
+if ($AutoFix) { $resume_args += "-AutoFix" }
+$global:resume_command = "$($MyInvocation.MyCommand.Path) $($resume_args -join ' ') -Resume"
 
-# update dependencies for given repo
-function update-repo
-{
-    param(
-        [string] $repo_name,
-        [string] $new_branch_name
-    )
-    Write-Host "`n`nUpdating repo $repo_name"
-    set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS
-    $global:current_repo = $repo_name
-
-    # Ensure we're in the work directory
-    Set-Location $global:work_dir
-
-    $update_result = (update-local-repo $repo_name $new_branch_name)
-    [string]$git_output = $update_result.GitOutput
-    $description = $update_result.Description
-    if($git_output.Contains("nothing to commit"))
-    {
-        Write-Host "Nothing to commit, skipping repo $repo_name"
-        set-repo-status -repo_name $repo_name -status $script:STATUS_SKIPPED -message "No changes"
-    }
-    else
-    {
-        $repo_type = get-repo-type $repo_name
-        $pr_url = $null
-        if($repo_type -eq "github")
-        {
-            $pr_url = update-repo-github $repo_name $new_branch_name $description
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-            update-fixed-commit $repo_name
-        }
-        elseif ($repo_type -eq "azure")
-        {
-            $pr_url = update-repo-azure $repo_name $new_branch_name $description
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-            update-fixed-commit $repo_name
-        }
-        else
-        {
-            fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
-        }
-    }
-    Write-Host "Done updating repo $repo_name"
-}
 
 # iterate over all repos and update them
 function propagate-updates
@@ -152,6 +119,12 @@ function propagate-updates
     # Store poll interval for use by repo ops functions
     $global:poll_interval = $poll_interval
 
+    # Store auto-fix flag for use by repo ops functions
+    $global:auto_fix = $AutoFix.IsPresent
+
+    # Store resume flag so update-repo knows whether to look for existing PRs
+    $global:is_resume = $Resume.IsPresent
+
     # Check PowerShell version first
     check-powershell-version
 
@@ -164,6 +137,13 @@ function propagate-updates
     $repo_order = $null
     $repo_urls = $null
     $new_branch_name = $null
+
+    # Store state params as globals so fail-with-status can save state before exiting
+    $global:_state_repo_order = $null
+    $global:_state_repo_urls = $null
+    $global:_state_branch_name = $null
+    $global:_state_root_list = $root_list
+    $global:_state_azure_work_item = $azure_work_item
 
     if ($Resume.IsPresent)
     {
@@ -198,6 +178,13 @@ function propagate-updates
         $repo_urls = $saved_state.repo_urls
         $global:fixed_commits = $saved_state.fixed_commits
         $global:work_dir = Split-Path $state_path -Parent
+
+        # Update state globals for fail-with-status
+        $global:_state_branch_name = $new_branch_name
+        $global:_state_repo_order = $repo_order
+        $global:_state_repo_urls = $repo_urls
+        $global:_state_root_list = $saved_state.root_list
+        $global:_state_azure_work_item = $saved_state.azure_work_item
         $azure_work_item = $saved_state.azure_work_item
         $root_list = $saved_state.root_list
 
@@ -239,7 +226,7 @@ function propagate-updates
 
         # Show what was already done
         Write-Host "`nResumed propagation status:" -ForegroundColor Cyan
-        show-propagation-status
+        [void](show-propagation-status)
     }
     else
     {
@@ -267,6 +254,9 @@ function propagate-updates
         $new_branch_name = "new_deps_" + (Get-Date -Format "yyyyMMddHHmmss")
         Write-Host "New branch name: $new_branch_name"
 
+        # Update state globals for fail-with-status
+        $global:_state_branch_name = $new_branch_name
+
         # Create a new directory for this update session
         $global:work_dir = Join-Path (Get-Location).Path $new_branch_name
         New-Item -ItemType Directory -Path $global:work_dir -Force | Out-Null
@@ -287,6 +277,10 @@ function propagate-updates
             # graph built successfully
         }
         Write-Host "Done building dependency graph"
+
+        # Update state globals for fail-with-status
+        $global:_state_repo_order = $repo_order
+        $global:_state_repo_urls = $repo_urls
 
         # Clone any repos that aren't already present (known graph path only clones roots)
         Write-Host "Ensuring all repositories are cloned..."
@@ -330,7 +324,9 @@ function propagate-updates
         Write-Host "$($i+1). $($repo_order[$i])"
     }
 
-    # Register Ctrl+C handler to prompt user about closing the current PR
+    # Ctrl+C handling: works during our own sleep intervals (wait-or-cancel).
+    # During external commands (az, gh, git), Ctrl+C terminates immediately.
+    # State is saved after each repo, so use -Resume to continue.
     $global:propagation_cancelled = $false
     [Console]::TreatControlCAsInput = $true
 
@@ -371,9 +367,11 @@ function propagate-updates
 
     if ($global:propagation_cancelled)
     {
-        show-propagation-status -Final
+        [void](show-propagation-status -Final)
         restore-original-directory
         Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
+        Write-Host "To resume from where it stopped, run:" -ForegroundColor Cyan
+        Write-Host "  $global:resume_command" -ForegroundColor White
         exit 1
     }
     else
