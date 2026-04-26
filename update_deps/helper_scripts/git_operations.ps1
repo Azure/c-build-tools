@@ -925,8 +925,16 @@ function update-local-repo
     # create new branch
     git checkout -B $new_branch_name
     Write-Host "`e[0m" -NoNewline
-    # add updates and push to remote
-    git add .
+    # Stage only the paths the script modifies: submodule pointers and YAML refs.
+    # Using 'git add .' would stage unrelated whitespace/line-ending normalization artifacts.
+    if (Test-Path "deps")
+    {
+        git add deps/
+    }
+    if (Test-Path "build")
+    {
+        git add build/
+    }
 
     # Collect upstream changes and build description
     $upstream_changes = collect-upstream-changes $repo_name
