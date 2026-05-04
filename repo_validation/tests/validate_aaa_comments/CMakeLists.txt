@@ -4,43 +4,40 @@
 #
 # AAA Comment Validation Tests
 #
-# Tests the validate_aaa_comments.ps1 script to ensure it correctly detects
+# Tests the repo_validator aaa_comments check to ensure it correctly detects
 # missing or incorrectly ordered AAA (Arrange, Act, Assert) comments in test functions.
 #
 
-set(VALIDATE_AAA_COMMENTS_SCRIPT "${VALIDATION_SCRIPTS_DIR}/validate_aaa_comments.ps1")
-
-# Test 1: Verify script detects missing AAA comments
+# Test 1: Verify tool detects missing AAA comments
 add_custom_target(test_validate_aaa_comments_detection
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_AAA_COMMENTS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa"
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa" --check aaa_comments
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment detection on files with missing comments"
+    DEPENDS repo_validator_rs
 )
 
-# Test 2: Verify script passes on files with proper AAA comments
+# Test 2: Verify tool passes on files with proper AAA comments
 add_custom_target(test_validate_aaa_comments_clean
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_AAA_COMMENTS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa"
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa" --check aaa_comments
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment validation on clean files"
+    DEPENDS repo_validator_rs
 )
 
-# Test 3: Verify script handles exempted tests correctly
+# Test 3: Verify tool handles exempted tests correctly
 add_custom_target(test_validate_aaa_comments_exempted
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_AAA_COMMENTS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa"
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa" --check aaa_comments
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment validation with exempted tests"
+    DEPENDS repo_validator_rs
 )
 
-# Test 4: Verify -Fix parameter doesn't break anything (it should do nothing)
+# Test 4: Verify --fix parameter doesn't break anything (it should do nothing)
 add_custom_target(test_validate_aaa_comments_fix_noop
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_AAA_COMMENTS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa"
-        -Fix
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/has_aaa" --check aaa_comments --fix
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing that -Fix parameter has no effect"
+    COMMENT "Testing that --fix parameter has no effect"
+    DEPENDS repo_validator_rs
 )
 
 # Master target for all AAA comment validation tests
@@ -55,6 +52,28 @@ add_dependencies(test_validate_aaa_comments
     test_validate_aaa_comments_fix_noop
 )
 
-# Note: We don't add test_validate_aaa_comments_detection as a dependency because 
-# it should fail with exit code 1 (which would fail the build). 
-# Instead, it's available to run manually to verify detection works.
+# Test 5: Verify tool detects missing AAA in PARAMETERIZED_TEST_FUNCTION
+add_custom_target(test_validate_aaa_comments_parameterized_detection
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa_parameterized" --check aaa_comments
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing AAA comment detection on parameterized tests with missing comments"
+    DEPENDS repo_validator_rs
+)
+
+# Test 6: Verify tool detects partial AAA (2 out of 3 comments present)
+add_custom_target(test_validate_aaa_comments_partial_detection
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa_partial" --check aaa_comments
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing AAA comment detection on tests with only 2 of 3 AAA comments"
+    DEPENDS repo_validator_rs
+)
+
+# Master target for all expected-failure tests
+add_custom_target(test_validate_aaa_comments_failures
+    COMMENT "Running all aaa_comments failure detection tests"
+)
+add_dependencies(test_validate_aaa_comments_failures
+    test_validate_aaa_comments_detection
+    test_validate_aaa_comments_parameterized_detection
+    test_validate_aaa_comments_partial_detection
+)

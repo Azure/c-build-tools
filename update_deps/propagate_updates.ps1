@@ -62,11 +62,6 @@ PS> .\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345
 
 .EXAMPLE
 
-PS> .\propagate_updates.ps1 -azure_work_item 12345 -useCachedRepoOrder -root_list root1, root2, ...
-# Uses cached repo order if root_list matches the cached root_list
-
-.EXAMPLE
-
 PS> .\propagate_updates.ps1 -Resume
 # Resumes the most recent failed propagation run from the last failed repo
 #>
@@ -75,9 +70,11 @@ PS> .\propagate_updates.ps1 -Resume
 param(
     [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
     [Parameter(Mandatory=$false)][Int32]$azure_work_item, # Work item id to link to Azure PRs
-    [switch]$useCachedRepoOrder, # use cached repo order if root_list matches
+    [Parameter(Mandatory=$false)][Int32]$poll_interval = 15, # Seconds between status polls during PR watch
     [switch]$NoCloseFailedPr, # keep the PR open if it fails (default: close/abandon failed PRs)
+    [switch]$ForceBuildGraph, # force graph rebuild even if known graph matches
     [switch]$Resume, # resume a previously failed propagation run
+    [switch]$AutoFix, # use Copilot CLI to auto-fix build failures
     [Parameter(Mandatory=$false)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
 
@@ -88,7 +85,6 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\check_script_update.ps1"
 . "$helper_scripts\install_az_cli.ps1"
 . "$helper_scripts\install_gh_cli.ps1"
-. "$helper_scripts\repo_order_cache.ps1"
 . "$helper_scripts\status_tracking.ps1"
 . "$helper_scripts\git_operations.ps1"
 . "$helper_scripts\watch_azure_pr.ps1"
@@ -97,53 +93,19 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\github_repo_ops.ps1"
 . "$helper_scripts\success_animation.ps1"
 . "$helper_scripts\propagation_state.ps1"
+. "$helper_scripts\update_repo.ps1"
+. "$helper_scripts\autofix.ps1"
 
+# Build the resume command from the current invocation args
+$resume_args = @()
+if ($azure_token) { $resume_args += "-azure_token `"$azure_token`"" }
+if ($azure_work_item) { $resume_args += "-azure_work_item $azure_work_item" }
+if ($root_list) { $resume_args += "-root_list $($root_list -join ',')" }
+if ($poll_interval -ne 15) { $resume_args += "-poll_interval $poll_interval" }
+if ($NoCloseFailedPr) { $resume_args += "-NoCloseFailedPr" }
+if ($AutoFix) { $resume_args += "-AutoFix" }
+$global:resume_command = "$($MyInvocation.MyCommand.Path) $($resume_args -join ' ') -Resume"
 
-# update dependencies for given repo
-function update-repo
-{
-    param(
-        [string] $repo_name,
-        [string] $new_branch_name
-    )
-    Write-Host "`n`nUpdating repo $repo_name"
-    set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS
-    $global:current_repo = $repo_name
-
-    # Ensure we're in the work directory
-    Set-Location $global:work_dir
-
-    $update_result = (update-local-repo $repo_name $new_branch_name)
-    [string]$git_output = $update_result.GitOutput
-    $description = $update_result.Description
-    if($git_output.Contains("nothing to commit"))
-    {
-        Write-Host "Nothing to commit, skipping repo $repo_name"
-        set-repo-status -repo_name $repo_name -status $script:STATUS_SKIPPED -message "No changes"
-    }
-    else
-    {
-        $repo_type = get-repo-type $repo_name
-        $pr_url = $null
-        if($repo_type -eq "github")
-        {
-            $pr_url = update-repo-github $repo_name $new_branch_name $description
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-            update-fixed-commit $repo_name
-        }
-        elseif ($repo_type -eq "azure")
-        {
-            $pr_url = update-repo-azure $repo_name $new_branch_name $description
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-            update-fixed-commit $repo_name
-        }
-        else
-        {
-            fail-with-status "Unable to update repository $repo_name. Only Github and Azure repositories are supported."
-        }
-    }
-    Write-Host "Done updating repo $repo_name"
-}
 
 # iterate over all repos and update them
 function propagate-updates
@@ -153,6 +115,15 @@ function propagate-updates
 
     # Close failed PRs by default unless -NoCloseFailedPr is specified
     $global:close_failed_pr = -not $NoCloseFailedPr.IsPresent
+
+    # Store poll interval for use by repo ops functions
+    $global:poll_interval = $poll_interval
+
+    # Store auto-fix flag for use by repo ops functions
+    $global:auto_fix = $AutoFix.IsPresent
+
+    # Store resume flag so update-repo knows whether to look for existing PRs
+    $global:is_resume = $Resume.IsPresent
 
     # Check PowerShell version first
     check-powershell-version
@@ -166,6 +137,13 @@ function propagate-updates
     $repo_order = $null
     $repo_urls = $null
     $new_branch_name = $null
+
+    # Store state params as globals so fail-with-status can save state before exiting
+    $global:_state_repo_order = $null
+    $global:_state_repo_urls = $null
+    $global:_state_branch_name = $null
+    $global:_state_root_list = $root_list
+    $global:_state_azure_work_item = $azure_work_item
 
     if ($Resume.IsPresent)
     {
@@ -200,6 +178,13 @@ function propagate-updates
         $repo_urls = $saved_state.repo_urls
         $global:fixed_commits = $saved_state.fixed_commits
         $global:work_dir = Split-Path $state_path -Parent
+
+        # Update state globals for fail-with-status
+        $global:_state_branch_name = $new_branch_name
+        $global:_state_repo_order = $repo_order
+        $global:_state_repo_urls = $repo_urls
+        $global:_state_root_list = $saved_state.root_list
+        $global:_state_azure_work_item = $saved_state.azure_work_item
         $azure_work_item = $saved_state.azure_work_item
         $root_list = $saved_state.root_list
 
@@ -241,7 +226,7 @@ function propagate-updates
 
         # Show what was already done
         Write-Host "`nResumed propagation status:" -ForegroundColor Cyan
-        show-propagation-status
+        [void](show-propagation-status)
     }
     else
     {
@@ -269,79 +254,55 @@ function propagate-updates
         $new_branch_name = "new_deps_" + (Get-Date -Format "yyyyMMddHHmmss")
         Write-Host "New branch name: $new_branch_name"
 
+        # Update state globals for fail-with-status
+        $global:_state_branch_name = $new_branch_name
+
         # Create a new directory for this update session
         $global:work_dir = Join-Path (Get-Location).Path $new_branch_name
         New-Item -ItemType Directory -Path $global:work_dir -Force | Out-Null
         Set-Location $global:work_dir
         Write-Host "Working directory: $global:work_dir"
 
-        # build dependency graph (or use cache)
-        $cached_data = $null
-
-        if ($useCachedRepoOrder)
+        # build dependency graph
+        Write-Host "Building dependency graph..."
+        $build_graph_args = @{ root_list = $root_list }
+        if ($ForceBuildGraph) { $build_graph_args['ForceBuildGraph'] = $true }
+        . "$helper_scripts\build_graph.ps1" @build_graph_args
+        if (-not $repo_order -or $repo_order.Count -eq 0)
         {
-            $cached_data = get-cached-repo-order -root_list $root_list
+            fail-with-status "Could not build dependency graph for $root_list."
         }
         else
         {
-            # will build fresh
+            # graph built successfully
         }
+        Write-Host "Done building dependency graph"
 
-        if ($cached_data)
+        # Update state globals for fail-with-status
+        $global:_state_repo_order = $repo_order
+        $global:_state_repo_urls = $repo_urls
+
+        # Clone any repos that aren't already present (known graph path only clones roots)
+        Write-Host "Ensuring all repositories are cloned..."
+        Set-Location $global:work_dir
+        foreach ($repo_name in $repo_order)
         {
-            $repo_order = $cached_data.repo_order
-            $repo_urls = $cached_data.repo_urls
-            Write-Host "Using cached repo order"
-            Set-Content -Path .\order.json -Value ($repo_order | ConvertTo-Json)
-            # Clone repos that aren't already present using cached URLs
-            Write-Host "Cloning repositories..."
-            foreach ($repo_name in $repo_order)
+            if (-not (Test-Path -Path $repo_name))
             {
-                if (-not (Test-Path -Path $repo_name))
+                if ($repo_urls.ContainsKey($repo_name))
                 {
-                    $repo_url = $repo_urls.$repo_name
-                    if ($repo_url)
-                    {
-                        Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
-                        git clone $repo_url
-                    }
-                    else
-                    {
-                        Write-Host "Warning: No URL cached for $repo_name, skipping" -ForegroundColor Yellow
-                    }
+                    Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
+                    git clone $repo_urls[$repo_name]
                 }
                 else
                 {
-                    # already present
+                    Write-Host "Warning: No URL for $repo_name, skipping clone" -ForegroundColor Yellow
                 }
             }
-            Write-Host "Done cloning repositories"
-        }
-        else
-        {
-            Write-Host "Building dependency graph..."
-            .$helper_scripts\build_graph.ps1 -root_list $root_list
-            if($LASTEXITCODE -ne 0)
-            {
-                fail-with-status "Could not build dependency graph for $root_list."
-            }
             else
             {
-                # graph built successfully
+                # already cloned
             }
-            Write-Host "Done building dependency graph"
-            # build_graph.ps1 sets the cache, so read from it
-            $cached_data = get-cached-repo-order -root_list $root_list
-            if (-not $cached_data)
-            {
-                fail-with-status "Failed to get cached repo order after building graph."
-            }
-            else
-            {
-                # cache retrieved
-            }
-            $repo_order = $cached_data.repo_order
-            $repo_urls = $cached_data.repo_urls
         }
 
         # Initialize status tracking
@@ -358,45 +319,81 @@ function propagate-updates
     }
 
     Write-Host "Updating repositories in the following order: "
-    for($i = 0; $i -lt $repo_order.Length; $i++)
+    for($i = 0; $i -lt $repo_order.Count; $i++)
     {
         Write-Host "$($i+1). $($repo_order[$i])"
     }
 
-    foreach ($repo in $repo_order)
-    {
-        # Skip repos that were already updated or skipped (for resume)
-        if ($global:repo_status.ContainsKey($repo) -and
-            ($global:repo_status[$repo].Status -eq "updated" -or $global:repo_status[$repo].Status -eq "skipped"))
-        {
-            Write-Host "`nSkipping $repo (already $($global:repo_status[$repo].Status))" -ForegroundColor Gray
-        }
-        else
-        {
-            update-repo $repo $new_branch_name
-        }
+    # Ctrl+C handling: works during our own sleep intervals (wait-or-cancel).
+    # During external commands (az, gh, git), Ctrl+C terminates immediately.
+    # State is saved after each repo, so use -Resume to continue.
+    $global:propagation_cancelled = $false
+    [Console]::TreatControlCAsInput = $true
 
-        # Save state after each repo so the run can be resumed
-        save-propagation-state -branch_name $new_branch_name -repo_order $repo_order -repo_urls $repo_urls -root_list $root_list -azure_work_item $azure_work_item
+    try
+    {
+        foreach ($repo in $repo_order)
+        {
+            # Check for Ctrl+C between repos
+            if ($global:propagation_cancelled)
+            {
+                break
+            }
+            else
+            {
+                # continue propagation
+            }
+
+            # Skip repos that were already updated or skipped (for resume)
+            if ($global:repo_status.ContainsKey($repo) -and
+                ($global:repo_status[$repo].Status -eq "updated" -or $global:repo_status[$repo].Status -eq "skipped"))
+            {
+                Write-Host "`nSkipping $repo (already $($global:repo_status[$repo].Status))" -ForegroundColor Gray
+            }
+            else
+            {
+                update-repo $repo $new_branch_name
+            }
+
+            # Save state after each repo so the run can be resumed
+            save-propagation-state -branch_name $new_branch_name -repo_order $repo_order -repo_urls $repo_urls -root_list $root_list -azure_work_item $azure_work_item
+        }
+    }
+    finally
+    {
+        # Restore normal Ctrl+C behavior
+        [Console]::TreatControlCAsInput = $false
     }
 
-    # Show final status and check if all succeeded
-    $success = show-propagation-status -Final
-
-    # Warn about any repos with newer commits that were not propagated
-    show-skipped-commits-summary
-
-    if ($success)
+    if ($global:propagation_cancelled)
     {
-        play-success-animation
+        [void](show-propagation-status -Final)
+        restore-original-directory
+        Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
+        Write-Host "To resume from where it stopped, run:" -ForegroundColor Cyan
+        Write-Host "  $global:resume_command" -ForegroundColor White
+        exit 1
     }
     else
     {
-        Write-Host "Done updating repos (with some failures)" -ForegroundColor Yellow
-    }
+        # Show final status and check if all succeeded
+        $success = show-propagation-status -Final
 
-    # Restore original directory
-    restore-original-directory
+        # Warn about any repos with newer commits that were not propagated
+        show-skipped-commits-summary
+
+        if ($success)
+        {
+            play-success-animation
+        }
+        else
+        {
+            Write-Host "Done updating repos (with some failures)" -ForegroundColor Yellow
+        }
+
+        # Restore original directory
+        restore-original-directory
+    }
 }
 
 propagate-updates

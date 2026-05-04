@@ -1,12 +1,12 @@
 # Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-# Test helper: Runs validate_srs_consistency.ps1 and verifies that tag placement
+# Test helper: Runs repo_validator srs_consistency check and verifies that tag placement
 # violation output includes file names.
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$ScriptPath,
+    [string]$ValidatorPath,
 
     [Parameter(Mandatory=$true)]
     [string]$FixtureRoot,
@@ -20,8 +20,8 @@ $ErrorActionPreference = "Stop"
 # Split comma-separated file names into array
 $fileNames = $ExpectedFileNames -split ","
 
-# Run the validation script as a subprocess to capture Write-Host output
-$output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ScriptPath -RepoRoot $FixtureRoot 2>&1 | Out-String
+# Run the validator as a subprocess to capture output
+$output = & $ValidatorPath --repo-root $FixtureRoot --check srs_consistency 2>&1 | Out-String
 
 $failed = $false
 foreach ($fileName in $fileNames) {
