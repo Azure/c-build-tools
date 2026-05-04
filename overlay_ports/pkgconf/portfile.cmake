@@ -6,8 +6,14 @@ vcpkg_from_github(
     HEAD_REF master
 )
 
-set(OPTIONS "-Dc_args=/QSpectre /guard:cf /W3")
-list(APPEND OPTIONS "-Dc_link_args=/CETCOMPAT /guard:cf")
+if(VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
+    # /QSpectre and /CETCOMPAT are not supported on ARM64; omit them on this architecture only.
+    set(OPTIONS "-Dc_args=/guard:cf /W3")
+    list(APPEND OPTIONS "-Dc_link_args=/guard:cf")
+else()
+    set(OPTIONS "-Dc_args=/QSpectre /guard:cf /W3")
+    list(APPEND OPTIONS "-Dc_link_args=/CETCOMPAT /guard:cf")
+endif()
 
 vcpkg_configure_meson(
     SOURCE_PATH "${SOURCE_PATH}"

@@ -6,7 +6,9 @@ if(NOT DEFINED CMAKE_MINIMUM_REQUIRED_VERSION)
     #cmake_minimum_required(VERSION 3.24) #3.24 brings in support for WHOLE_ARCHIVE which is needed for vld
 endif()
 
-cmake_policy(SET CMP0177 NEW) #cmake --help-policy CMP0177
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.31")
+    cmake_policy(SET CMP0177 NEW) #cmake --help-policy CMP0177
+endif()
 
 # canon way of using build_tools from another repo is below. It assumes the using repo has placed c-build-tools in "deps"
 
@@ -18,6 +20,8 @@ if(TARGET c_build_tools)
     return()
 endif()
 
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 add_custom_target(c_build_tools)
 
 project(c_build_tools)
@@ -26,6 +30,7 @@ option(run_unittests "set run_unittests to ON to build unittests (default is OFF
 option(run_e2e_tests "set run_e2e_tests to ON to build e2e tests (default is OFF)." OFF)
 option(run_int_tests "set run_int_tests to ON to build integration tests (default is OFF)." OFF)
 option(run_perf_tests "set run_perf_tests to ON to build performance tests (default is OFF)." OFF)
+option(build_reals "set build_reals to ON to build reals libraries needed by unit tests (default is ON)" ON)
 option(use_segment_heap "Use segment heap on Windows as opposed to regular NT heap (default is ON)." ON)
 option(run_valgrind "run valgrind on tests (Linux only) (default is ON)." ON)
 option(run_helgrind "run helgrind on tests (Linux only) (default is ON)." ON)

@@ -80,7 +80,19 @@ steps:
         
         Push-Location $buildDir
         try {
-          $fullArgs = @($sourceDir) + ($cmakeArgs -split ' ') + @('-G', "$(cmakeGenerator)", '-A', "$(cmakeArch)")
+          # -DCMAKE_SUPPRESS_REGENERATION=ON removes the ZERO_CHECK project from
+          # generated Visual Studio solutions. ZERO_CHECK exists to detect changes
+          # to CMakeLists.txt and re-run cmake, but every other project in the
+          # solution depends on it. When MSBuild builds projects in parallel (/m),
+          # multiple workers race to write ZERO_CHECK.tlog\unsuccessfulbuild and
+          # fail with MSB3371 ("The process cannot access the file ... because it
+          # is being used by another process"). The failure is timing-dependent
+          # and is more likely under heavy I/O load (e.g. many parallel CI jobs
+          # on a shared pool). In CI the build directory is always freshly
+          # configured by this very step, so auto-regeneration on CMakeLists
+          # change is never needed. Harmless no-op for non-Visual-Studio
+          # generators (Ninja, Makefiles).
+          $fullArgs = @($sourceDir) + ($cmakeArgs -split ' ') + @('-G', "$(cmakeGenerator)", '-A', "$(cmakeArch)", '-DCMAKE_SUPPRESS_REGENERATION=ON')
           # Filter out empty strings
           $fullArgs = $fullArgs | Where-Object { $_ -ne '' }
           

@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft. All rights reserved.
+﻿# Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 <#
@@ -12,6 +12,166 @@ This module provides normalized status enums, display formatting functions, and 
 watch loop that can be used by both Azure DevOps and GitHub PR watching scripts.
 
 #>
+
+
+#
+# Windows toast notification for PR events
+#
+function global:show-pr-notification
+{
+    param(
+        [string] $repo_name,
+        [string] $pr_url,
+        [string] $message = "PR created"
+    )
+
+    try
+    {
+        Add-Type -AssemblyName System.Windows.Forms
+        $notify = New-Object System.Windows.Forms.NotifyIcon
+        $notify.Icon = [System.Drawing.SystemIcons]::Information
+        $notify.Visible = $true
+        $notify.BalloonTipTitle = $message
+        $notify.BalloonTipText = "$repo_name`n$pr_url"
+        $notify.ShowBalloonTip(5000)
+        # Clean up after a delay so the notification stays visible
+        Start-Sleep -Milliseconds 100
+    }
+    catch
+    {
+        # Toast notifications are best-effort — don't fail propagation if they don't work
+    }
+}
+
+
+#
+# Ctrl+C aware sleep - checks for Ctrl+C keypress during the sleep interval.
+# If detected, prompts the user to close/abandon the current PR.
+# Returns $true if propagation should be cancelled, $false otherwise.
+#
+function global:wait-or-cancel
+{
+    param(
+        [int] $seconds
+    )
+    $cancelled = $false
+
+    for ($i = 0; $i -lt ($seconds * 10); $i++)
+    {
+        Start-Sleep -Milliseconds 100
+        if ([Console]::KeyAvailable)
+        {
+            $key = [Console]::ReadKey($true)
+            if ($key.Key -eq [ConsoleKey]::C -and $key.Modifiers -eq [ConsoleModifiers]::Control)
+            {
+                $cancelled = prompt-cancel-propagation
+                if ($cancelled)
+                {
+                    break
+                }
+                else
+                {
+                    # user chose to continue
+                }
+            }
+            else
+            {
+                # ignore other keys
+            }
+        }
+        else
+        {
+            # no key pressed
+        }
+    }
+
+    return $cancelled
+}
+
+
+#
+# Prompt user to close/abandon the current PR after Ctrl+C
+# Returns $true if user wants to cancel, $false to continue
+#
+function global:prompt-cancel-propagation
+{
+    $result = $false
+
+    Write-Host "`n`nCtrl+C detected." -ForegroundColor Yellow
+
+    $pr_url = $null
+    if ($global:current_repo -and $global:repo_status.ContainsKey($global:current_repo))
+    {
+        $pr_url = $global:repo_status[$global:current_repo].PrUrl
+    }
+    else
+    {
+        # no current repo
+    }
+
+    if ($pr_url)
+    {
+        Write-Host "A pull request is currently open for '$($global:current_repo)':" -ForegroundColor Yellow
+        Write-Host "  $pr_url" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "What would you like to do?" -ForegroundColor Yellow
+        Write-Host "  [Enter] Close the PR and stop propagation (default)" -ForegroundColor White
+        Write-Host "  [n]     Stop propagation but leave the PR open" -ForegroundColor White
+        Write-Host "  [r]     Go back - resume watching the PR" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Choice: " -ForegroundColor Yellow -NoNewline
+
+        # Restore normal input for the prompt
+        [Console]::TreatControlCAsInput = $false
+        $response = Read-Host
+        [Console]::TreatControlCAsInput = $true
+
+        if ($response -eq 'r' -or $response -eq 'R')
+        {
+            Write-Host "Resuming..." -ForegroundColor Cyan
+            # result stays false = don't cancel
+        }
+        elseif ($response -eq 'n' -or $response -eq 'N')
+        {
+            Write-Host "PR left open." -ForegroundColor Cyan
+            set-repo-status -repo_name $global:current_repo -status "failed" -message "Cancelled by user (PR left open)"
+            $result = $true
+        }
+        else
+        {
+            # default: close PR and exit
+            close-pr -repo_name $global:current_repo -pr_url $pr_url
+            set-repo-status -repo_name $global:current_repo -status "failed" -message "Cancelled by user"
+            # Clear PR URL so downstream error handlers don't try to close it again
+            $global:repo_status[$global:current_repo].PrUrl = ""
+            $result = $true
+        }
+    }
+    else
+    {
+        Write-Host "What would you like to do?" -ForegroundColor Yellow
+        Write-Host "  [Enter] Stop propagation (default)" -ForegroundColor White
+        Write-Host "  [r]     Go back - resume propagation" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Choice: " -ForegroundColor Yellow -NoNewline
+
+        [Console]::TreatControlCAsInput = $false
+        $response = Read-Host
+        [Console]::TreatControlCAsInput = $true
+
+        if ($response -eq 'r' -or $response -eq 'R')
+        {
+            Write-Host "Resuming..." -ForegroundColor Cyan
+        }
+        else
+        {
+            # default: exit
+            $result = $true
+        }
+    }
+
+    return $result
+}
 
 
 #
@@ -426,41 +586,61 @@ function global:Test-ChecksComplete
     }
     else
     {
-        # Filter to blocking checks (if IsBlocking exists, use it; otherwise all are blocking)
-        $blocking_checks = $checks | Where-Object {
-            $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
-        }
+        # Filter out license/CLA checks and manual approval checks (e.g., Proof Of Presence)
+        # — these don't indicate CI build status
+        $ci_checks = $checks | Where-Object { $_.Name -notmatch "license|cla|proof.of.presence" }
 
-        # Check if any blocking check is still in progress
-        $in_progress = $blocking_checks | Where-Object {
-            $_.Status -eq [PrCheckStatus]::Running -or $_.Status -eq [PrCheckStatus]::Pending
-        }
-
-        if($in_progress.Count -gt 0)
+        if (-not $ci_checks -or $ci_checks.Count -eq 0)
         {
-            $in_progress_names = ($in_progress | ForEach-Object { $_.Name }) -join ", "
-            $result = @{ Complete = $false; Success = $false; Message = "Waiting for: $in_progress_names" }
+            # Only license/CLA checks present — CI hasn't started yet
+            $result = @{ Complete = $false; Success = $false; Message = "Waiting for CI checks to appear" }
         }
         else
         {
-            # All checks have reached terminal state - check if any failed
-            $failed = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed }
-            $cancelled = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Cancelled }
-            $succeeded = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Succeeded }
-
-            if($failed.Count -gt 0)
-            {
-                $failed_names = ($failed | ForEach-Object { $_.Name }) -join ", "
-                $result = @{ Complete = $true; Success = $false; Message = "Failed: $failed_names" }
+            # Filter to blocking checks (if IsBlocking exists, use it; otherwise all are blocking)
+            $blocking_checks = $ci_checks | Where-Object {
+                $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
             }
-            elseif($cancelled.Count -gt 0 -and $succeeded.Count -eq 0)
+
+        # Check if any BUILD check has failed — no need to wait for others.
+        # Check all Build checks regardless of IsBlocking — a failed build is
+        # always actionable, even if the policy is marked non-blocking.
+        $failed_builds = $ci_checks | Where-Object {
+            $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
+        }
+        if($failed_builds.Count -gt 0)
+        {
+            $failed_names = ($failed_builds | ForEach-Object { $_.Name }) -join ", "
+            $result = @{ Complete = $true; Success = $false; Message = "Failed: $failed_names" }
+        }
+        else
+        {
+            # Check if any blocking check is still in progress
+            $in_progress = $blocking_checks | Where-Object {
+                $_.Status -eq [PrCheckStatus]::Running -or $_.Status -eq [PrCheckStatus]::Pending
+            }
+
+            if($in_progress.Count -gt 0)
             {
-                $result = @{ Complete = $true; Success = $false; Message = "Checks were cancelled" }
+                $in_progress_names = ($in_progress | ForEach-Object { $_.Name }) -join ", "
+                $result = @{ Complete = $false; Success = $false; Message = "Waiting for: $in_progress_names" }
             }
             else
             {
-                $result = @{ Complete = $true; Success = $true; Message = "All checks passed" }
+                # All checks have reached terminal state with no failures
+                $cancelled = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Cancelled }
+                $succeeded = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Succeeded }
+
+                if($cancelled.Count -gt 0 -and $succeeded.Count -eq 0)
+                {
+                    $result = @{ Complete = $true; Success = $false; Message = "Checks were cancelled" }
+                }
+                else
+                {
+                    $result = @{ Complete = $true; Success = $true; Message = "All checks passed" }
+                }
             }
+        }
         }
     }
 
@@ -551,12 +731,47 @@ function global:watch-pr-status
         else
         {
             # Pre-fetch all data before clearing screen
-            $display_data = & $FetchData
-            if(-not $display_data)
+            $fetch_interrupted = $false
+            try
+            {
+                $display_data = & $FetchData
+            }
+            catch
+            {
+                # Ctrl+C during external command (az, gh) lands here
+                $display_data = $null
+                $fetch_interrupted = $true
+            }
+
+            if ($fetch_interrupted)
+            {
+                # Ctrl+C hit during fetch — show the cancellation prompt
+                [Console]::TreatControlCAsInput = $false
+                $cancelled = prompt-cancel-propagation
+                [Console]::TreatControlCAsInput = $true
+                if ($cancelled)
+                {
+                    $global:propagation_cancelled = $true
+                    $fn_result = @{ Success = $false; Message = "Cancelled by user" }
+                }
+                else
+                {
+                    # user chose to resume, continue the loop
+                }
+            }
+            elseif(-not $display_data)
             {
                 Write-Host "Failed to get checks status, retrying..." -ForegroundColor Yellow
-                Start-Sleep -Seconds $poll_interval
-                # continue loop with fn_result still null
+                $cancelled = wait-or-cancel -seconds $poll_interval
+                if ($cancelled)
+                {
+                    $global:propagation_cancelled = $true
+                    $fn_result = @{ Success = $false; Message = "Cancelled by user" }
+                }
+                else
+                {
+                    # continue loop with fn_result still null
+                }
             }
             else
             {
@@ -584,7 +799,16 @@ function global:watch-pr-status
                 }
                 else
                 {
-                    Start-Sleep -Seconds $poll_interval
+                    $cancelled = wait-or-cancel -seconds $poll_interval
+                    if ($cancelled)
+                    {
+                        $global:propagation_cancelled = $true
+                        $fn_result = @{ Success = $false; Message = "Cancelled by user" }
+                    }
+                    else
+                    {
+                        # continue polling
+                    }
                 }
             }
         }
