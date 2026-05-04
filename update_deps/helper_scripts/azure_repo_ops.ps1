@@ -51,6 +51,176 @@ function get-azure-org-project
 }
 
 
+# Find an active Azure PR for a given branch. Returns the PR URL or $null.
+function find-active-azure-pr
+{
+    param(
+        [string] $repo_name,
+        [string] $branch_name
+    )
+    $result = $null
+
+    $azure_info = get-azure-org-project $repo_name
+    $org = $azure_info.Organization
+    $project = $azure_info.Project
+    $pr_list_output = az repos pr list `
+        --repository $repo_name `
+        --source-branch $branch_name `
+        --target-branch master `
+        --status active `
+        --organization $org `
+        --project $project `
+        --output json 2>$null
+    if ($LASTEXITCODE -eq 0 -and $pr_list_output)
+    {
+        $prs = @($pr_list_output | ConvertFrom-Json)
+        if ($prs.Count -gt 0)
+        {
+            $pr_id = $prs[0].pullRequestId
+            # az repos pr list doesn't populate repository.webUrl,
+            # so construct the URL from org/project/repo
+            $result = "$org/$project/_git/$repo_name/pullrequest/$pr_id"
+        }
+        else
+        {
+            # no active PRs for this branch
+        }
+    }
+    else
+    {
+        # couldn't query PRs
+    }
+
+    return $result
+}
+
+
+# Get the status of an Azure PR. Returns "completed", "abandoned", or "active".
+function get-azure-pr-status
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name
+    )
+    $result = "active"
+
+    if ($pr_url -match "/pullrequest/(\d+)")
+    {
+        $pr_id = [int]$matches[1]
+        $azure_info = get-azure-org-project $repo_name
+        $pr_check = az repos pr show --id $pr_id --organization $azure_info.Organization --output json 2>&1
+        if ($LASTEXITCODE -eq 0)
+        {
+            $pr_info = $pr_check | ConvertFrom-Json
+            $result = $pr_info.status
+        }
+        else
+        {
+            # couldn't check PR status, assume active
+        }
+    }
+    else
+    {
+        # couldn't parse PR ID from URL
+    }
+
+    return $result
+}
+
+
+# Monitor an existing Azure PR until completion.
+function monitor-azure-pr
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name
+    )
+
+    if ($pr_url -match "/pullrequest/(\d+)")
+    {
+        $pr_id = [int]$matches[1]
+        $azure_info = get-azure-org-project $repo_name
+        wait-until-complete-azure $pr_id $azure_info.Organization $repo_name
+    }
+    else
+    {
+        fail-with-status "Could not parse PR ID from URL: $pr_url"
+    }
+}
+
+
+# Close/abandon an Azure PR, checking status first.
+function close-pr-azure
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name
+    )
+
+    $status = get-azure-pr-status -pr_url $pr_url -repo_name $repo_name
+    if ($status -eq "completed")
+    {
+        Write-Host "Azure PR is already completed (merged), skipping abandon" -ForegroundColor Green
+    }
+    elseif ($status -eq "abandoned")
+    {
+        Write-Host "Azure PR is already abandoned, skipping" -ForegroundColor Gray
+    }
+    else
+    {
+        Write-Host "Abandoning Azure PR: $pr_url" -ForegroundColor Yellow
+        if ($pr_url -match "/pullrequest/(\d+)")
+        {
+            $pr_id = $matches[1]
+            $azure_info = get-azure-org-project $repo_name
+            az repos pr update --id $pr_id --status abandoned --organization $azure_info.Organization --output json | Out-Null
+            if ($LASTEXITCODE -eq 0)
+            {
+                Write-Host "Azure PR abandoned successfully" -ForegroundColor Green
+            }
+            else
+            {
+                Write-Host "Warning: Failed to abandon Azure PR ID: $pr_id" -ForegroundColor Yellow
+            }
+        }
+        else
+        {
+            Write-Host "Warning: Could not parse PR ID from URL: $pr_url" -ForegroundColor Yellow
+        }
+    }
+}
+
+
+# Reopen an abandoned Azure PR.
+function reopen-pr-azure
+{
+    param(
+        [string] $pr_url,
+        [string] $repo_name
+    )
+
+    if ($pr_url -match "/pullrequest/(\d+)")
+    {
+        $pr_id = $matches[1]
+        $azure_info = get-azure-org-project $repo_name
+        Write-Host "Reactivating Azure PR $pr_id..." -ForegroundColor Cyan
+        az repos pr update --id $pr_id --status active --organization $azure_info.Organization --output json | Out-Null
+        if ($LASTEXITCODE -eq 0)
+        {
+            Write-Host "Azure PR reactivated successfully" -ForegroundColor Green
+        }
+        else
+        {
+            Write-Host "Warning: Failed to reactivate Azure PR ID: $pr_id" -ForegroundColor Yellow
+        }
+    }
+    else
+    {
+        Write-Host "Warning: Could not parse PR ID from URL: $pr_url" -ForegroundColor Yellow
+    }
+}
+
+
 # create PR to update dependencies for Azure repo using Azure CLI
 function create-pr-azure
 {
@@ -79,6 +249,17 @@ function create-pr-azure
         # no description, use defaults
     }
 
+    # Truncate body to avoid Windows command line length limits (~8000 chars)
+    $max_body_len = 4000
+    if ($pr_body.Length -gt $max_body_len)
+    {
+        $pr_body = $pr_body.Substring(0, $max_body_len) + "`n`n... (truncated)"
+    }
+    else
+    {
+        # body fits within limits
+    }
+
     $pr_output = az repos pr create `
         --repository $repo_name `
         --source-branch $new_branch_name `
@@ -91,6 +272,8 @@ function create-pr-azure
 
     if($LASTEXITCODE -ne 0)
     {
+        # Existing PRs are already detected by update-repo before reaching here.
+        # If creation still fails, it's an unexpected error — fail immediately.
         fail-with-status "Failed to create PR for repo $repo_name"
     }
     else
@@ -194,6 +377,42 @@ function set-autocomplete-azure
 }
 
 
+# Fetch PR status with retries to handle transient API failures
+function get-pr-status-with-retry
+{
+    param(
+        [int] $pr_id,
+        [string] $org,
+        [int] $max_retries = 3,
+        [int] $retry_delay = 5
+    )
+    $result = $null
+
+    for ($attempt = 1; $attempt -le $max_retries; $attempt++)
+    {
+        $pr_output = az repos pr show --id $pr_id --organization $org --output json 2>$null
+        if ($LASTEXITCODE -eq 0 -and $pr_output)
+        {
+            $result = $pr_output | ConvertFrom-Json
+            break
+        }
+        else
+        {
+            if ($attempt -lt $max_retries)
+            {
+                Write-Host "  Retrying PR status check ($attempt/$max_retries)..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $retry_delay
+            }
+            else
+            {
+                # all retries exhausted
+            }
+        }
+    }
+
+    return $result
+}
+
 # wait until build completes for Azure repo using Azure CLI
 function wait-until-complete-azure
 {
@@ -203,65 +422,35 @@ function wait-until-complete-azure
         [string] $repo_name
     )
     $done = $false
+    $autofix_attempts = 0
 
-    Write-Host "Waiting for build to complete"
-    Write-Host "`nWatching PR policies..."
-    $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval 30 -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
-
-    if(!$success)
+    while (-not $done)
     {
-        # Check if PR completed despite policy failures (e.g., manually merged)
-        $pr_output = az repos pr show --id $pr_id --organization $org --output json
-        if($LASTEXITCODE -eq 0)
+        Write-Host "Waiting for build to complete"
+        Write-Host "`nWatching PR policies..."
+        $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval $global:poll_interval -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
+
+        if(!$success)
         {
-            $pr_info = $pr_output | ConvertFrom-Json
-            if($pr_info.status -eq "completed")
+            # Policy watch reported failure — check if PR already completed
+            $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
+            if($pr_info -and $pr_info.status -eq "completed")
             {
                 Write-Host "PR completed successfully" -ForegroundColor Green
                 $done = $true
             }
             else
             {
-                # PR not completed, fall through to fail
-            }
-        }
-        else
-        {
-            # couldn't get PR status, fall through to fail
-        }
-        if(!$done)
-        {
-            fail-with-status "PR $pr_id failed to complete. Check policy status above."
-        }
-        else
-        {
-            # already done
-        }
-    }
-    else
-    {
-        # Verify PR is completed
-        $pr_output = az repos pr show --id $pr_id --organization $org --output json
-        if($LASTEXITCODE -ne 0)
-        {
-            fail-with-status "Failed to get PR status for ID: $pr_id"
-        }
-        else
-        {
-            $pr_info = $pr_output | ConvertFrom-Json
-            if($pr_info.status -ne "completed")
-            {
-                # PR policies passed but PR not yet merged - wait a bit for autocomplete
-                Write-Host "Waiting for PR to auto-complete..."
-                $max_wait = 60
+                # Wait for autocomplete (non-blocking policy may have failed while build passed)
+                $max_wait = 120
                 $waited = 0
                 while($waited -lt $max_wait -and !$done)
                 {
-                    Start-Sleep -Seconds 10
-                    $waited += 10
-                    $pr_output = az repos pr show --id $pr_id --organization $org --output json
-                    $pr_info = $pr_output | ConvertFrom-Json
-                    if($pr_info.status -eq "completed")
+                    $cancelled = wait-or-cancel -seconds 5
+                    if ($cancelled) { $global:propagation_cancelled = $true; break }
+                    $waited += 5
+                    $pr_check = get-pr-status-with-retry -pr_id $pr_id -org $org -max_retries 1
+                    if($pr_check -and $pr_check.status -eq "completed")
                     {
                         Write-Host "PR completed successfully" -ForegroundColor Green
                         $done = $true
@@ -271,18 +460,107 @@ function wait-until-complete-azure
                         # keep waiting
                     }
                 }
-                if(!$done)
+            }
+            if(!$done -and -not $global:propagation_cancelled)
+            {
+                # Check if a Build check actually failed (vs timeout or non-build policy failure)
+                $has_build_failure = $false
+                $recheck_data = get-policy-display-data -pr_id $pr_id -org $org -ShowBuildDetails
+                if ($recheck_data -and $recheck_data.Checks)
                 {
-                    Write-Host "Warning: PR policies passed but PR status is: $($pr_info.status)" -ForegroundColor Yellow
+                    $failed_build_checks = @($recheck_data.Checks | Where-Object {
+                        $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
+                    })
+                    $has_build_failure = $failed_build_checks.Count -gt 0
                 }
                 else
                 {
-                    # already logged success
+                    # couldn't recheck
+                }
+
+                if ($has_build_failure -and $global:auto_fix -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
+                {
+                    $autofix_attempts++
+                    Write-Host "`n  AutoFix attempt $autofix_attempts of $global:MAX_AUTOFIX_ATTEMPTS" -ForegroundColor Magenta
+                    Push-Location $repo_name
+                    $branch_name = git rev-parse --abbrev-ref HEAD 2>$null
+                    $pr_url_for_fix = "$org/One/_git/$repo_name/pullrequest/$pr_id"
+                    $fix_result = invoke-copilot-autofix -repo_name $repo_name -branch_name $branch_name -pr_url $pr_url_for_fix
+                    Pop-Location
+                    if ($fix_result)
+                    {
+                        Write-Host "  AutoFix pushed a fix, restarting watch..." -ForegroundColor Magenta
+                        # Loop continues — will re-enter watch
+                    }
+                    else
+                    {
+                        fail-with-status "PR $pr_id failed to complete. AutoFix could not resolve the build failure."
+                    }
+                }
+                else
+                {
+                    if ($global:propagation_cancelled)
+                    {
+                        # User cancelled — just break, don't close the PR
+                        $done = $true
+                    }
+                    else
+                    {
+                        fail-with-status "PR $pr_id failed to complete. Check policy status above."
+                    }
                 }
             }
             else
             {
-                Write-Host "PR completed successfully" -ForegroundColor Green
+                # already done or cancelled
+            }
+        }
+        else
+        {
+            # Verify PR is completed
+            $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
+            if(-not $pr_info)
+            {
+                fail-with-status "Failed to get PR status for ID: $pr_id after retries"
+            }
+            else
+            {
+                if($pr_info.status -ne "completed")
+                {
+                    # PR policies passed but PR not yet merged - wait a bit for autocomplete
+                    Write-Host "Waiting for PR to auto-complete..."
+                    $max_wait = 60
+                    $waited = 0
+                    while($waited -lt $max_wait -and !$done)
+                    {
+                        $cancelled = wait-or-cancel -seconds 2
+                        if ($cancelled) { $global:propagation_cancelled = $true; break }
+                        $waited += 2
+                        $pr_check = get-pr-status-with-retry -pr_id $pr_id -org $org -max_retries 1
+                        if($pr_check -and $pr_check.status -eq "completed")
+                        {
+                            Write-Host "PR completed successfully" -ForegroundColor Green
+                            $done = $true
+                        }
+                        else
+                        {
+                            # keep waiting
+                        }
+                    }
+                    if(!$done)
+                    {
+                        Write-Host "Warning: PR policies passed but PR status is: $($pr_info.status)" -ForegroundColor Yellow
+                    }
+                    else
+                    {
+                        # already logged success
+                    }
+                }
+                else
+                {
+                    Write-Host "PR completed successfully" -ForegroundColor Green
+                    $done = $true
+                }
             }
         }
     }
@@ -319,6 +597,16 @@ function update-repo-azure
 
     # Update status with PR URL immediately so it shows even if later steps fail
     set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $result
+
+    # Show Windows notification with PR link
+    if ($result)
+    {
+        show-pr-notification -repo_name $repo_name -pr_url $result
+    }
+    else
+    {
+        # no PR URL to notify about
+    }
 
     link-work-item-to-pr-azure $pr_id $org $project
 

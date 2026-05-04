@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft. All rights reserved.
+﻿# Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 # Propagation state persistence functions for propagate_updates.ps1
@@ -208,11 +208,11 @@ function restore-repo-status
             }
             else
             {
-                # failed or pending — reset to pending for retry
+                # failed or in-progress — reset to pending for retry, but preserve PrUrl
                 $global:repo_status[$repo] = @{
                     Status = $script:STATUS_PENDING
                     Message = ""
-                    PrUrl = ""
+                    PrUrl = if ($saved.PrUrl) { $saved.PrUrl } else { "" }
                 }
             }
         }

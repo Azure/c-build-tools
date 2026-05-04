@@ -62,8 +62,8 @@ function set-repo-status
     }
 }
 
-# Close/abandon a PR for the given repo
-# Uses get-repo-type and get-azure-org-project to avoid duplicating URL parsing logic
+# Close/abandon a PR for the given repo.
+# Dispatches to platform-specific close functions in azure_repo_ops.ps1 / github_repo_ops.ps1.
 function close-pr
 {
     param(
@@ -79,40 +79,11 @@ function close-pr
         $repo_type = get-repo-type $repo_name
         if ($repo_type -eq "github")
         {
-            Write-Host "Closing GitHub PR: $pr_url" -ForegroundColor Yellow
-            gh pr close $pr_url
-            if ($LASTEXITCODE -eq 0)
-            {
-                Write-Host "GitHub PR closed successfully" -ForegroundColor Green
-            }
-            else
-            {
-                Write-Host "Warning: Failed to close GitHub PR: $pr_url" -ForegroundColor Yellow
-            }
+            close-pr-github -pr_url $pr_url
         }
         elseif ($repo_type -eq "azure")
         {
-            Write-Host "Abandoning Azure PR: $pr_url" -ForegroundColor Yellow
-            # Extract PR ID from URL like .../pullrequest/12345
-            if ($pr_url -match "/pullrequest/(\d+)")
-            {
-                $pr_id = $matches[1]
-                $azure_info = get-azure-org-project $repo_name
-                $org = $azure_info.Organization
-                az repos pr update --id $pr_id --status abandoned --organization $org --output json | Out-Null
-                if ($LASTEXITCODE -eq 0)
-                {
-                    Write-Host "Azure PR abandoned successfully" -ForegroundColor Green
-                }
-                else
-                {
-                    Write-Host "Warning: Failed to abandon Azure PR ID: $pr_id" -ForegroundColor Yellow
-                }
-            }
-            else
-            {
-                Write-Host "Warning: Could not parse PR ID from URL: $pr_url" -ForegroundColor Yellow
-            }
+            close-pr-azure -pr_url $pr_url -repo_name $repo_name
         }
         else
         {
@@ -160,12 +131,36 @@ function fail-with-status
     {
         # no current repo to mark as failed
     }
-    show-propagation-status -Final
+    [void](show-propagation-status -Final)
+
+    # Save state so resume can pick up PrUrls and status from this failed run
+    if ($global:_state_branch_name -and $global:_state_repo_order -and $global:work_dir)
+    {
+        save-propagation-state `
+            -branch_name $global:_state_branch_name `
+            -repo_order $global:_state_repo_order `
+            -repo_urls $global:_state_repo_urls `
+            -root_list $global:_state_root_list `
+            -azure_work_item $global:_state_azure_work_item
+    }
+    else
+    {
+        # state globals not yet initialized, nothing to save
+    }
 
     # Restore original directory so the user is not stranded in work_dir/<repo>
     restore-original-directory
 
     Write-Error $message
+    Write-Host "`nTo resume from where it stopped, run:" -ForegroundColor Cyan
+    if ($global:resume_command)
+    {
+        Write-Host "  $global:resume_command" -ForegroundColor White
+    }
+    else
+    {
+        Write-Host "  propagate_updates.ps1 -Resume" -ForegroundColor White
+    }
     exit -1
 }
 
@@ -329,14 +324,14 @@ function show-propagation-status
             Write-Host ", $pending pending" -ForegroundColor DarkGray
             Write-Host ""
 
-            # Return success if no failures
-            if($failed -eq 0)
+            # Return success if no failures and no pending
+            if($failed -eq 0 -and $pending -eq 0)
             {
                 $result = $true
             }
             else
             {
-                # there were failures
+                # there were failures or pending repos
             }
         }
         else

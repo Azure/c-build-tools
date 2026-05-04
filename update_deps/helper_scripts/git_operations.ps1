@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft. All rights reserved.
+﻿# Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 # Git operations functions for propagate_updates.ps1
@@ -76,6 +76,133 @@ function snapshot-repo-commits
     return $commits
 }
 
+# Check if a submodule's current commit is ahead of a target commit.
+# Must be called from inside the submodule directory.
+# Returns $true if current HEAD is strictly ahead of target_sha.
+function test-submodule-is-ahead
+{
+    param(
+        [string] $target_sha
+    )
+    $result = $false
+
+    $current_sha = (git rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $current_sha)
+    {
+        $current_sha = $current_sha.Trim()
+        if ($current_sha -ne $target_sha)
+        {
+            git merge-base --is-ancestor $target_sha $current_sha 2>$null
+            if ($LASTEXITCODE -eq 0)
+            {
+                $result = $true
+            }
+            else
+            {
+                # target is not ancestor of current
+            }
+        }
+        else
+        {
+            # same SHA
+        }
+    }
+    else
+    {
+        # couldn't determine current SHA
+    }
+
+    return $result
+}
+
+# Check if resuming with a PR would regress any submodule compared to current master.
+# Also detects if master already has all changes (PR is redundant).
+# Returns a hashtable: { WouldRegress = $bool; AlreadyUpToDate = $bool }
+function check-pr-would-regress
+{
+    param(
+        [string] $repo_name
+    )
+    $would_regress = $false
+    $all_up_to_date = $true
+
+    Push-Location $repo_name
+
+    # Fetch latest master
+    git fetch origin master 2>$null
+
+    if (Test-Path ".gitmodules")
+    {
+        $submodule_lines = git config --file .gitmodules --get-regexp '\.path$'
+        if ($submodule_lines)
+        {
+            foreach ($line in $submodule_lines)
+            {
+                $sub_path = ($line -split "\s+", 2)[1]
+                $sub_repo_name = Split-Path $sub_path -Leaf
+
+                if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
+                {
+                    $target_sha = $global:fixed_commits[$sub_repo_name]
+
+                    # Get what master currently has for this submodule
+                    $master_sub_sha = git ls-tree origin/master -- $sub_path 2>$null
+                    if ($master_sub_sha -match '([0-9a-f]{40})')
+                    {
+                        $current_sha = $matches[1]
+
+                        if ($current_sha -eq $target_sha)
+                        {
+                            # master already at the target — this submodule is up to date
+                        }
+                        else
+                        {
+                            # Check if current master is ahead of target
+                            Push-Location $sub_path
+                            git fetch origin 2>$null
+                            $is_ahead = test-submodule-is-ahead -target_sha $target_sha
+                            if ($is_ahead)
+                            {
+                                Write-Host "  REGRESSION: $sub_repo_name on master is at $($current_sha.Substring(0, 8)) which is AHEAD of fixed commit $($target_sha.Substring(0, 8))" -ForegroundColor Red
+                                Write-Host "  Someone has already updated this repo with newer submodule versions." -ForegroundColor Red
+                                $would_regress = $true
+                            }
+                            else
+                            {
+                                # target is newer than current — this submodule still needs updating
+                                $all_up_to_date = $false
+                            }
+                            Pop-Location
+                        }
+                    }
+                    else
+                    {
+                        # couldn't parse submodule SHA from master
+                        $all_up_to_date = $false
+                    }
+                }
+                else
+                {
+                    # no fixed commit for this submodule — can't determine if up to date
+                }
+            }
+        }
+        else
+        {
+            # no submodule lines
+            $all_up_to_date = $false
+        }
+    }
+    else
+    {
+        # no .gitmodules
+        $all_up_to_date = $false
+    }
+
+    Pop-Location
+    return @{ WouldRegress = $would_regress; AlreadyUpToDate = $all_up_to_date }
+}
+
 # Update each submodule to its fixed commit, or latest master if no fixed commit is available
 function update-submodules-to-fixed-commits
 {
@@ -110,11 +237,47 @@ function update-submodules-to-fixed-commits
                     if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
                     {
                         $target_sha = $global:fixed_commits[$sub_repo_name]
-                        Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
                         git fetch origin
-                        git checkout $target_sha
-                        # Reset console color — git checkout may leave ANSI color codes active
-                        Write-Host "`e[0m" -NoNewline
+
+                        # Check if the submodule is already at or ahead of the target commit
+                        $current_sha = (git rev-parse HEAD 2>$null)
+                        if ($LASTEXITCODE -eq 0 -and $current_sha)
+                        {
+                            $current_sha = $current_sha.Trim()
+                        }
+                        else
+                        {
+                            $current_sha = $null
+                        }
+
+                        if ($current_sha -eq $target_sha)
+                        {
+                            Write-Host "  $sub_path already at fixed commit $($target_sha.Substring(0, 8))"
+                        }
+                        elseif ($current_sha)
+                        {
+                            $is_ahead = test-submodule-is-ahead -target_sha $target_sha
+                            if ($is_ahead)
+                            {
+                                # Current commit is ahead of target — do NOT downgrade
+                                Write-Host "  $sub_path is already at $($current_sha.Substring(0, 8)) which is ahead of fixed commit $($target_sha.Substring(0, 8)), keeping current" -ForegroundColor Yellow
+                            }
+                            else
+                            {
+                                # Target is not an ancestor of current — could be a different branch or target is newer
+                                Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
+                                git checkout $target_sha
+                                # Reset console color — git checkout may leave ANSI color codes active
+                                Write-Host "`e[0m" -NoNewline
+                            }
+                        }
+                        else
+                        {
+                            # Couldn't determine current SHA — proceed with checkout
+                            Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
+                            git checkout $target_sha
+                            Write-Host "`e[0m" -NoNewline
+                        }
 
                         # Warn if remote master has moved ahead of the fixed commit
                         $remote_sha = (git rev-parse origin/master 2>$null)
@@ -163,149 +326,153 @@ function update-submodules-to-fixed-commits
 # blocks. This prevents validate_c_build_tools_ref from failing on propagation PRs.
 function update-c-build-tools-yaml-refs
 {
-    # Parse .gitmodules to find the c-build-tools submodule path
-    $submodule_path = ""
-    $current_path = ""
-    $found_c_build_tools = $false
-
-    foreach ($line in (Get-Content ".gitmodules"))
+    # Only repos with submodules have a .gitmodules file
+    if (-not (Test-Path ".gitmodules"))
     {
-        # Check for submodule section header
-        if ($line -match '^\[submodule\s+"([^"]+)"\]')
-        {
-            $current_path = ""
-            $found_c_build_tools = $false
-        }
-        # Extract the submodule path
-        if ($line -match '^\s*path\s*=\s*(.+)$')
-        {
-            $current_path = $Matches[1].Trim()
-        }
-        # Check if this submodule's URL points to c-build-tools
-        if ($line -match '^\s*url\s*=\s*.*c-build-tools')
-        {
-            $found_c_build_tools = $true
-        }
-        # If we found the c-build-tools URL and have its path, we're done
-        if ($found_c_build_tools -and $current_path -ne "")
-        {
-            $submodule_path = $current_path
-            break
-        }
-        else
-        {
-            # haven't found c-build-tools submodule yet, continue parsing
-        }
-    }
-
-    if ($submodule_path -ne "")
-    {
-        # Get the c-build-tools submodule SHA from the working tree (not HEAD, since
-        # update-submodules-to-fixed-commits has already checked out the new commit)
-        $new_sha = ""
-        if (Test-Path $submodule_path)
-        {
-            $new_sha = (git -C $submodule_path rev-parse HEAD 2>$null)
-            if ($LASTEXITCODE -ne 0)
-            {
-                $new_sha = ""
-            }
-            else
-            {
-                $new_sha = $new_sha.Trim()
-            }
-        }
-        else
-        {
-            # submodule path doesn't exist
-        }
-
-        if ($new_sha -eq "")
-        {
-            Write-Host "  Warning: Could not get c-build-tools submodule SHA" -ForegroundColor Yellow
-        }
-        else
-        {
-            Write-Host "  c-build-tools submodule SHA: $($new_sha.Substring(0, 12))..."
-
-            # Find pipeline YAML files in build/ that reference c_build_tools
-            $yml_files = Get-ChildItem -Path "build" -Filter "*.yml" -ErrorAction SilentlyContinue
-            foreach ($file in $yml_files)
-            {
-                # Skip files that don't reference c_build_tools
-                $content = Get-Content -Path $file.FullName -Raw -ErrorAction SilentlyContinue
-                if (-not $content -or $content -notmatch 'repository:\s*c_build_tools')
-                {
-                    # file does not reference c_build_tools, skip
-                }
-                else
-                {
-                    # Parse lines to find the ref: value inside the c_build_tools repository block
-                    $lines = Get-Content -Path $file.FullName
-                    $in_c_build_tools_block = $false
-                    $ref_line_index = -1
-                    $ref_value = ""
-
-                    for ($i = 0; $i -lt $lines.Count; $i++)
-                    {
-                        $line = $lines[$i]
-
-                        # Detect start of c_build_tools repository block
-                        if ($line -match '^\s*-?\s*repository:\s*c_build_tools\s*$')
-                        {
-                            $in_c_build_tools_block = $true
-                        }
-                        elseif ($in_c_build_tools_block)
-                        {
-                            # Exit block on next repository definition or non-indented line
-                            if ($line -match '^\s*-\s*repository:' -or ($line -match '^\S' -and $line -notmatch '^\s*$'))
-                            {
-                                $in_c_build_tools_block = $false
-                            }
-                            elseif ($line -match '^\s*ref:\s*(.+)$')
-                            {
-                                # Found the ref: line in the c_build_tools block
-                                $ref_value = $Matches[1].Trim()
-                                $ref_line_index = $i
-                                $in_c_build_tools_block = $false
-                            }
-                            else
-                            {
-                                # other line inside the block (type, name, endpoint), skip
-                            }
-                        }
-                        else
-                        {
-                            # not in c_build_tools block, skip line
-                        }
-                    }
-
-                    # Update SHA refs that don't match the submodule
-                    if ($ref_line_index -ne -1 -and
-                        $ref_value -ne "refs/heads/master" -and
-                        $ref_value -match '^[0-9a-f]{40}$' -and
-                        $ref_value -ne $new_sha)
-                    {
-                        $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
-                        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-                        [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
-                        Write-Host "  Updated $($file.Name) ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
-                    }
-                    else
-                    {
-                        # ref already matches, is refs/heads/master, or not found
-                    }
-                }
-            }
-        }
-        else
-        {
-            # could not determine SHA, skip YAML updates
-        }
+        # no submodules, nothing to update
     }
     else
     {
-        # no c-build-tools submodule found, nothing to update
+        # Parse .gitmodules to find the c-build-tools submodule path
+        $submodule_path = ""
+        $current_path = ""
+        $found_c_build_tools = $false
+
+        foreach ($line in (Get-Content ".gitmodules"))
+        {
+            # Check for submodule section header
+            if ($line -match '^\[submodule\s+"([^"]+)"\]')
+            {
+                $current_path = ""
+                $found_c_build_tools = $false
+            }
+            # Extract the submodule path
+            if ($line -match '^\s*path\s*=\s*(.+)$')
+            {
+                $current_path = $Matches[1].Trim()
+            }
+            # Check if this submodule's URL points to c-build-tools
+            if ($line -match '^\s*url\s*=\s*.*c-build-tools')
+            {
+                $found_c_build_tools = $true
+            }
+            # If we found the c-build-tools URL and have its path, we're done
+            if ($found_c_build_tools -and $current_path -ne "")
+            {
+                $submodule_path = $current_path
+                break
+            }
+            else
+            {
+                # haven't found c-build-tools submodule yet, continue parsing
+            }
+        }
+
+        if ($submodule_path -ne "")
+        {
+            # Get the c-build-tools submodule SHA from the working tree (not HEAD, since
+            # update-submodules-to-fixed-commits has already checked out the new commit)
+            $new_sha = ""
+            if (Test-Path $submodule_path)
+            {
+                $new_sha = (git -C $submodule_path rev-parse HEAD 2>$null)
+                if ($LASTEXITCODE -ne 0)
+                {
+                    $new_sha = ""
+                }
+                else
+                {
+                    $new_sha = $new_sha.Trim()
+                }
+            }
+            else
+            {
+                # submodule path doesn't exist
+            }
+
+            if ($new_sha -eq "")
+            {
+                Write-Host "  Warning: Could not get c-build-tools submodule SHA" -ForegroundColor Yellow
+            }
+            else
+            {
+                Write-Host "  c-build-tools submodule SHA: $($new_sha.Substring(0, 12))..."
+
+                # Find pipeline YAML files in build/ that reference c_build_tools
+                $yml_files = Get-ChildItem -Path "build" -Filter "*.yml" -ErrorAction SilentlyContinue
+                foreach ($file in $yml_files)
+                {
+                    # Skip files that don't reference c_build_tools
+                    $content = Get-Content -Path $file.FullName -Raw -ErrorAction SilentlyContinue
+                    if (-not $content -or $content -notmatch 'repository:\s*c_build_tools')
+                    {
+                        # file does not reference c_build_tools, skip
+                    }
+                    else
+                    {
+                        # Parse lines to find the ref: value inside the c_build_tools repository block
+                        $lines = Get-Content -Path $file.FullName
+                        $in_c_build_tools_block = $false
+                        $ref_line_index = -1
+                        $ref_value = ""
+
+                        for ($i = 0; $i -lt $lines.Count; $i++)
+                        {
+                            $line = $lines[$i]
+
+                            # Detect start of c_build_tools repository block
+                            if ($line -match '^\s*-?\s*repository:\s*c_build_tools\s*$')
+                            {
+                                $in_c_build_tools_block = $true
+                            }
+                            elseif ($in_c_build_tools_block)
+                            {
+                                # Exit block on next repository definition or non-indented line
+                                if ($line -match '^\s*-\s*repository:' -or ($line -match '^\S' -and $line -notmatch '^\s*$'))
+                                {
+                                    $in_c_build_tools_block = $false
+                                }
+                                elseif ($line -match '^\s*ref:\s*(.+)$')
+                                {
+                                    # Found the ref: line in the c_build_tools block
+                                    $ref_value = $Matches[1].Trim()
+                                    $ref_line_index = $i
+                                    $in_c_build_tools_block = $false
+                                }
+                                else
+                                {
+                                    # other line inside the block (type, name, endpoint), skip
+                                }
+                            }
+                            else
+                            {
+                                # not in c_build_tools block, skip line
+                            }
+                        }
+
+                        # Update SHA refs that don't match the submodule
+                        if ($ref_line_index -ne -1 -and
+                            $ref_value -ne "refs/heads/master" -and
+                            $ref_value -match '^[0-9a-f]{40}$' -and
+                            $ref_value -ne $new_sha)
+                        {
+                            $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
+                            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                            [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
+                            Write-Host "  Updated $($file.Name) ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+                        }
+                        else
+                        {
+                            # ref already matches, is refs/heads/master, or not found
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            # no c-build-tools submodule found, nothing to update
+        }
     }
 }
 
@@ -483,6 +650,29 @@ function collect-upstream-changes
                                         $commit_sha = $matches[1]
                                         $commit_subject = $matches[2]
 
+                                        # Replace GitHub PR references like (#123) with full
+                                        # URLs to prevent Azure DevOps from auto-linking them
+                                        # as ADO work items
+                                        if ($commit_subject -match '\(#(\d+)\)')
+                                        {
+                                            $sub_remote_url = (git config --get remote.origin.url 2>$null)
+                                            if ($sub_remote_url -match 'github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$')
+                                            {
+                                                $gh_slug = $matches[1]
+                                                $commit_subject = [regex]::Replace($commit_subject, '\(#(\d+)\)', { param($m) "(https://github.com/$gh_slug/pull/$($m.Groups[1].Value))" })
+                                            }
+                                            else
+                                            {
+                                                # not a GitHub repo, just strip the reference
+                                                $commit_subject = $commit_subject -replace '\s*\(#\d+\)\s*', ' '
+                                                $commit_subject = $commit_subject.Trim()
+                                            }
+                                        }
+                                        else
+                                        {
+                                            # no PR reference to replace
+                                        }
+
                                         # Filter out dep-update commits produced by this script
                                         if ($commit_subject -eq "Update dependencies" -or
                                             $commit_subject -like "Update deps:*" -or
@@ -527,7 +717,8 @@ function collect-upstream-changes
                             {
                                 foreach ($upstream_change in $global:repo_change_descriptions[$sub_repo_name])
                                 {
-                                    if (-not $seen_shas.ContainsKey($upstream_change.SHA))
+                                    if ($upstream_change.SHA -and
+                                        -not $seen_shas.ContainsKey($upstream_change.SHA))
                                     {
                                         $seen_shas[$upstream_change.SHA] = $true
                                         $changes += $upstream_change
@@ -652,6 +843,39 @@ function build-propagation-description
             }
             $pr_body_lines += ""
         }
+
+        # Add links to PRs created by this propagation run
+        if ($global:repo_status)
+        {
+            $pr_links = @()
+            foreach ($r in $global:repo_order_list)
+            {
+                if ($global:repo_status.ContainsKey($r) -and $global:repo_status[$r].PrUrl)
+                {
+                    $pr_links += "- [$r]($($global:repo_status[$r].PrUrl))"
+                }
+                else
+                {
+                    # no PR for this repo
+                }
+            }
+            if ($pr_links.Count -gt 0)
+            {
+                $pr_body_lines += "## Related PRs"
+                $pr_body_lines += ""
+                $pr_body_lines += $pr_links
+                $pr_body_lines += ""
+            }
+            else
+            {
+                # no PR links to add
+            }
+        }
+        else
+        {
+            # no repo status available
+        }
+
         $result.PrBody = $pr_body_lines -join "`n"
     }
 
@@ -671,6 +895,17 @@ function update-local-repo
     Push-Location $repo_name
     git checkout master
     Write-Host "`e[0m" -NoNewline
+    # Unshallow if this is a shallow clone (e.g., from build_graph.ps1 --depth 1)
+    $is_shallow = git rev-parse --is-shallow-repository 2>$null
+    if ($is_shallow -eq "true")
+    {
+        Write-Host "  Unshallowing repository..."
+        git fetch --unshallow
+    }
+    else
+    {
+        # full clone, no unshallowing needed
+    }
     git pull
     # Sometimes git fails to detect updates in submodules
     # Fix is to delete the submodule and reinitializes it
@@ -682,7 +917,7 @@ function update-local-repo
     {
         # no deps folder
     }
-    git submodule update --init
+    git submodule update --init --jobs 20
     # update all submodules to their fixed commits (or latest master as fallback)
     update-submodules-to-fixed-commits
     # Update c-build-tools YAML refs to match new submodule SHA
@@ -695,6 +930,60 @@ function update-local-repo
 
     # Collect upstream changes and build description
     $upstream_changes = collect-upstream-changes $repo_name
+
+    # If no upstream changes were found but there are staged changes,
+    # build a fallback description from the staged diff
+    if ((-not $upstream_changes -or $upstream_changes.Count -eq 0))
+    {
+        $staged_files = git diff --cached --name-only
+        if ($staged_files)
+        {
+            # Initialize as array so += works correctly
+            $upstream_changes = @()
+
+            # Identify what changed: submodule updates and/or file changes
+            $changed_submodules = @()
+            $changed_files = @()
+            foreach ($f in $staged_files)
+            {
+                if ($f -match "^deps/")
+                {
+                    $sub_name = ($f -replace "^deps/", "").Split("/")[0]
+                    if ($sub_name -notin $changed_submodules) { $changed_submodules += $sub_name }
+                }
+                else
+                {
+                    $changed_files += $f
+                }
+            }
+            # Build fallback change entries
+            foreach ($sub in $changed_submodules)
+            {
+                $upstream_changes += @{
+                    Repo = $sub
+                    SHA = ""
+                    Subject = "updated to latest"
+                }
+            }
+            foreach ($f in $changed_files)
+            {
+                $upstream_changes += @{
+                    Repo = $repo_name
+                    SHA = ""
+                    Subject = "updated $f"
+                }
+            }
+        }
+        else
+        {
+            # no staged changes
+        }
+    }
+    else
+    {
+        # upstream changes found
+    }
+
     $description = build-propagation-description $upstream_changes
 
     # Store change descriptions for downstream repos to reference
@@ -702,7 +991,7 @@ function update-local-repo
     {
         $global:repo_change_descriptions = @{}
     }
-    $global:repo_change_descriptions[$repo_name] = $upstream_changes
+    $global:repo_change_descriptions[$repo_name] = @($upstream_changes)
 
     # Build commit message with subject and body
     $commit_message = $description.CommitSubject
@@ -715,16 +1004,25 @@ function update-local-repo
         # no body, subject only
     }
 
-    $git_output = git commit -m $commit_message 2>&1
-    $commit_result = $LASTEXITCODE
-    # Only push if commit succeeded (there were changes)
-    if($commit_result -eq 0)
+    # Check if there are actually staged changes before committing
+    $staged_diff = git diff --cached --name-only
+    if (-not $staged_diff)
     {
-        git push -f origin $new_branch_name
+        $git_output = "nothing to commit, working tree clean"
     }
     else
     {
-        # nothing to push
+        $git_output = git commit -m $commit_message 2>&1
+        $commit_result = $LASTEXITCODE
+        # Only push if commit succeeded (there were changes)
+        if($commit_result -eq 0)
+        {
+            git push -f origin $new_branch_name
+        }
+        else
+        {
+            # nothing to push
+        }
     }
     Pop-Location
 
@@ -748,7 +1046,6 @@ function get-repo-type
     Push-Location $repo_name
     $repo_url = git config --get remote.origin.url
     Pop-Location
-    Write-Host $repo_url -NoNewline
     if($repo_url.Contains("github"))
     {
         $result = "github"
