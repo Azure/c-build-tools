@@ -6,7 +6,9 @@ if(NOT DEFINED CMAKE_MINIMUM_REQUIRED_VERSION)
     #cmake_minimum_required(VERSION 3.24) #3.24 brings in support for WHOLE_ARCHIVE which is needed for vld
 endif()
 
-cmake_policy(SET CMP0177 NEW) #cmake --help-policy CMP0177
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.31")
+    cmake_policy(SET CMP0177 NEW) #cmake --help-policy CMP0177
+endif()
 
 # canon way of using build_tools from another repo is below. It assumes the using repo has placed c-build-tools in "deps"
 
@@ -17,6 +19,8 @@ cmake_policy(SET CMP0177 NEW) #cmake --help-policy CMP0177
 if(TARGET c_build_tools)
     return()
 endif()
+
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 add_custom_target(c_build_tools)
 

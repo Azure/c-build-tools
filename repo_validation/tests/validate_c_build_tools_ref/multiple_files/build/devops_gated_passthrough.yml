@@ -1,0 +1,12 @@
+name: $(BuildID)_$(BuildDefinitionName)_passthrough
+
+resources:
+  repositories:
+  - repository: c_build_tools
+    type: github
+    name: azure/c-build-tools
+    endpoint: github.com_azure
+    ref: deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+
+jobs:
+- template: /pipeline_templates/build_passthrough.yml@c_build_tools

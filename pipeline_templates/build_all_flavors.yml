@@ -24,7 +24,7 @@ parameters:
   # cmake_options is a string that is passed to the cmake command line.
   - name: cmake_options
     type: string
-    default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_traceability:BOOL=ON -Drun_repo_validation:BOOL=ON"
+    default: "-Drun_reals_check:bool=ON -Drun_unittests:bool=ON -Drun_int_tests:bool=ON -Duse_cppunittest:bool=ON -Drun_traceability:BOOL=OFF -Drun_repo_validation:BOOL=OFF"
 
   # additional_cmake_options is appended to cmake_options. Use this to add extra
   # options without replacing the defaults (e.g. -Drun_perf_tests:BOOL=ON).
@@ -38,10 +38,12 @@ parameters:
     default: ""
 
   # Settings to add an app verifier step for ctest
-  # with_app_verifier enables the app verifier step in the build_and_run_tests.yml template
-  - name: with_app_verifier
-    type: boolean
-    default: false
+  # APP_VERIFIER_VALUES is a list of app verifier modes to iterate over.
+  # When ["OFF"] (default), no AppVerifier jobs are generated.
+  # When ["OFF", "ON"], both normal and AppVerifier jobs are generated in parallel.
+  - name: APP_VERIFIER_VALUES
+    type: object
+    default: ["OFF"]
   # This may be overridden to pass a different value to run_ctest_with_appverifier.yml, depending on how c-build-tools is consumed
   - name: repo_root_override
     default: $(Build.SourcesDirectory)/deps/c-build-tools
@@ -57,29 +59,71 @@ parameters:
   - name: failOnMinTestsNotRun
     type: boolean
     default: true
+  - name: pool_name_x64
+    type: string
+    default: "Azure-MessagingStore-WinBuildPoolVS2022_1"
+  - name: pool_name_arm64
+    type: string
+    default: "Azure-MessagingStore-Win-ARM64-Dpldsv6-v01"
+
+  # Controls whether tests are executed on ARM64 builds. When false (default),
+  # ARM64 builds compile tests but do not run them.
+  - name: run_arm64_tests
+    type: boolean
+    default: false
+
+  - name: skip_repo_validation
+    type: boolean
+    default: false
+
+  # When true, run NuGetAuthenticate and NuGetToolInstaller before cmake
+  # so that execute_process(COMMAND nuget ...) can access private feeds.
+  - name: setup_nuget
+    type: boolean
+    default: false
 
 jobs:
+# Run repo validation and traceability once (not per-flavor)
+- ${{ if not(parameters.skip_repo_validation) }}:
+  - template: run_repo_validation.yml
+    parameters:
+      additional_cmake_options: ${{ parameters.additional_cmake_options }}
+      pool_name: ${{ parameters.pool_name_x64 }}
+      setup_nuget: ${{ parameters.setup_nuget }}
+
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
   - ${{ each FSANITIZE_TYPE in parameters.FSANITIZE_TYPE_VALUES }}:
     - ${{ each BUILD_CONFIGURATION_TYPE in parameters.BUILD_CONFIGURATION_TYPE_VALUES }}:
       - ${{ each ARCH_TYPE in parameters.ARCH_TYPE_VALUES }}:
-        # there is no point in running jemalloc and fsanitize, so that combination is excluded
-        # jemalloc does not support ARM64 on Windows (project archived, no _M_ARM64 support), so that combination is excluded
-        - ${{ if and( or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')), or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(ARCH_TYPE, 'ARM64'))) }}:
-          - template: build_and_run_tests.yml
-            parameters:
-              BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}
-              GBALLOC_LL_TYPE: ${{ GBALLOC_LL_TYPE }}
-              build_configuration: ${{ BUILD_CONFIGURATION_TYPE }}
-              FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
-              ARCH_TYPE: ${{ ARCH_TYPE }}
-              cmake_options: ${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }}
-              run_test_suite_without_ctest: ${{ parameters.run_test_suite_without_ctest }}
-              with_app_verifier: ${{ parameters.with_app_verifier }}
-              repo_root_override: ${{ parameters.repo_root_override }}
-              binary_name_suffix: ${{ parameters.binary_name_suffix }}
-              appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
-              failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
-              # ARM64 builds are optional (non-blocking)
-              ${{ if eq(ARCH_TYPE, 'ARM64') }}:
-                is_optional: true
+        - ${{ each APP_VERIFIER in parameters.APP_VERIFIER_VALUES }}:
+          # Exclusions:
+          # - jemalloc + fsanitize: no point in running both
+          # - jemalloc + ARM64: jemalloc doesn't support ARM64 on Windows
+          # - appverifier + fsanitize: appverifier is incompatible with address sanitizer
+          # - appverifier + run_test_suite_without_ctest: appverifier only works with ctest
+          # - appverifier + ARM64 (when tests are skipped): no point building just to skip tests
+          - ${{ if and( or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')), or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(ARCH_TYPE, 'ARM64')), or( ne(APP_VERIFIER, 'ON'), ne(FSANITIZE_TYPE, 'ON')), or( ne(APP_VERIFIER, 'ON'), eq(parameters.run_test_suite_without_ctest, '')), or( ne(APP_VERIFIER, 'ON'), ne(ARCH_TYPE, 'ARM64'), parameters.run_arm64_tests)) }}:
+            - template: build_and_run_tests.yml
+              parameters:
+                BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}_APPVERIFIER_${{ APP_VERIFIER }}
+                GBALLOC_LL_TYPE: ${{ GBALLOC_LL_TYPE }}
+                build_configuration: ${{ BUILD_CONFIGURATION_TYPE }}
+                FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
+                ARCH_TYPE: ${{ ARCH_TYPE }}
+                APP_VERIFIER: ${{ APP_VERIFIER }}
+                cmake_options: ${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }}
+                run_test_suite_without_ctest: ${{ parameters.run_test_suite_without_ctest }}
+                repo_root_override: ${{ parameters.repo_root_override }}
+                binary_name_suffix: ${{ parameters.binary_name_suffix }}
+                appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
+                failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
+                setup_nuget: ${{ parameters.setup_nuget }}
+                ${{ if eq(ARCH_TYPE, 'ARM64') }}:
+                  pool_name: ${{ parameters.pool_name_arm64 }}
+                ${{ else }}:
+                  pool_name: ${{ parameters.pool_name_x64 }}
+                # ARM64 builds are optional (non-blocking)
+                ${{ if eq(ARCH_TYPE, 'ARM64') }}:
+                  is_optional: true
+                  ${{ if not(parameters.run_arm64_tests) }}:
+                    skip_tests: true

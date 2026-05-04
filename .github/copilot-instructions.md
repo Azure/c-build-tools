@@ -1,20 +1,5 @@
 # c-build-tools AI Coding Instructions
 
-## General Coding Standards
-**IMPORTANT**: All code changes must follow the comprehensive coding standards defined in #file:./general_coding_instructions.md This includes:
-- Function naming conventions (snake_case, module prefixes, internal function patterns)
-- Parameter validation rules and error handling patterns
-- Variable naming and result variable conventions
-- Header inclusion order and memory management requirements
-- Requirements traceability system (SRS/Codes_SRS/Tests_SRS patterns)
-- Async callback patterns and goto usage rules
-- Indentation, formatting, and code structure guidelines
-
-## Agent Skills
-Agent Skills are available in this repository at `.github/skills/`. When relevant tasks are requested, load and follow the instructions from the appropriate `SKILL.md` file. Each subdirectory contains a skill with its own `SKILL.md` describing when and how to use it.
-
-Skills location: #file:./.github/skills
-
 ## Project Overview
 This is a comprehensive C/C++ build infrastructure and quality assurance toolkit for Azure projects. It provides reusable CMake functions, Azure DevOps pipeline templates, C# analysis tools, and VS Code extensions for requirement tracking.
 
@@ -47,12 +32,12 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
     - `fix_repo_validation_errors=ON` - Automatically fix validation errors (default is OFF)
   - **Usage**: Call `add_repo_validation(project_name [EXCLUDE_FOLDERS folder1 folder2 ...])` in CMakeLists.txt
     - Default exclusions if not specified: `cmake deps`
-  - **Examples**: 
+  - **Examples**:
     - `add_repo_validation(my_project)` - Uses default exclusions (cmake, deps)
     - `add_repo_validation(my_project EXCLUDE_FOLDERS deps cmake external)` - Custom exclusions
   - **Running**: `cmake --build . --target project_name_repo_validation`
   - **Fix Mode**: When `fix_repo_validation_errors=ON`, scripts receive `-Fix` parameter to auto-correct issues (excluding specified directories)
-  - **Available Validations**: 
+  - **Available Validations**:
     - **File Ending Newline** (`validate_file_endings.ps1`): Ensures source files (`.h`, `.hpp`, `.c`, `.cpp`, `.cs`) end with proper newline (CRLF on Windows)
     - **Requirements Document Naming**: Ensures requirement documents in `devdoc/` folders follow `{module_name}_requirements.md` convention (detects files with SRS tags)
     - **SRS Requirement Consistency** (`validate_srs_consistency.ps1`): Validates that SRS requirement text matches between markdown documentation and C code comments (`Codes_SRS_` and `Tests_SRS_` patterns). Preserves original prefix (Tests_ or Codes_) when fixing inconsistencies.
@@ -66,7 +51,7 @@ This is a comprehensive C/C++ build infrastructure and quality assurance toolkit
     - Include realistic test data with positive cases (compliant files) and negative cases (files with violations)
     - Create `CMakeLists.txt` with three test targets following the pattern:
       - **Detection test**: Verify script correctly identifies violations in negative test cases
-      - **Clean test**: Verify script doesn't modify files that are already compliant  
+      - **Clean test**: Verify script doesn't modify files that are already compliant
       - **Fix test**: Verify script correctly fixes violations and files pass validation afterward
     - Follow naming pattern: `test_validate_your_feature_detection`, `test_validate_your_feature_clean`, `test_validate_your_feature_fix`
     - Use temporary directories for fix tests to avoid contamination between test runs
@@ -114,7 +99,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 
 ### Test Categories
 - Unit tests: `run_unittests=ON`
-- Integration: `run_int_tests=ON` 
+- Integration: `run_int_tests=ON`
 - Performance: `run_perf_tests=ON`
 - E2E: `run_e2e_tests=ON`
 
@@ -171,11 +156,12 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 
 ### CMake Generation and Building
 - **Default CMake Output Directory**: Always use `cmake/` as the directory for CMake generation (e.g., `cmake -S . -B cmake`). Do not use `build/` or other directories unless explicitly instructed.
+- **Generator Requirement**: Always use a Visual Studio CMake generator for local builds; prefer `-G "Visual Studio 18 2026" -A x64` unless a repo explicitly requires a different Visual Studio version. Do not use Ninja.
 - **Wait for Build Completion**: When generating CMake files or building targets, always wait for the process to complete before proceeding. Do not run CMake generation or builds as background processes - use `isBackground=false` and set an appropriate timeout.
 - **Example CMake Commands**:
   ```powershell
   # Generate CMake files in cmake/ directory
-  cmake -S . -B cmake -G "Visual Studio 17 2022" -A x64
+  cmake -S . -B cmake -G "Visual Studio 18 2026" -A x64
   
   # Build a specific target (wait for completion)
   cmake --build cmake --config Debug --target my_target
@@ -203,7 +189,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
   ```powershell
   # Run test under debugger, break on crash
   cdb -g -G -noio path\to\test_exe.exe
-  
+
   # When crash occurs, useful commands:
   # k     - Display stack trace
   # kp    - Display stack trace with parameters
@@ -213,59 +199,46 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
   # .frame N  - Switch to frame N in the call stack
   # dt variable  - Display type and value of a variable
   ```
+  **Start with the assumption new code is at fault**: When making changes, it's more likely that the new code is causing test failures.
+   - **NEVER assume a bug is "pre-existing" or "external" without proof.** If a test crashes after your changes, your
+  changes are the most likely cause until proven otherwise.
+   - **Do not disable failing tests as a workaround** without exhausting debugging options and getting explicit user
+  approval.
+   - When a test fails, investigate root cause systematically — binary search, isolation, minimal repro — before
+  concluding it's unrelated.
 
-## Git and Source Control Guidelines
+### Linux Development
 
-### Commit Messages
-- **MUST**: Use brief, concise commit descriptions (one line, under 72 characters when possible)
-- **NEVER use multi-line commit messages** - always use a single-line description with no body text
-- Focus on what changed, not how it changed
-- Example: `Fix null pointer crash in block_storage_append_async`
+Not all projects support Linux builds. Check the project's `build/*.yml` files for `build_linux.yml` template references to confirm Linux support.
 
-### Target Branch
-- **Default branch**: Always create PRs targeting `master` (not `main`)
+#### CMake Generation and Building on Linux
+- **Default CMake Output Directory**: Use `cmake_linux/` as the directory for CMake generation on Linux. Do not use `cmake/` (reserved for Windows) or `build/`.
+- **Environment Setup**: Set `BUILD_BINARIESDIRECTORY` to point to the output directory before running CMake.
+- **Example CMake Commands**:
+  ```bash
+  # Set the build output directory
+  export BUILD_BINARIESDIRECTORY=<repo_root>/cmake_linux
 
-### Pull Request Titles
-- **AI-Generated PRs**: When creating a pull request, prepend `[MrBot]` to the title (e.g., `[MrBot] Fix null pointer crash in storage module`)
+  # Generate CMake files from the output directory
+  cd cmake_linux
+  cmake -Drun_valgrind:BOOL=ON -Drun_unittests:BOOL=ON -Drun_int_tests:BOOL=ON -DCMAKE_BUILD_TYPE=Debug ..
 
-### Pull Request Descriptions
-- Keep PR descriptions brief and to the point
-- Summarize the change in 1-2 sentences
-- Include relevant work item or issue references if applicable
+  # Build using all available cores
+  make --jobs=$(nproc)
+  ```
+- **Project-Specific Options**: Some projects have additional CMake options (e.g., zrpc uses `-Duse_network_send_delay:BOOL=ON`). Check the project's CMakeLists.txt or build YAML for available options.
 
-### Starting Builds on GitHub PRs
-- **Trigger builds**: After creating a PR, add a comment with `/azp run <pipeline-name>` to start the CI build
-  - For **c-build-tools** repo: `/azp run Azure-C-Build-Tools-Gate`
-  - For other repos: Check the repo's pipeline configuration or ask a team member for the correct pipeline name
-- Builds do not start automatically; the comment is required
-
-### Repository-Specific Tooling
-- **Azure DevOps Repos**: Use the ADO MCP (Model Context Protocol) tools when available for repository operations (creating branches, PRs, managing work items)
-- **GitHub Repos**: Use GitHub CLI (`gh`) for repository operations (creating PRs, managing issues, etc.)
-
-## PowerShell Terminal Commands
-
-When you need to run PowerShell in the terminal, ALWAYS emit a single line in this shape:
-
-```powershell
-pwsh -NoLogo -NoProfile -NonInteractive -InputFormat None -ExecutionPolicy Bypass -Command "& { $ErrorActionPreference='Stop'; <STATEMENT1>; <STATEMENT2>; <STATEMENT3>; }"
-```
-
-**Rules:**
-- Use `;` between statements; never use backticks for continuation.
-- Prefer single quotes inside the script block; escape only when necessary.
-- If CLI args contain special characters, use `--%` immediately after the command name.
-
-## General Terminal Command Rules
-
-**ALL terminal commands MUST be single-line.** Multi-line commands cause the terminal to hang waiting for input.
-
-- **Never embed literal newlines** in command arguments (e.g., `--body` or `--message` flags)
-- **Use semicolons** to chain multiple commands: `cmd1; cmd2; cmd3`
-- **For long strings**, keep them on one line or use variables/files instead of inline content
-- **Test mentally**: If the command would show a `>>` continuation prompt, rewrite it as single-line
-
-### Terminal Troubleshooting
-- **Stuck Terminal Detection**: If git operations (commit, push, pull) appear to not succeed or produce no/partial output, the terminal may be stuck waiting for input
-- **Reset Stuck Terminals**: When a terminal appears stuck, reset it and retry the operation
-- **Common Causes**: Multi-line strings in commit messages, interactive prompts (credentials, merge conflicts), or commands waiting for stdin
+#### Running Tests on Linux
+- **Run all tests** with ctest from the CMake output directory:
+  ```bash
+  ctest -j $(nproc) --output-on-failure
+  ```
+- **Run only valgrind tests**:
+  ```bash
+  ctest -j $(nproc) --output-on-failure -R "_valgrind$"
+  ```
+- **Run only helgrind tests**:
+  ```bash
+  ctest -j $(nproc) --output-on-failure -R "_helgrind$"
+  ```
+- **Valgrind/Helgrind Requirements**: Enable valgrind/helgrind tests at CMake generation time with `-Drun_valgrind:BOOL=ON`. The test names are suffixed with `_valgrind` or `_helgrind`, so use ctest's `-R` regex filter to target them specifically.
