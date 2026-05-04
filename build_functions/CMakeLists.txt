@@ -256,10 +256,11 @@ endmacro()
 
 # .NET6 or newer
 function(build_as_csharp_netcore_project_with_framework targetname framework runtimeidentifier)
+    string(TOLOWER "${runtimeidentifier}" runtimeidentifier_lower)
     set_target_properties(${targetname} PROPERTIES
         DOTNET_SDK "Microsoft.NET.Sdk"
         DOTNET_TARGET_FRAMEWORK ${framework}
-        VS_GLOBAL_RuntimeIdentifier ${runtimeidentifier}
+        VS_GLOBAL_RuntimeIdentifier ${runtimeidentifier_lower}
         VS_GLOBAL_SelfContained true
         VS_GLOBAL_AppendRuntimeIdentifierToOutputPath false
         VS_GLOBAL_AppendTargetFrameworkToOutputPath false

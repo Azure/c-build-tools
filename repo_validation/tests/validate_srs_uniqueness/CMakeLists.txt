@@ -4,35 +4,32 @@
 #
 # SRS Uniqueness Validation Tests
 #
-# Tests the validate_srs_uniqueness.ps1 script to ensure it correctly detects
-# duplicate SRS tags across requirement documents and validates the error functionality.
+# Tests the repo_validator srs_uniqueness check to ensure it correctly detects
+# duplicate SRS tags across requirement documents.
 #
 
-set(VALIDATE_SRS_UNIQUENESS_SCRIPT "${VALIDATION_SCRIPTS_DIR}/validate_srs_uniqueness.ps1")
-
-# Test 1: Verify script passes on unique SRS tags
+# Test 1: Verify tool passes on unique SRS tags
 add_custom_target(test_validate_srs_uniqueness_clean
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_UNIQUENESS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/unique_srs"
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/unique_srs" --check srs_uniqueness
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing SRS uniqueness validation on unique SRS tags"
+    DEPENDS repo_validator_rs
 )
 
-# Test 2: Verify script detects duplicate SRS tags (this should fail)
+# Test 2: Verify tool detects duplicate SRS tags (this should fail)
 add_custom_target(test_validate_srs_uniqueness_detection
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_UNIQUENESS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/duplicate_srs"
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/duplicate_srs" --check srs_uniqueness
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing SRS uniqueness detection on duplicate SRS tags (should fail)"
+    DEPENDS repo_validator_rs
 )
 
-# Test 3: Verify script ignores -Fix parameter and still reports errors
+# Test 3: Verify tool ignores --fix parameter and still reports errors
 add_custom_target(test_validate_srs_uniqueness_no_fix
-    COMMAND ${POWERSHELL_EXECUTABLE} -ExecutionPolicy Bypass -File "${VALIDATE_SRS_UNIQUENESS_SCRIPT}"
-        -RepoRoot "${CMAKE_CURRENT_SOURCE_DIR}/duplicate_srs"
-        -Fix
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/duplicate_srs" --check srs_uniqueness --fix
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing SRS uniqueness script ignores -Fix parameter (should still fail)"
+    COMMENT "Testing SRS uniqueness tool ignores --fix parameter (should still fail)"
+    DEPENDS repo_validator_rs
 )
 
 # Master target for all SRS uniqueness validation tests
@@ -45,6 +42,11 @@ add_dependencies(test_validate_srs_uniqueness
     test_validate_srs_uniqueness_clean
 )
 
-# Note: We don't add test_validate_srs_uniqueness_detection and test_validate_srs_uniqueness_no_fix
-# as dependencies because they should fail with exit code 1 (which would fail the build).
-# Instead, they are available to run manually to verify detection works.
+# Master target for all expected-failure tests
+add_custom_target(test_validate_srs_uniqueness_failures
+    COMMENT "Running all srs_uniqueness failure detection tests"
+)
+add_dependencies(test_validate_srs_uniqueness_failures
+    test_validate_srs_uniqueness_detection
+    test_validate_srs_uniqueness_no_fix
+)

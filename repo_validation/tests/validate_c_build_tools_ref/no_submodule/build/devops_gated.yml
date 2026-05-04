@@ -1,0 +1,14 @@
+name: $(BuildID)_$(BuildDefinitionName)_$(SourceBranchName)
+
+resources:
+  repositories:
+  - repository: self
+    clean: true
+  - repository: c_build_tools
+    type: github
+    name: azure/c-build-tools
+    endpoint: github.com_azure
+    ref: refs/heads/master
+
+jobs:
+- template: /pipeline_templates/build_all_flavors.yml@c_build_tools

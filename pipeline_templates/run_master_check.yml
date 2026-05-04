@@ -9,12 +9,15 @@ parameters:
   - name: custom_submodule_branches # Comma-separated list of custom submodule branches, in the format "submodulePath:branchName", e.g. "deps/libuv:master,submodule2:develop"
     default: ""
     type: string
+  - name: pool_name
+    type: string
+    default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
 
 jobs:
 - job: run_master_check
   displayName: 'Run submodule master check'
   pool:
-    name: Azure-MessagingStore-WinBuildPoolVS2022_0
+    name: ${{ parameters.pool_name }}
     demands:
     - Cmd
 
@@ -30,7 +33,7 @@ jobs:
     displayName: 'Git submodule update'
     inputs:
       filename: 'C:\Program Files\Git\bin\git.exe'
-      arguments: 'submodule update --init --force'
+      arguments: 'submodule update --init --force --jobs 20'
 
   - task: BatchScript@1
     displayName: 'Git submodule clean'

@@ -1,0 +1,109 @@
+# Reusable step template for build setup: checkout, toolchain discovery, cmake, and msbuild.
+# Used by build_and_run_tests.yml for both the main test job and the AppVerifier job.
+
+parameters:
+  - name: ARCH_TYPE
+    default: "x64"
+  - name: repo_root_override
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
+  - name: setup_nuget
+    type: boolean
+    default: false
+  - name: cmake_options
+    type: string
+  - name: build_configuration
+    default: "Debug"
+  - name: GBALLOC_LL_TYPE
+    type: string
+  - name: use_vld_option
+    type: string
+
+steps:
+  - template: get_machine_information.yml
+
+  # Shallow clone - only need the code at this commit, not full history
+  - checkout: self
+    submodules: false
+    clean: false
+    fetchDepth: 1
+
+  # Shallow submodules - only need the pinned commit, not full history
+  - script: git submodule update --init --depth 1 --jobs 20
+    displayName: 'Shallow checkout submodules'
+
+  # Authenticate NuGet feed so cmake configure can restore packages
+  - ${{ if parameters.setup_nuget }}:
+    - template: setup_nuget_tools.yml
+
+  # ARM64: Verify agent architecture
+  - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
+    - template: verify_agent_architecture.yml
+      parameters:
+        expected_architecture: 'ARM64'
+
+  # Discover native tools
+  - template: discover_native_tools.yml
+    parameters:
+      architecture: ${{ parameters.ARCH_TYPE }}
+
+  # Setup VS environment - use discovered vsPath for correct VS version
+  - task: PowerShell@2
+    displayName: 'Setup VS Vars'
+    inputs:
+      targetType: 'inline'
+      script: |
+        # Find VS using vswhere (works for any VS version)
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+          $vsPath = & $vswhere -latest -products * -property installationPath
+          if ($vsPath) {
+            $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
+            if (Test-Path $vsDevCmd) {
+              # Set architecture parameters for VsDevCmd based on target architecture
+              $arch = "${{ parameters.ARCH_TYPE }}"
+              if ($arch -eq "ARM64") {
+                $archArgs = "-arch=arm64 -host_arch=arm64"
+                Write-Host "Running VsDevCmd with ARM64 architecture: $vsDevCmd $archArgs"
+              } else {
+                $archArgs = "-arch=amd64"
+                Write-Host "Running VsDevCmd with x64 architecture: $vsDevCmd $archArgs"
+              }
+              cmd /c "`"$vsDevCmd`" $archArgs && set" | ForEach-Object {
+                if ($_ -match "^([^=]+)=(.*)$") {
+                  [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+                }
+              }
+            } else {
+              Write-Host "##[warning]VsDevCmd.bat not found at $vsDevCmd"
+            }
+          }
+        } else {
+          Write-Host "##[warning]vswhere not found"
+        }
+
+  # Cleanup appverifier from any previous runs
+  - template : disable_appverifier.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
+
+  # Use wrapper template for CMake - handles ARM64 native tools transparently
+  - template: tasks/cmake.yml
+    parameters:
+      architecture: ${{ parameters.ARCH_TYPE }}
+      sourceDirectory: '$(Build.SourcesDirectory)'
+      buildDirectory: '$(Build.BinariesDirectory)/c'
+      cmakeArgs: '${{ parameters.cmake_options }} ${{ parameters.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}'
+
+  # Use wrapper template for MSBuild - handles ARM64 native tools transparently
+  - template: tasks/msbuild.yml
+    parameters:
+      architecture: ${{ parameters.ARCH_TYPE }}
+      solution: '$(Build.BinariesDirectory)/c/*.sln*'
+      configuration: '${{ parameters.build_configuration }}'
+      msbuildArgs: '/t:restore /t:build'
+
+  - template : start_logman.yml
+    parameters:
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
