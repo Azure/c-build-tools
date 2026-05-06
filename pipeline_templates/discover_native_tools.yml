@@ -231,7 +231,33 @@ steps:
             Write-Host "##[warning]$vstestExeName not found"
         }
         Write-Host ""
-        
+
+        # Find appverif.exe (Application Verifier driver). Optional - only consumed
+        # by repos that opt into AppVerifier-enabled CTest runs (APP_VERIFIER=ON).
+        # Some agent images install Application Verifier outside of PATH (the
+        # standalone installer drops it under "Program Files (x86)\Application
+        # Verifier" rather than System32), so probe known locations after PATH.
+        $appverifPath = $null
+        $appverifFromPath = Get-Command appverif.exe -ErrorAction SilentlyContinue
+        if ($appverifFromPath) {
+            $appverifPath = $appverifFromPath.Source
+        } else {
+            $appverifCandidates = @(
+                (Join-Path $env:windir 'System32\appverif.exe'),
+                (Join-Path ${env:ProgramFiles(x86)} 'Application Verifier\appverif.exe'),
+                (Join-Path $env:ProgramFiles 'Application Verifier\appverif.exe')
+            ) | Where-Object { $_ -and (Test-Path $_) }
+            if ($appverifCandidates.Count -gt 0) { $appverifPath = $appverifCandidates[0] }
+        }
+
+        if ($appverifPath -and (Test-Path $appverifPath)) {
+            Write-Host "appverif: $appverifPath"
+            Write-Host "##vso[task.setvariable variable=appverifPath]$appverifPath"
+        } else {
+            Write-Host "##[warning]appverif.exe not found via PATH or known install locations - AppVerifier-enabled jobs will skip"
+        }
+        Write-Host ""
+
         # Set architecture variables for use in build commands
         Write-Host "##vso[task.setvariable variable=cmakeArch]$cmakeArch"
         Write-Host "##vso[task.setvariable variable=targetPlatform]$targetPlatform"
@@ -284,6 +310,7 @@ steps:
         if ($msbuildPath) { $toolsToVerify['MSBuild.exe'] = $msbuildPath }
         if ($dumpbinPath) { $toolsToVerify['dumpbin.exe'] = $dumpbinPath }
         if ($vstestPath) { $toolsToVerify['vstest.console.exe'] = $vstestPath }
+        if ($appverifPath) { $toolsToVerify['appverif.exe'] = $appverifPath }
         
         foreach ($tool in $toolsToVerify.GetEnumerator()) {
             $toolArch = Get-PEArchitecture -FilePath $tool.Value
