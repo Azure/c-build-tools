@@ -37,17 +37,22 @@ parameters:
   - name: failOnMinTestsNotRun
     type: boolean
     default: true
-  # ARM64 builds are optional (continueOnError) so they don't block the gate
-  - name: is_optional
-    type: boolean
-    default: false
   - name: pool_name
     type: string
     default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
-  # When true, tests are built but not executed
-  - name: skip_tests
-    type: boolean
-    default: false
+  # MAX_STAGE controls how far this leg runs. Matches the convention used by
+  # EBS / ELS / GEO and the parent build_all_flavors.yml.
+  #   BUILD       - only compile binaries. Skip test execution.
+  #   UNIT_TESTS  - compile + run unit tests (CTest, VSTest, AppVerifier).
+  #   ALL         - alias for UNIT_TESTS in this template.
+  # Applied symmetrically to all architectures.
+  - name: MAX_STAGE
+    type: string
+    default: "UNIT_TESTS"
+    values:
+      - "BUILD"
+      - "UNIT_TESTS"
+      - "ALL"
   # When true, run NuGetAuthenticate and NuGetToolInstaller before cmake
   # so that execute_process(COMMAND nuget ...) can access private feeds.
   - name: setup_nuget
@@ -56,8 +61,7 @@ parameters:
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
-  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}'
-  continueOnError: ${{ parameters.is_optional }}
+  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}, MAX_STAGE=${{ parameters.MAX_STAGE }}'
 
   variables:
     ${{ if eq(parameters.FSANITIZE_TYPE, 'ON') }}:
@@ -85,8 +89,8 @@ jobs:
       GBALLOC_LL_TYPE: ${{ parameters.GBALLOC_LL_TYPE }}
       use_vld_option: ${{ variables.use_vld_option }}
 
-  # skip_tests is only honored for ARM64 builds - x64 always runs tests
-  - ${{ if or(not(parameters.skip_tests), ne(parameters.ARCH_TYPE, 'ARM64')) }}:
+  # Run tests only when MAX_STAGE is UNIT_TESTS or ALL. BUILD mode compiles only.
+  - ${{ if or(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.MAX_STAGE, 'ALL')) }}:
 
     # When APP_VERIFIER is OFF, run normal tests (VSTest, CTest)
     - ${{ if eq(parameters.APP_VERIFIER, 'OFF') }}:
@@ -109,19 +113,23 @@ jobs:
             configuration: '${{ parameters.build_configuration }}'
             failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
             codeCoverageEnabled: ${{ ne(parameters.ARCH_TYPE, 'ARM64') }}
-            otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
+            # Code Coverage collector is not validated on ARM64 build pools, so only
+            # request it on x64. Mirrors codeCoverageEnabled above; passed via
+            # otherConsoleOptions because tasks/vstest.yml currently appends
+            # otherConsoleOptions verbatim and does not honor codeCoverageEnabled itself.
+            ${{ if ne(parameters.ARCH_TYPE, 'ARM64') }}:
+              otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
             runSettingsFile: '${{ parameters.repo_root_override }}/pipeline_templates/scripts/tests_native.runsettings'
             resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
             testRunTitle: 'VsTest Native ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
-            # ARM64 is experimental, continue on error
-            continueOnError: ${{ eq(parameters.ARCH_TYPE, 'ARM64') }}
 
-        # Publish code coverage results from vstest
-        - task: PublishCodeCoverageResults@2
-          displayName: '📰 Publish Code Coverage'
-          inputs:
-            summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
-            pathToSources: '$(Build.SourcesDirectory)'
+        # Publish code coverage results from vstest (x64 only - ARM64 does not collect coverage)
+        - ${{ if ne(parameters.ARCH_TYPE, 'ARM64') }}:
+          - task: PublishCodeCoverageResults@2
+            displayName: '📰 Publish Code Coverage'
+            inputs:
+              summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
+              pathToSources: '$(Build.SourcesDirectory)'
 
       # Use wrapper template for CTest - handles ARM64 native tools transparently
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:

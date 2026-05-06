@@ -11,7 +11,8 @@ parameters:
     type: object
     default: ["ON", "OFF"]
 
-  # ARCH_TYPE_VALUES - architectures to build. ARM64 builds are optional (non-blocking).
+  # ARCH_TYPE_VALUES - architectures to build. Both x64 and ARM64 are blocking
+  # by default; tests run on both unless the caller passes MAX_STAGE=BUILD.
   - name: ARCH_TYPE_VALUES
     type: object
     default: ["x64", "ARM64"]
@@ -66,11 +67,21 @@ parameters:
     type: string
     default: "Azure-MessagingStore-Win-ARM64-Dpldsv6-v01"
 
-  # Controls whether tests are executed on ARM64 builds. When false (default),
-  # ARM64 builds compile tests but do not run them.
-  - name: run_arm64_tests
-    type: boolean
-    default: false
+  # MAX_STAGE controls how far the pipeline runs. Matches the convention used
+  # by EBS / ELS / GEO so callers can use one knob across all repos.
+  #   BUILD       - only compile binaries. Skip unit / int test execution.
+  #   UNIT_TESTS  - compile + run unit tests (CTest, VSTest, AppVerifier).
+  #   ALL         - alias for UNIT_TESTS in this template (no perf / integration
+  #                 stages live here). Accepted so callers that standardize on
+  #                 MAX_STAGE=ALL elsewhere don't get rejected.
+  # Applies symmetrically to all architectures (x64 and ARM64).
+  - name: MAX_STAGE
+    type: string
+    default: "UNIT_TESTS"
+    values:
+      - "BUILD"
+      - "UNIT_TESTS"
+      - "ALL"
 
   - name: skip_repo_validation
     type: boolean
@@ -101,8 +112,9 @@ jobs:
           # - jemalloc + ARM64: jemalloc doesn't support ARM64 on Windows
           # - appverifier + fsanitize: appverifier is incompatible with address sanitizer
           # - appverifier + run_test_suite_without_ctest: appverifier only works with ctest
-          # - appverifier + ARM64 (when tests are skipped): no point building just to skip tests
-          - ${{ if and( or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')), or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(ARCH_TYPE, 'ARM64')), or( ne(APP_VERIFIER, 'ON'), ne(FSANITIZE_TYPE, 'ON')), or( ne(APP_VERIFIER, 'ON'), eq(parameters.run_test_suite_without_ctest, '')), or( ne(APP_VERIFIER, 'ON'), ne(ARCH_TYPE, 'ARM64'), parameters.run_arm64_tests)) }}:
+          # - appverifier + MAX_STAGE=BUILD: appverifier is a test-execution mode; no point
+          #   building an APPVERIFIER=ON flavor when tests won't run.
+          - ${{ if and( or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')), or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(ARCH_TYPE, 'ARM64')), or( ne(APP_VERIFIER, 'ON'), ne(FSANITIZE_TYPE, 'ON')), or( ne(APP_VERIFIER, 'ON'), eq(parameters.run_test_suite_without_ctest, '')), or( ne(APP_VERIFIER, 'ON'), ne(parameters.MAX_STAGE, 'BUILD'))) }}:
             - template: build_and_run_tests.yml
               parameters:
                 BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}_APPVERIFIER_${{ APP_VERIFIER }}
@@ -111,6 +123,7 @@ jobs:
                 FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
                 ARCH_TYPE: ${{ ARCH_TYPE }}
                 APP_VERIFIER: ${{ APP_VERIFIER }}
+                MAX_STAGE: ${{ parameters.MAX_STAGE }}
                 cmake_options: ${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }}
                 run_test_suite_without_ctest: ${{ parameters.run_test_suite_without_ctest }}
                 repo_root_override: ${{ parameters.repo_root_override }}
@@ -122,8 +135,3 @@ jobs:
                   pool_name: ${{ parameters.pool_name_arm64 }}
                 ${{ else }}:
                   pool_name: ${{ parameters.pool_name_x64 }}
-                # ARM64 builds are optional (non-blocking)
-                ${{ if eq(ARCH_TYPE, 'ARM64') }}:
-                  is_optional: true
-                  ${{ if not(parameters.run_arm64_tests) }}:
-                    skip_tests: true
