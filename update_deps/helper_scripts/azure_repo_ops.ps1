@@ -464,18 +464,32 @@ function wait-until-complete-azure
             if(!$done -and -not $global:propagation_cancelled)
             {
                 # Check if a Build check actually failed (vs timeout or non-build policy failure)
+                # Retry up to 3 times — a transient API failure here would silently suppress autofix
                 $has_build_failure = $false
-                $recheck_data = get-policy-display-data -pr_id $pr_id -org $org -ShowBuildDetails
-                if ($recheck_data -and $recheck_data.Checks)
+                $recheck_retries = 3
+                for ($ri = 1; $ri -le $recheck_retries; $ri++)
                 {
-                    $failed_build_checks = @($recheck_data.Checks | Where-Object {
-                        $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
-                    })
-                    $has_build_failure = $failed_build_checks.Count -gt 0
-                }
-                else
-                {
-                    # couldn't recheck
+                    $recheck_data = get-policy-display-data -pr_id $pr_id -org $org -ShowBuildDetails
+                    if ($recheck_data -and $recheck_data.Checks)
+                    {
+                        $failed_build_checks = @($recheck_data.Checks | Where-Object {
+                            $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
+                        })
+                        $has_build_failure = $failed_build_checks.Count -gt 0
+                        break
+                    }
+                    else
+                    {
+                        if ($ri -lt $recheck_retries)
+                        {
+                            Write-Host "  Policy recheck failed, retrying ($ri/$recheck_retries)..." -ForegroundColor Yellow
+                            Start-Sleep -Seconds 5
+                        }
+                        else
+                        {
+                            Write-Host "  Warning: Could not recheck policy status after $recheck_retries attempts" -ForegroundColor Yellow
+                        }
+                    }
                 }
 
                 if ($has_build_failure -and $global:auto_fix -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
