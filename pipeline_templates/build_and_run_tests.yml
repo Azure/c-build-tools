@@ -41,7 +41,7 @@ parameters:
     type: string
     default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
   # MAX_STAGE controls how far this leg runs. Matches the convention used by
-  # EBS / ELS / GEO and the parent build_all_flavors.yml.
+  # downstream repos and the parent build_all_flavors.yml.
   #   BUILD       - only compile binaries. Skip test execution.
   #   UNIT_TESTS  - compile + run unit tests (CTest, VSTest, AppVerifier).
   #   ALL         - alias for UNIT_TESTS in this template.

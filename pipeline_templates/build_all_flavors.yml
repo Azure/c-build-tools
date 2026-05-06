@@ -68,7 +68,7 @@ parameters:
     default: "Azure-MessagingStore-Win-ARM64-Dpldsv6-v01"
 
   # MAX_STAGE controls how far the pipeline runs. Matches the convention used
-  # by EBS / ELS / GEO so callers can use one knob across all repos.
+  # by downstream repos so callers can use one knob.
   #   BUILD       - only compile binaries. Skip unit / int test execution.
   #   UNIT_TESTS  - compile + run unit tests (CTest, VSTest, AppVerifier).
   #   ALL         - alias for UNIT_TESTS in this template (no perf / integration
