@@ -43,15 +43,41 @@ param(
     [Parameter()][string]$appVerifierEnable = "exceptions handles heaps leak memory threadpool tls",
     [Parameter()][string]$appVerifierAdditionalProperties = "",
     [Parameter()][string]$ctestArgs = "",
-    [Parameter()][string]$binaryNameSuffix
+    [Parameter()][string]$binaryNameSuffix,
+    # Path to appverif.exe. Normally set by discover_native_tools.yml as the
+    # $(appverifPath) pipeline variable. If empty / unresolved / pointing at a
+    # non-existent file, the script probes PATH and known install locations as a
+    # fallback so it remains usable when invoked outside the discover-tools flow.
+    [Parameter()][string]$appverifPath = ""
 )
 
-# Check if appverif is available (not installed on ARM64 build pools)
-$appverifPath = Get-Command appverif -ErrorAction SilentlyContinue
-if (-not $appverifPath) {
-    Write-Output "Application Verifier (appverif) is not installed on this machine. Skipping."
+# Resolve appverif.exe location: caller-provided path > PATH > known install locations.
+# Some agent images install Application Verifier outside of PATH (the standalone
+# installer drops it under "Program Files (x86)\Application Verifier" rather than
+# System32), so PATH alone is not sufficient.
+$appverifExe = $null
+if ($appverifPath -and (Test-Path $appverifPath)) {
+    $appverifExe = $appverifPath
+} else {
+    $appverifFromPath = Get-Command appverif.exe -ErrorAction SilentlyContinue
+    if ($appverifFromPath) {
+        $appverifExe = $appverifFromPath.Source
+    } else {
+        $candidates = @(
+            (Join-Path $env:windir 'System32\appverif.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Application Verifier\appverif.exe'),
+            (Join-Path $env:ProgramFiles 'Application Verifier\appverif.exe')
+        ) | Where-Object { $_ -and (Test-Path $_) }
+        if ($candidates.Count -gt 0) { $appverifExe = $candidates[0] }
+    }
+}
+
+if (-not $appverifExe) {
+    Write-Output "Application Verifier (appverif.exe) not found via PATH or known install locations. Skipping."
     exit 0
 }
+
+Write-Output "Using Application Verifier at: $appverifExe"
 
 if ($on)
 {
@@ -69,7 +95,7 @@ if ($on)
             if ($on)
             {
                 Write-Output "Enabling appverifier for $exeName"
-                & appverif -enable $appVerifierEnable.Split() -for $exeName -with exceptiononstop=true $appVerifierAdditionalProperties.Split()
+                & $appverifExe -enable $appVerifierEnable.Split() -for $exeName -with exceptiononstop=true $appVerifierAdditionalProperties.Split()
             }
         }
     }
@@ -77,5 +103,5 @@ if ($on)
 else
 {
     Write-Output "Disabling all appverifier settings"
-    & appverif -disable * -for *
+    & $appverifExe -disable * -for *
 }
