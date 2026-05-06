@@ -139,6 +139,19 @@ jobs:
             workingDirectory: '$(Build.BinariesDirectory)/c'
             configuration: '${{ parameters.build_configuration }}'
             outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+            # ARM64 + MAX_STAGE=UNIT_TESTS: limit ctest to unit tests only.
+            # Test names registered by build_test_artifacts (in c-testrunnerswitcher)
+            # are exactly ${whatIsBuilding}, which by convention end in _ut, _int,
+            # _perf, or _e2e. CMake's run_unittests / run_int_tests / run_perf_tests
+            # / run_e2e_tests options control registration; with the gate's default
+            # cmake_options every category gets registered, and ctest then runs them
+            # all. VSTest already filters to *_ut_*.dll via its discovery glob, but
+            # ctest does not. Filter at run time so BUILD-stage semantics still hold
+            # (int tests still compile on ARM64 - useful as a compile-only ratchet)
+            # while UNIT_TESTS strictly runs only _ut tests on ARM64.
+            # x64 keeps current behavior (callers manage scope via cmake_options).
+            ${{ if and(eq(parameters.ARCH_TYPE, 'ARM64'), eq(parameters.MAX_STAGE, 'UNIT_TESTS')) }}:
+              includeTests: '_ut$'
 
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
         - task: PublishTestResults@2
@@ -178,6 +191,12 @@ jobs:
               outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
               excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
               noTestsError: ${{ eq(parameters.appverifier_skip_tests_list, '') }}
+              # See the comment on the regular ctest invocation above for why ARM64 +
+              # MAX_STAGE=UNIT_TESTS limits to _ut tests. AppVerifier-helper itself
+              # configures appverif for whatever ctest -N returns; that config is
+              # harmless for tests that won't actually run.
+              ${{ if and(eq(parameters.ARCH_TYPE, 'ARM64'), eq(parameters.MAX_STAGE, 'UNIT_TESTS')) }}:
+                includeTests: '_ut$'
 
       - task: PublishTestResults@2
         displayName: '📊 Publish ctest results'
