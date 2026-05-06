@@ -103,6 +103,39 @@ if ($VerbosePreference -ne 'SilentlyContinue')
     $global:VerbosePreference = $VerbosePreference
 }
 
+# Set up verbose log file — always written regardless of -Verbose flag.
+# Write-Verbose messages go to console only with -Verbose; the log file
+# captures them unconditionally for post-mortem debugging.
+$global:verbose_log_path = Join-Path $PSScriptRoot "propagation_verbose.log"
+# Clear previous log
+"" | Set-Content -Path $global:verbose_log_path -Encoding UTF8
+
+# Override Write-Verbose globally to also append to log file
+function global:Write-Verbose
+{
+    param([string] $Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "$timestamp  $Message" | Add-Content -Path $global:verbose_log_path -Encoding UTF8
+    # Also write to console if -Verbose was passed
+    if ($global:VerbosePreference -ne 'SilentlyContinue')
+    {
+        Microsoft.PowerShell.Utility\Write-Verbose -Message $Message
+    }
+}
+
+# Print log file path on script exit (success, failure, or Ctrl+C)
+function global:show-verbose-log-path
+{
+    if ($global:verbose_log_path -and (Test-Path $global:verbose_log_path))
+    {
+        $size = (Get-Item $global:verbose_log_path).Length
+        if ($size -gt 0)
+        {
+            Write-Host "Verbose log: $global:verbose_log_path" -ForegroundColor Gray
+        }
+    }
+}
+
 # Build the resume command from the current invocation args
 $resume_args = @()
 if ($azure_token) { $resume_args += "-azure_token `"$azure_token`"" }
@@ -380,6 +413,7 @@ function propagate-updates
         Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
         Write-Host "To resume from where it stopped, run:" -ForegroundColor Cyan
         Write-Host "  $global:resume_command" -ForegroundColor White
+        show-verbose-log-path
         exit 1
     }
     else
@@ -401,6 +435,7 @@ function propagate-updates
 
         # Restore original directory
         restore-original-directory
+        show-verbose-log-path
     }
 }
 
