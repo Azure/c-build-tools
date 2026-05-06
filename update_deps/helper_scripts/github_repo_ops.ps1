@@ -72,9 +72,11 @@ function monitor-github-pr
     while ($true)
     {
         $watch_result = watch-github-pr-checks -poll_interval $global:poll_interval -timeout 120 -OnIteration { [void](show-propagation-status) }
+        Write-Verbose "watch-github-pr-checks returned: Success=$($watch_result.Success), Message='$($watch_result.Message)'"
         if (-not $watch_result.Success)
         {
             # Try autofix if enabled
+            Write-Verbose "GitHub AutoFix decision: auto_fix=$($global:auto_fix), cancelled=$($global:propagation_cancelled), message_match=$($watch_result.Message -match '^Failed:'), attempts=$autofix_attempts/$($global:MAX_AUTOFIX_ATTEMPTS)"
             if ($global:auto_fix -and -not $global:propagation_cancelled -and $watch_result.Message -match "^Failed:" -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
             {
                 $autofix_attempts++
@@ -432,6 +434,7 @@ function update-repo-github
             if(-not $watch_result.Success)
             {
                 # Build failed — try autofix if enabled
+                Write-Verbose "GitHub fresh-PR AutoFix decision: auto_fix=$($global:auto_fix), cancelled=$($global:propagation_cancelled), message_match=$($watch_result.Message -match '^Failed:'), attempts=$autofix_attempts/$($global:MAX_AUTOFIX_ATTEMPTS)"
                 if ($global:auto_fix -and -not $global:propagation_cancelled -and $watch_result.Message -match "^Failed:" -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
                 {
                     $autofix_attempts++

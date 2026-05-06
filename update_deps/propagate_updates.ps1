@@ -67,6 +67,7 @@ PS> .\propagate_updates.ps1 -Resume
 #>
 
 
+[CmdletBinding()]
 param(
     [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
     [Parameter(Mandatory=$false)][Int32]$azure_work_item, # Work item id to link to Azure PRs
@@ -96,6 +97,12 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\update_repo.ps1"
 . "$helper_scripts\autofix.ps1"
 
+# Propagate -Verbose to all helper functions via global preference
+if ($VerbosePreference -ne 'SilentlyContinue')
+{
+    $global:VerbosePreference = $VerbosePreference
+}
+
 # Build the resume command from the current invocation args
 $resume_args = @()
 if ($azure_token) { $resume_args += "-azure_token `"$azure_token`"" }
@@ -104,6 +111,7 @@ if ($root_list) { $resume_args += "-root_list $($root_list -join ',')" }
 if ($poll_interval -ne 15) { $resume_args += "-poll_interval $poll_interval" }
 if ($NoCloseFailedPr) { $resume_args += "-NoCloseFailedPr" }
 if ($AutoFix) { $resume_args += "-AutoFix" }
+if ($VerbosePreference -ne 'SilentlyContinue') { $resume_args += "-Verbose" }
 $global:resume_command = "$($MyInvocation.MyCommand.Path) $($resume_args -join ' ') -Resume"
 
 
