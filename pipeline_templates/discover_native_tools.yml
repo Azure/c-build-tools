@@ -197,6 +197,18 @@ steps:
         # informational only - it can configure verifier settings for binaries of any
         # architecture - and is therefore intentionally NOT included in the strict
         # PE-architecture verification block below.
+        #
+        # WOW64 file-system redirection note:
+        # When this script runs in an x86-emulated PowerShell on a 64-bit / ARM64
+        # host (for example, the 1ES ARM64 hosted pool agent currently runs as x86
+        # under emulation), accesses to "$env:SystemRoot\System32" are silently
+        # redirected to "$env:SystemRoot\SysWOW64", which contains x86 binaries -
+        # not the native ARM64 / x64 build of appverif.exe that lives in real
+        # System32. The "Sysnative" alias bypasses that redirector and exposes the
+        # native System32 to x86 processes; on a native 64-bit / ARM64 process
+        # Sysnative simply does not exist (Test-Path returns false) and we fall
+        # through to System32. Probe Sysnative first so the x86-emulated case
+        # actually sees the native binary.
         $appverifPath = $null
         $appverifCandidates = @()
         if ($arch -eq "ARM64") {
@@ -207,6 +219,7 @@ steps:
         $appverifCandidates += "$env:ProgramFiles\Windows Kits\10\Debuggers\x64\appverif.exe"
         $appverifCandidates += "${env:ProgramFiles(x86)}\Application Verifier\appverif.exe"
         $appverifCandidates += "$env:ProgramFiles\Application Verifier\appverif.exe"
+        $appverifCandidates += "$env:SystemRoot\Sysnative\appverif.exe"
         $appverifCandidates += "$env:SystemRoot\System32\appverif.exe"
 
         foreach ($candidate in $appverifCandidates) {
