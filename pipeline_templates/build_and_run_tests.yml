@@ -163,8 +163,13 @@ jobs:
             # Filter at run time so BUILD-stage semantics still hold (int/perf/e2e
             # still compile - useful as a compile-only ratchet) while UNIT_TESTS
             # strictly skips them at run time. MAX_STAGE=ALL bypasses this filter.
+            #
+            # When the filter IS active (UNIT_TESTS), also disable --no-tests=error:
+            # repos that have only int/perf/e2e tests (e.g. macro-utils-c) legitimately
+            # match zero tests after the filter, and that is not a build error.
             ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
               excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
+              noTestsError: false
 
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
         - task: PublishTestResults@2
@@ -202,7 +207,11 @@ jobs:
               workingDirectory: '$(Build.BinariesDirectory)/c'
               configuration: '${{ parameters.build_configuration }}'
               outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-              noTestsError: ${{ eq(parameters.appverifier_skip_tests_list, '') }}
+              # noTestsError is true only when no exclude reason is in play. Either
+              # an appverifier_skip_tests_list or the MAX_STAGE=UNIT_TESTS category
+              # filter constitutes a deliberate exclude, so matching zero tests is
+              # legitimate (e.g. macro-utils-c only has _int tests).
+              noTestsError: ${{ and(eq(parameters.appverifier_skip_tests_list, ''), ne(parameters.MAX_STAGE, 'UNIT_TESTS')) }}
               # See the comment on the regular ctest invocation above for why
               # MAX_STAGE=UNIT_TESTS skips _int/_perf/_e2e categories. AppVerifier-
               # helper itself configures appverif for whatever ctest -N returns;
