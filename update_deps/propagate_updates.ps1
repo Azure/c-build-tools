@@ -103,24 +103,40 @@ if ($VerbosePreference -ne 'SilentlyContinue')
     $global:VerbosePreference = $VerbosePreference
 }
 
-# Set up verbose log file — always written regardless of -Verbose flag.
-# Write-Verbose messages go to console only with -Verbose; the log file
-# captures them unconditionally for post-mortem debugging.
-$global:verbose_log_path = Join-Path $PSScriptRoot "propagation_verbose.log"
-# Clear previous log
-"" | Set-Content -Path $global:verbose_log_path -Encoding UTF8
+# Verbose log file path — set later by initialize-verbose-log once work_dir is known.
+# Write-Verbose messages are always appended to the log file for post-mortem debugging.
+$global:verbose_log_path = $null
 
 # Override Write-Verbose globally to also append to log file
 function global:Write-Verbose
 {
     param([string] $Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$timestamp  $Message" | Add-Content -Path $global:verbose_log_path -Encoding UTF8
+    if ($global:verbose_log_path)
+    {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        "$timestamp  $Message" | Add-Content -Path $global:verbose_log_path -Encoding UTF8
+    }
     # Also write to console if -Verbose was passed
     if ($global:VerbosePreference -ne 'SilentlyContinue')
     {
         Microsoft.PowerShell.Utility\Write-Verbose -Message $Message
     }
+}
+
+# Initialize the verbose log file in the work directory.
+# Called after work_dir is established (fresh or resume).
+# Uses a run number so subsequent resumes create separate log files.
+function global:initialize-verbose-log
+{
+    if (-not $global:work_dir -or -not (Test-Path $global:work_dir))
+    {
+        return
+    }
+    $existing = @(Get-ChildItem -Path $global:work_dir -Filter "propagation_verbose_*.log" -ErrorAction SilentlyContinue)
+    $run_number = $existing.Count + 1
+    $global:verbose_log_path = Join-Path $global:work_dir "propagation_verbose_$run_number.log"
+    "" | Set-Content -Path $global:verbose_log_path -Encoding UTF8
+    Write-Verbose "Log file initialized: $global:verbose_log_path"
 }
 
 # Print log file path on script exit (success, failure, or Ctrl+C)
@@ -243,6 +259,7 @@ function propagate-updates
         }
 
         Set-Location $global:work_dir
+        initialize-verbose-log
         Write-Host "Work directory: $global:work_dir"
         Write-Host "Branch name: $new_branch_name"
 
@@ -302,6 +319,7 @@ function propagate-updates
         $global:work_dir = Join-Path (Get-Location).Path $new_branch_name
         New-Item -ItemType Directory -Path $global:work_dir -Force | Out-Null
         Set-Location $global:work_dir
+        initialize-verbose-log
         Write-Host "Working directory: $global:work_dir"
 
         # build dependency graph
