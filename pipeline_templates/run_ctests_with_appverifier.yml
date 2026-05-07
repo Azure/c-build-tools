@@ -2,6 +2,9 @@
 # it will disable app verifier after running
 # If the list of tests from ctest is filtered, pass the filter arguments as ctest_additional_args so appverifier is enabled for the correct binaries
 # The steps in the steps parameter will all be run after enabling app verifier
+#
+# Reads $(appverifPath) and $(ctestPath) emitted by discover_native_tools.yml. Both default to
+# empty literal expansion if unset, which the helper script treats as "fall back to env / PATH".
 
 parameters:
  - name: repo_root
@@ -24,7 +27,7 @@ steps:
     inputs:
       targetType: 'filePath'
       filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
-      arguments: '-on -binaryNameSuffix ${{ parameters.binary_name_suffix }} -ctestArgs "${{ parameters.ctest_additional_args }}" -appVerifierEnable "${{ parameters.app_verifier_enable }}" -appVerifierAdditionalProperties "${{ parameters.app_verifier_additional_properties }}" -appverifPath "$(appverifPath)"'
+      arguments: '-on -binaryNameSuffix ${{ parameters.binary_name_suffix }} -ctestArgs "${{ parameters.ctest_additional_args }}" -appVerifierEnable "${{ parameters.app_verifier_enable }}" -appVerifierAdditionalProperties "${{ parameters.app_verifier_additional_properties }}" -appverifPath "$(appverifPath)" -ctestPath "$(ctestPath)"'
       workingDirectory: ${{ parameters.ctest_tests_bin_directory }}
 
   # see https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops#iterative-insertion
@@ -40,5 +43,5 @@ steps:
     inputs:
       targetType: 'filePath'
       filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
-      arguments: '-appverifPath "$(appverifPath)"'
+      arguments: '-appverifPath "$(appverifPath)" -ctestPath "$(ctestPath)"'
     condition: always()
