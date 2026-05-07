@@ -90,31 +90,19 @@ parameters:
   # Per-architecture overrides for MAX_STAGE. Empty (the default) means use the
   # symmetric MAX_STAGE param. Useful for asymmetric matrices like "x64 runs
   # ALL tests, ARM64 runs only UNIT_TESTS" without forcing one knob to fit
-  # both architectures.
+  # both architectures. Non-empty values must be one of BUILD / UNIT_TESTS /
+  # ALL; validation happens implicitly at the call site (coalesce() picks the
+  # per-arch override when set, otherwise the symmetric MAX_STAGE which IS
+  # value-checked).
   - name: MAX_STAGE_x64
     type: string
     default: ""
-    values:
-      - ""
-      - "BUILD"
-      - "UNIT_TESTS"
-      - "ALL"
   - name: MAX_STAGE_arm64
     type: string
     default: ""
-    values:
-      - ""
-      - "BUILD"
-      - "UNIT_TESTS"
-      - "ALL"
   - name: MAX_STAGE_x86
     type: string
     default: ""
-    values:
-      - ""
-      - "BUILD"
-      - "UNIT_TESTS"
-      - "ALL"
 
   - name: skip_repo_validation
     type: boolean
