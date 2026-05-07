@@ -40,15 +40,19 @@ parameters:
   - name: pool_name
     type: string
     default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
-  # MAX_STAGE controls how far this leg runs. Matches the convention used by
-  # downstream repos and the parent build_all_flavors.yml.
-  #   BUILD       - only compile binaries. Skip test execution.
-  #   UNIT_TESTS  - compile + run unit tests (CTest, VSTest, AppVerifier).
-  #   ALL         - alias for UNIT_TESTS in this template.
-  # Applied symmetrically to all architectures.
+  # MAX_STAGE is set per-architecture by build_all_flavors.yml (the only intended
+  # caller). Policy:
+  #   ARM64     -> UNIT_TESTS  (CTest excludes _int / _perf / _e2e categories so
+  #                             the slower ARM64 leg only runs unit tests)
+  #   x64 / x86 -> ALL         (run every CTest test that cmake_options registered)
+  # Values:
+  #   BUILD       - compile only. No test execution.
+  #   UNIT_TESTS  - compile + run unit tests only (CTest applies a category
+  #                 exclude filter; VSTest's *_ut_*.dll glob already restricts).
+  #   ALL         - compile + run all registered CTest tests (no category filter).
   - name: MAX_STAGE
     type: string
-    default: "UNIT_TESTS"
+    default: "ALL"
     values:
       - "BUILD"
       - "UNIT_TESTS"
@@ -139,25 +143,28 @@ jobs:
             workingDirectory: '$(Build.BinariesDirectory)/c'
             configuration: '${{ parameters.build_configuration }}'
             outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-            # ARM64 + MAX_STAGE=UNIT_TESTS: skip non-unit-test categories on ARM64.
+            # MAX_STAGE=UNIT_TESTS: skip non-unit-test categories on every architecture.
             # Test names registered by build_test_artifacts (in c-testrunnerswitcher)
-            # follow the convention of ending in _ut, _int, _perf, or _e2e. CMake's
-            # run_unittests / run_int_tests / run_perf_tests / run_e2e_tests options
-            # control registration; with the gate's default cmake_options every
-            # category gets registered, and ctest then runs them all. VSTest already
-            # filters to *_ut_*.dll via its discovery glob, but ctest does not.
+            # follow the convention of containing _ut, _int, _perf, or _e2e in the name
+            # (typically as the trailing or middle token, e.g. foo_ut, foo_int_tests,
+            # logger_int_console_x). CMake's run_unittests / run_int_tests /
+            # run_perf_tests / run_e2e_tests options control registration; with the
+            # gate's default cmake_options every category gets registered, and ctest
+            # then runs them all. VSTest already filters to *_ut_*.dll via its
+            # discovery glob, but ctest does not.
             #
             # We exclude (rather than include) so projects whose tests do not follow
             # the _ut suffix convention - notably c-build-tools' own validate_*_test
-            # and RUN_REALS_CHECK_TEST gates - still run on ARM64 instead of being
-            # filtered out and tripping --no-tests=error.
+            # and RUN_REALS_CHECK_TEST gates - still run instead of being filtered out
+            # and tripping --no-tests=error.
             #
+            # The regex uses ($|_) after each category so it matches both trailing
+            # uses (foo_int) and middle uses (foo_int_tests, logger_int_console_x).
             # Filter at run time so BUILD-stage semantics still hold (int/perf/e2e
-            # still compile on ARM64 - useful as a compile-only ratchet) while
-            # UNIT_TESTS strictly skips them at run time on ARM64.
-            # x64 keeps current behavior (callers manage scope via cmake_options).
-            ${{ if and(eq(parameters.ARCH_TYPE, 'ARM64'), eq(parameters.MAX_STAGE, 'UNIT_TESTS')) }}:
-              excludeTests: '_int$|_perf$|_e2e$'
+            # still compile - useful as a compile-only ratchet) while UNIT_TESTS
+            # strictly skips them at run time. MAX_STAGE=ALL bypasses this filter.
+            ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
+              excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
 
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
         - task: PublishTestResults@2
@@ -196,21 +203,22 @@ jobs:
               configuration: '${{ parameters.build_configuration }}'
               outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
               noTestsError: ${{ eq(parameters.appverifier_skip_tests_list, '') }}
-              # See the comment on the regular ctest invocation above for why ARM64 +
-              # MAX_STAGE=UNIT_TESTS skips _int/_perf/_e2e tests. AppVerifier-helper
-              # itself configures appverif for whatever ctest -N returns; that config
-              # is harmless for tests that won't actually run.
+              # See the comment on the regular ctest invocation above for why
+              # MAX_STAGE=UNIT_TESTS skips _int/_perf/_e2e categories. AppVerifier-
+              # helper itself configures appverif for whatever ctest -N returns;
+              # that config is harmless for tests that won't actually run.
               # The exclude regex is composed from up to two sources:
-              #   1. The caller-provided appverifier_skip_tests_list (tests known to
-              #      misbehave under AppVerifier).
-              #   2. The ARM64+UNIT_TESTS test-category filter (_int|_perf|_e2e).
-              # All four mutually-exclusive cases are spelled out here because the
-              # parts have to be combined with a regex '|' separator.
-              ${{ if and(eq(parameters.ARCH_TYPE, 'ARM64'), eq(parameters.MAX_STAGE, 'UNIT_TESTS'), ne(parameters.appverifier_skip_tests_list, '')) }}:
-                excludeTests: '${{ parameters.appverifier_skip_tests_list }}|_int$|_perf$|_e2e$'
-              ${{ if and(eq(parameters.ARCH_TYPE, 'ARM64'), eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.appverifier_skip_tests_list, '')) }}:
-                excludeTests: '_int$|_perf$|_e2e$'
-              ${{ if or(ne(parameters.ARCH_TYPE, 'ARM64'), ne(parameters.MAX_STAGE, 'UNIT_TESTS')) }}:
+              #   1. The caller-provided appverifier_skip_tests_list (tests known
+              #      to misbehave under AppVerifier).
+              #   2. The UNIT_TESTS test-category filter (_int|_perf|_e2e, with
+              #      ($|_) after each so it matches both trailing and middle uses).
+              # All three mutually-exclusive cases are spelled out here because
+              # the parts have to be combined with a regex '|' separator.
+              ${{ if and(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), ne(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '${{ parameters.appverifier_skip_tests_list }}|_int($|_)|_perf($|_)|_e2e($|_)'
+              ${{ if and(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
+              ${{ if ne(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
                 excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
 
       - task: PublishTestResults@2

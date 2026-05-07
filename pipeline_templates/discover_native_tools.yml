@@ -382,6 +382,7 @@ steps:
         Write-Host '  CTest:    "$(ctestPath)" -C Debug --output-on-failure'
         Write-Host '  dumpbin:  "$(dumpbinPath)" /ALL mylib.lib'
         Write-Host '  vstest:   "$(vstestPath)" test.dll /Platform:$(targetPlatform)'
+        Write-Host '  appverif: "$(appverifPath)" -enable Heaps -for foo.exe'
         Write-Host ""
         Write-Host "Environment variable DUMPBIN_PATH is also set for subprocesses (e.g., ctest)"
         Write-Host ""
