@@ -3,8 +3,10 @@
 # If the list of tests from ctest is filtered, pass the filter arguments as ctest_additional_args so appverifier is enabled for the correct binaries
 # The steps in the steps parameter will all be run after enabling app verifier
 #
-# Reads $(appverifPath) and $(ctestPath) emitted by discover_native_tools.yml. Both default to
-# empty literal expansion if unset, which the helper script treats as "fall back to env / PATH".
+# Forwards $(appverifPath) and $(ctestPath) emitted by discover_native_tools.yml
+# to the helper script. Detection failures abort discover_native_tools.yml
+# directly, so both pipeline variables are guaranteed to be valid paths by the
+# time this template runs.
 
 parameters:
  - name: repo_root

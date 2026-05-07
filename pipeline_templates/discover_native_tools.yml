@@ -12,7 +12,7 @@
 #   $(msbuildPath)  - Path to MSBuild.exe (architecture-specific)
 #   $(dumpbinPath)  - Path to dumpbin.exe (architecture-specific)
 #   $(vstestPath)   - Path to vstest.console.exe (architecture-specific)
-#   $(appverifPath) - Path to appverif.exe (empty string if not installed)
+#   $(appverifPath) - Path to appverif.exe (mandatory; discovery aborts if not found)
 #   $(cmakeArch)    - CMake architecture flag (x64, Win32, ARM64)
 #   $(targetPlatform) - MSBuild platform (x64, Win32, ARM64)
 #   $(cmakeGenerator) - CMake generator string (e.g., "Visual Studio 17 2022")
@@ -188,55 +188,34 @@ steps:
         }
         Write-Host ""
 
-        # Find Application Verifier (appverif.exe)
-        # AppVerifier is a configuration tool that sets verifier state for target image
-        # names. Its own PE architecture is informational only - it can configure verifier
-        # settings for binaries of any architecture. It is therefore intentionally NOT
-        # included in the strict PE-architecture verification block below.
-        # Search order is target-architecture-aware:
-        #   ARM64 host : prefer native ARM64 build, fall back to x64 with a loud warning
-        #   x64/x86    : prefer x64 build
-        # Then common alternative install locations, then PATH (for legacy build pools).
+        # Find Application Verifier (appverif.exe).
+        # Detection is mandatory: if appverif.exe cannot be located, this discovery
+        # step aborts the job. Every consumer of c-build-tools is expected to run on
+        # build pools that have AppVerifier installed; a missing appverif is treated
+        # as an environmental error, not as a condition the helper should paper over.
+        # AppVerifier is a configuration tool whose own PE architecture is
+        # informational only - it can configure verifier settings for binaries of any
+        # architecture - and is therefore intentionally NOT included in the strict
+        # PE-architecture verification block below.
         $appverifPath = $null
-        $appverifPrimary = @()
+        $appverifCandidates = @()
         if ($arch -eq "ARM64") {
-            $appverifPrimary += "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\arm64\appverif.exe"
-            $appverifPrimary += "$env:ProgramFiles\Windows Kits\10\Debuggers\arm64\appverif.exe"
-        } else {
-            $appverifPrimary += "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\appverif.exe"
-            $appverifPrimary += "$env:ProgramFiles\Windows Kits\10\Debuggers\x64\appverif.exe"
+            $appverifCandidates += "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\arm64\appverif.exe"
+            $appverifCandidates += "$env:ProgramFiles\Windows Kits\10\Debuggers\arm64\appverif.exe"
         }
-        # Common alternative locations (any architecture)
-        $appverifAlternatives = @(
-            "${env:ProgramFiles(x86)}\Application Verifier\appverif.exe",
-            "$env:ProgramFiles\Application Verifier\appverif.exe",
-            "$env:SystemRoot\System32\appverif.exe"
-        )
+        $appverifCandidates += "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\appverif.exe"
+        $appverifCandidates += "$env:ProgramFiles\Windows Kits\10\Debuggers\x64\appverif.exe"
+        $appverifCandidates += "${env:ProgramFiles(x86)}\Application Verifier\appverif.exe"
+        $appverifCandidates += "$env:ProgramFiles\Application Verifier\appverif.exe"
+        $appverifCandidates += "$env:SystemRoot\System32\appverif.exe"
 
-        foreach ($candidate in ($appverifPrimary + $appverifAlternatives)) {
+        foreach ($candidate in $appverifCandidates) {
             if ($candidate -and (Test-Path $candidate)) {
                 $appverifPath = $candidate
                 break
             }
         }
 
-        # ARM64 last-resort fallback to x64 AppVerifier (with a loud warning that
-        # ARM64 test binary instrumentation is unverified with this fallback).
-        if ($arch -eq "ARM64" -and -not $appverifPath) {
-            $appverifArm64Fallbacks = @(
-                "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\appverif.exe",
-                "$env:ProgramFiles\Windows Kits\10\Debuggers\x64\appverif.exe"
-            )
-            foreach ($candidate in $appverifArm64Fallbacks) {
-                if ($candidate -and (Test-Path $candidate)) {
-                    $appverifPath = $candidate
-                    Write-Host "##[warning]ARM64 AppVerifier not found; falling back to x64 AppVerifier at $appverifPath. ARM64 test binary instrumentation is unverified with this fallback."
-                    break
-                }
-            }
-        }
-
-        # PATH fallback (legacy build pools where appverif.exe was placed on PATH manually)
         if (-not $appverifPath) {
             $appverifCmd = Get-Command appverif.exe -ErrorAction SilentlyContinue
             if ($appverifCmd) {
@@ -244,15 +223,15 @@ steps:
             }
         }
 
-        if ($appverifPath) {
-            Write-Host "appverif: $appverifPath"
-            Write-Host "##vso[task.setvariable variable=appverifPath]$appverifPath"
-        } else {
-            # Always emit the variable (empty) so consumers see "" instead of an
-            # unresolved $(appverifPath) literal in script arguments.
-            Write-Host "##vso[task.setvariable variable=appverifPath]"
-            Write-Host "##[warning]appverif.exe not found - AppVerifier steps will be skipped"
+        if (-not $appverifPath) {
+            $searched = ($appverifCandidates | ForEach-Object { "  $_" }) -join "`n"
+            Write-Host "##vso[task.logissue type=error]appverif.exe could not be located. Searched the following locations and PATH:`n$searched"
+            Write-Host "##[error]appverif.exe is required on every build pool. Aborting native tools discovery."
+            exit 1
         }
+
+        Write-Host "appverif: $appverifPath"
+        Write-Host "##vso[task.setvariable variable=appverifPath]$appverifPath"
         Write-Host ""
 
         # Find vstest.console.exe

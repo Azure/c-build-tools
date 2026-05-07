@@ -139,19 +139,25 @@ jobs:
             workingDirectory: '$(Build.BinariesDirectory)/c'
             configuration: '${{ parameters.build_configuration }}'
             outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-            # ARM64 + MAX_STAGE=UNIT_TESTS: limit ctest to unit tests only.
+            # ARM64 + MAX_STAGE=UNIT_TESTS: skip non-unit-test categories on ARM64.
             # Test names registered by build_test_artifacts (in c-testrunnerswitcher)
-            # are exactly ${whatIsBuilding}, which by convention end in _ut, _int,
-            # _perf, or _e2e. CMake's run_unittests / run_int_tests / run_perf_tests
-            # / run_e2e_tests options control registration; with the gate's default
-            # cmake_options every category gets registered, and ctest then runs them
-            # all. VSTest already filters to *_ut_*.dll via its discovery glob, but
-            # ctest does not. Filter at run time so BUILD-stage semantics still hold
-            # (int tests still compile on ARM64 - useful as a compile-only ratchet)
-            # while UNIT_TESTS strictly runs only _ut tests on ARM64.
+            # follow the convention of ending in _ut, _int, _perf, or _e2e. CMake's
+            # run_unittests / run_int_tests / run_perf_tests / run_e2e_tests options
+            # control registration; with the gate's default cmake_options every
+            # category gets registered, and ctest then runs them all. VSTest already
+            # filters to *_ut_*.dll via its discovery glob, but ctest does not.
+            #
+            # We exclude (rather than include) so projects whose tests do not follow
+            # the _ut suffix convention - notably c-build-tools' own validate_*_test
+            # and RUN_REALS_CHECK_TEST gates - still run on ARM64 instead of being
+            # filtered out and tripping --no-tests=error.
+            #
+            # Filter at run time so BUILD-stage semantics still hold (int/perf/e2e
+            # still compile on ARM64 - useful as a compile-only ratchet) while
+            # UNIT_TESTS strictly skips them at run time on ARM64.
             # x64 keeps current behavior (callers manage scope via cmake_options).
             ${{ if and(eq(parameters.ARCH_TYPE, 'ARM64'), eq(parameters.MAX_STAGE, 'UNIT_TESTS')) }}:
-              includeTests: '_ut$'
+              excludeTests: '_int$|_perf$|_e2e$'
 
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
         - task: PublishTestResults@2
@@ -189,14 +195,23 @@ jobs:
               workingDirectory: '$(Build.BinariesDirectory)/c'
               configuration: '${{ parameters.build_configuration }}'
               outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-              excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
               noTestsError: ${{ eq(parameters.appverifier_skip_tests_list, '') }}
               # See the comment on the regular ctest invocation above for why ARM64 +
-              # MAX_STAGE=UNIT_TESTS limits to _ut tests. AppVerifier-helper itself
-              # configures appverif for whatever ctest -N returns; that config is
-              # harmless for tests that won't actually run.
-              ${{ if and(eq(parameters.ARCH_TYPE, 'ARM64'), eq(parameters.MAX_STAGE, 'UNIT_TESTS')) }}:
-                includeTests: '_ut$'
+              # MAX_STAGE=UNIT_TESTS skips _int/_perf/_e2e tests. AppVerifier-helper
+              # itself configures appverif for whatever ctest -N returns; that config
+              # is harmless for tests that won't actually run.
+              # The exclude regex is composed from up to two sources:
+              #   1. The caller-provided appverifier_skip_tests_list (tests known to
+              #      misbehave under AppVerifier).
+              #   2. The ARM64+UNIT_TESTS test-category filter (_int|_perf|_e2e).
+              # All four mutually-exclusive cases are spelled out here because the
+              # parts have to be combined with a regex '|' separator.
+              ${{ if and(eq(parameters.ARCH_TYPE, 'ARM64'), eq(parameters.MAX_STAGE, 'UNIT_TESTS'), ne(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '${{ parameters.appverifier_skip_tests_list }}|_int$|_perf$|_e2e$'
+              ${{ if and(eq(parameters.ARCH_TYPE, 'ARM64'), eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '_int$|_perf$|_e2e$'
+              ${{ if or(ne(parameters.ARCH_TYPE, 'ARM64'), ne(parameters.MAX_STAGE, 'UNIT_TESTS')) }}:
+                excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
 
       - task: PublishTestResults@2
         displayName: '📊 Publish ctest results'
