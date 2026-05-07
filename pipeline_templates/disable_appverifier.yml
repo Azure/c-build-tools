@@ -1,5 +1,10 @@
-# Convenience helper to disable application verifier for all processes
-# May be useful as a cleanup task in case the application verifier state leaks from other canceled jobs
+# Convenience helper to disable application verifier for all processes.
+# May be useful as a cleanup task in case the application verifier state leaks
+# from other canceled jobs.
+#
+# Forwards $(appverifPath) emitted by discover_native_tools.yml to the helper
+# script. Detection failures abort discover_native_tools.yml directly, so by the
+# time this template runs $(appverifPath) is guaranteed to be a valid path.
 
 parameters:
  - name: repo_root
@@ -11,4 +16,5 @@ steps:
     inputs:
       targetType: 'filePath'
       filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
+      arguments: '-appverifPath "$(appverifPath)"'
     condition: always()

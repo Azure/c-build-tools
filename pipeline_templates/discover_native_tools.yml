@@ -12,6 +12,7 @@
 #   $(msbuildPath)  - Path to MSBuild.exe (architecture-specific)
 #   $(dumpbinPath)  - Path to dumpbin.exe (architecture-specific)
 #   $(vstestPath)   - Path to vstest.console.exe (architecture-specific)
+#   $(appverifPath) - Path to appverif.exe (mandatory; discovery aborts if not found)
 #   $(cmakeArch)    - CMake architecture flag (x64, Win32, ARM64)
 #   $(targetPlatform) - MSBuild platform (x64, Win32, ARM64)
 #   $(cmakeGenerator) - CMake generator string (e.g., "Visual Studio 17 2022")
@@ -186,7 +187,66 @@ steps:
             Write-Host "##[warning]dumpbin not found - reals_check may fail"
         }
         Write-Host ""
-        
+
+        # Find Application Verifier (appverif.exe).
+        # Detection is mandatory: if appverif.exe cannot be located, this discovery
+        # step aborts the job. Every consumer of c-build-tools is expected to run on
+        # build pools that have AppVerifier installed; a missing appverif is treated
+        # as an environmental error, not as a condition the helper should paper over.
+        # AppVerifier is a configuration tool whose own PE architecture is
+        # informational only - it can configure verifier settings for binaries of any
+        # architecture - and is therefore intentionally NOT included in the strict
+        # PE-architecture verification block below.
+        #
+        # WOW64 file-system redirection note:
+        # When this script runs in an x86-emulated PowerShell on a 64-bit / ARM64
+        # host (for example, the 1ES ARM64 hosted pool agent currently runs as x86
+        # under emulation), accesses to "$env:SystemRoot\System32" are silently
+        # redirected to "$env:SystemRoot\SysWOW64", which contains x86 binaries -
+        # not the native ARM64 / x64 build of appverif.exe that lives in real
+        # System32. The "Sysnative" alias bypasses that redirector and exposes the
+        # native System32 to x86 processes; on a native 64-bit / ARM64 process
+        # Sysnative simply does not exist (Test-Path returns false) and we fall
+        # through to System32. Probe Sysnative first so the x86-emulated case
+        # actually sees the native binary.
+        $appverifPath = $null
+        $appverifCandidates = @()
+        if ($arch -eq "ARM64") {
+            $appverifCandidates += "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\arm64\appverif.exe"
+            $appverifCandidates += "$env:ProgramFiles\Windows Kits\10\Debuggers\arm64\appverif.exe"
+        }
+        $appverifCandidates += "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\appverif.exe"
+        $appverifCandidates += "$env:ProgramFiles\Windows Kits\10\Debuggers\x64\appverif.exe"
+        $appverifCandidates += "${env:ProgramFiles(x86)}\Application Verifier\appverif.exe"
+        $appverifCandidates += "$env:ProgramFiles\Application Verifier\appverif.exe"
+        $appverifCandidates += "$env:SystemRoot\Sysnative\appverif.exe"
+        $appverifCandidates += "$env:SystemRoot\System32\appverif.exe"
+
+        foreach ($candidate in $appverifCandidates) {
+            if ($candidate -and (Test-Path $candidate)) {
+                $appverifPath = $candidate
+                break
+            }
+        }
+
+        if (-not $appverifPath) {
+            $appverifCmd = Get-Command appverif.exe -ErrorAction SilentlyContinue
+            if ($appverifCmd) {
+                $appverifPath = $appverifCmd.Source
+            }
+        }
+
+        if (-not $appverifPath) {
+            $searched = ($appverifCandidates | ForEach-Object { "  $_" }) -join "`n"
+            Write-Host "##vso[task.logissue type=error]appverif.exe could not be located. Searched the following locations and PATH:`n$searched"
+            Write-Host "##[error]appverif.exe is required on every build pool. Aborting native tools discovery."
+            exit 1
+        }
+
+        Write-Host "appverif: $appverifPath"
+        Write-Host "##vso[task.setvariable variable=appverifPath]$appverifPath"
+        Write-Host ""
+
         # Find vstest.console.exe
         # Path pattern: <vsPath>\Common7\IDE\CommonExtensions\<Microsoft|Platform>\TestPlatform
         $vstestPath = $null
@@ -231,7 +291,7 @@ steps:
             Write-Host "##[warning]$vstestExeName not found"
         }
         Write-Host ""
-        
+
         # Set architecture variables for use in build commands
         Write-Host "##vso[task.setvariable variable=cmakeArch]$cmakeArch"
         Write-Host "##vso[task.setvariable variable=targetPlatform]$targetPlatform"
@@ -284,6 +344,8 @@ steps:
         if ($msbuildPath) { $toolsToVerify['MSBuild.exe'] = $msbuildPath }
         if ($dumpbinPath) { $toolsToVerify['dumpbin.exe'] = $dumpbinPath }
         if ($vstestPath) { $toolsToVerify['vstest.console.exe'] = $vstestPath }
+        # appverif.exe is intentionally NOT verified here - it is a configuration tool
+        # whose own PE architecture is not required to match the target architecture.
         
         foreach ($tool in $toolsToVerify.GetEnumerator()) {
             $toolArch = Get-PEArchitecture -FilePath $tool.Value
