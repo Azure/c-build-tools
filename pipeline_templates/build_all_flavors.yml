@@ -70,15 +70,48 @@ parameters:
   # MAX_STAGE controls how far the pipeline runs. Matches the convention used
   # by downstream repos so callers can use one knob.
   #   BUILD       - only compile binaries. Skip unit / int test execution.
-  #   UNIT_TESTS  - compile + run unit tests (CTest, VSTest, AppVerifier).
-  #   ALL         - alias for UNIT_TESTS in this template (no perf / integration
-  #                 stages live here). Accepted so callers that standardize on
-  #                 MAX_STAGE=ALL elsewhere don't get rejected.
-  # Applies symmetrically to all architectures (x64 and ARM64).
+  #   UNIT_TESTS  - compile + run unit tests only. CTest excludes tests whose
+  #                 names match _int(_*)? / _perf(_*)? / _e2e(_*)?, regardless
+  #                 of architecture. VSTest already restricts to *_ut_*.dll.
+  #   ALL         - compile + run all registered CTest tests (no category
+  #                 filter). Actual categories depend on cmake_options such as
+  #                 run_int_tests / run_perf_tests / run_e2e_tests.
+  # MAX_STAGE applies as the default to every architecture. To run a different
+  # stage on a specific architecture, set the corresponding MAX_STAGE_<arch>
+  # override below (an empty string means "fall back to MAX_STAGE").
   - name: MAX_STAGE
     type: string
     default: "UNIT_TESTS"
     values:
+      - "BUILD"
+      - "UNIT_TESTS"
+      - "ALL"
+
+  # Per-architecture overrides for MAX_STAGE. Empty (the default) means use the
+  # symmetric MAX_STAGE param. Useful for asymmetric matrices like "x64 runs
+  # ALL tests, ARM64 runs only UNIT_TESTS" without forcing one knob to fit
+  # both architectures.
+  - name: MAX_STAGE_x64
+    type: string
+    default: ""
+    values:
+      - ""
+      - "BUILD"
+      - "UNIT_TESTS"
+      - "ALL"
+  - name: MAX_STAGE_arm64
+    type: string
+    default: ""
+    values:
+      - ""
+      - "BUILD"
+      - "UNIT_TESTS"
+      - "ALL"
+  - name: MAX_STAGE_x86
+    type: string
+    default: ""
+    values:
+      - ""
       - "BUILD"
       - "UNIT_TESTS"
       - "ALL"
@@ -112,9 +145,10 @@ jobs:
           # - jemalloc + ARM64: jemalloc doesn't support ARM64 on Windows
           # - appverifier + fsanitize: appverifier is incompatible with address sanitizer
           # - appverifier + run_test_suite_without_ctest: appverifier only works with ctest
-          # - appverifier + MAX_STAGE=BUILD: appverifier is a test-execution mode; no point
-          #   building an APPVERIFIER=ON flavor when tests won't run.
-          - ${{ if and( or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')), or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(ARCH_TYPE, 'ARM64')), or( ne(APP_VERIFIER, 'ON'), ne(FSANITIZE_TYPE, 'ON')), or( ne(APP_VERIFIER, 'ON'), eq(parameters.run_test_suite_without_ctest, '')), or( ne(APP_VERIFIER, 'ON'), ne(parameters.MAX_STAGE, 'BUILD'))) }}:
+          # - appverifier + MAX_STAGE=BUILD (per-arch effective stage): appverifier is a
+          #   test-execution mode; no point building an APPVERIFIER=ON flavor when tests
+          #   won't run for the architecture in question.
+          - ${{ if and( or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(FSANITIZE_TYPE, 'ON')), or( ne( GBALLOC_LL_TYPE , 'JEMALLOC' ), ne(ARCH_TYPE, 'ARM64')), or( ne(APP_VERIFIER, 'ON'), ne(FSANITIZE_TYPE, 'ON')), or( ne(APP_VERIFIER, 'ON'), eq(parameters.run_test_suite_without_ctest, '')), or( ne(APP_VERIFIER, 'ON'), and(eq(ARCH_TYPE, 'x64'), ne(coalesce(parameters.MAX_STAGE_x64, parameters.MAX_STAGE), 'BUILD')), and(eq(ARCH_TYPE, 'ARM64'), ne(coalesce(parameters.MAX_STAGE_arm64, parameters.MAX_STAGE), 'BUILD')), and(eq(ARCH_TYPE, 'x86'), ne(coalesce(parameters.MAX_STAGE_x86, parameters.MAX_STAGE), 'BUILD')))) }}:
             - template: build_and_run_tests.yml
               parameters:
                 BUILD_SUFFIX: _${{ BUILD_CONFIGURATION_TYPE }}_${{ GBALLOC_LL_TYPE }}_FSANITIZE_${{ FSANITIZE_TYPE }}_${{ ARCH_TYPE }}_APPVERIFIER_${{ APP_VERIFIER }}
@@ -123,7 +157,6 @@ jobs:
                 FSANITIZE_TYPE: ${{ FSANITIZE_TYPE }}
                 ARCH_TYPE: ${{ ARCH_TYPE }}
                 APP_VERIFIER: ${{ APP_VERIFIER }}
-                MAX_STAGE: ${{ parameters.MAX_STAGE }}
                 cmake_options: ${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }}
                 run_test_suite_without_ctest: ${{ parameters.run_test_suite_without_ctest }}
                 repo_root_override: ${{ parameters.repo_root_override }}
@@ -131,7 +164,18 @@ jobs:
                 appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
                 failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
                 setup_nuget: ${{ parameters.setup_nuget }}
+                # Per-architecture pool selection AND effective MAX_STAGE. Combined
+                # into a single conditional block so each ARCH_TYPE iteration emits
+                # exactly one pool_name + MAX_STAGE pair (avoids YAML duplicate-key
+                # complaints from strict parsers; ADO would accept either form).
+                # MAX_STAGE per arch: a non-empty MAX_STAGE_<arch> override wins
+                # over the symmetric MAX_STAGE param via coalesce().
                 ${{ if eq(ARCH_TYPE, 'ARM64') }}:
                   pool_name: ${{ parameters.pool_name_arm64 }}
+                  MAX_STAGE: ${{ coalesce(parameters.MAX_STAGE_arm64, parameters.MAX_STAGE) }}
+                ${{ elseif eq(ARCH_TYPE, 'x86') }}:
+                  pool_name: ${{ parameters.pool_name_x64 }}
+                  MAX_STAGE: ${{ coalesce(parameters.MAX_STAGE_x86, parameters.MAX_STAGE) }}
                 ${{ else }}:
                   pool_name: ${{ parameters.pool_name_x64 }}
+                  MAX_STAGE: ${{ coalesce(parameters.MAX_STAGE_x64, parameters.MAX_STAGE) }}
