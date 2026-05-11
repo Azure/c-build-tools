@@ -41,12 +41,7 @@ jobs:
   steps:
   - template: get_machine_information.yml
 
-  # Shallow clone - only need the code at this commit, not full history.
-  # submodules: true is required for any consumer that has internal-ADO
-  # submodules; the ADO Checkout task injects auth headers per-submodule-URL,
-  # while the 'submodules: false + manual git submodule update script'
-  # pattern only works for github.com (anonymous) submodules. github-only
-  # consumers see no behavioral change.
+  # submodules: true puts the System.AccessToken on the auth header for every submodule URL (not just the outer repo URL), so consumers with internal-ADO submodules work.
   - checkout: self
     submodules: true
     clean: false
