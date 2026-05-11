@@ -21,19 +21,50 @@ parameters:
 steps:
   - template: get_machine_information.yml
 
-  # Shallow clone - only need the code at this commit, not full history
+  # Shallow clone - only need the code at this commit, not full history.
+  # submodules: true (instead of false + a separate 'git submodule update'
+  # script step) lets ADO's checkout task inject System.AccessToken-based
+  # auth headers for every submodule URL, not just the outer repo URL.
+  # This is required for any consumer that has internal-ADO submodules;
+  # the previous 'manual submodule update script' pattern had no auth
+  # headers at all and only worked for github.com submodules (anonymous
+  # clone). Existing github.com submodules clone fine either way since
+  # they're anonymous.
   - checkout: self
-    submodules: false
+    submodules: true
     clean: false
     fetchDepth: 1
-
-  # Shallow submodules - only need the pinned commit, not full history
-  - script: git submodule update --init --depth 1 --jobs 20
-    displayName: 'Shallow checkout submodules'
 
   # Authenticate NuGet feed so cmake configure can restore packages
   - ${{ if parameters.setup_nuget }}:
     - template: setup_nuget_tools.yml
+
+  # Stage a repo-root nuget.config (if present) into the binaries dir so
+  # msbuild's integrated /t:restore discovers it. msbuild's walk-up search
+  # for nuget.config starts at the .csproj directory and walks upward;
+  # the SOLUTION lives at $(Build.BinariesDirectory)/c, not under the
+  # sources dir, so a nuget.config at the repo root is otherwise
+  # invisible to restore. Copying it under the binaries dir puts it on
+  # the walk-up path. No-op for consumers without a repo-root
+  # nuget.config (the conditional copy just skips). Case-preserving
+  # using Get-ChildItem -Filter so a config named NuGet.config or
+  # nuget.config keeps its original case.
+  - task: PowerShell@2
+    displayName: 'Stage repo-root nuget.config for msbuild restore'
+    inputs:
+      targetType: inline
+      script: |
+        $sourcesDir = "$(Build.SourcesDirectory)"
+        $binariesC = "$(Build.BinariesDirectory)/c"
+        $candidate = Get-ChildItem -Path $sourcesDir -Filter 'nuget.config' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $candidate) {
+          Write-Host "No nuget.config at $sourcesDir; skipping."
+          return
+        }
+        New-Item -ItemType Directory -Force -Path $binariesC | Out-Null
+        $dst = Join-Path $binariesC $candidate.Name
+        Copy-Item -LiteralPath $candidate.FullName -Destination $dst -Force
+        Write-Host "Staged $($candidate.FullName) -> $dst"
 
   # ARM64: Verify agent architecture
   - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:

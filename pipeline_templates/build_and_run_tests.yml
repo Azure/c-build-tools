@@ -62,6 +62,16 @@ parameters:
   - name: setup_nuget
     type: boolean
     default: false
+  # When true, publish $(Build.BinariesDirectory)/<build_configuration> as
+  # a pipeline artifact named <build_configuration> on success (in addition
+  # to the failure-time whole-binaries publish handled by build_teardown_steps.yml).
+  # This is for consumers that have downstream jobs which need the build
+  # output (e.g. consumers whose downstream test jobs download a 'Debug'
+  # artifact via DownloadPipelineArtifact). Default false to preserve
+  # current behavior for consumers without downstream artifact dependencies.
+  - name: publish_artifacts_on_success
+    type: boolean
+    default: false
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -240,6 +250,21 @@ jobs:
           buildConfiguration: ${{ parameters.build_configuration }}
           failTaskOnMissingResultsFile: true
         condition: always()
+
+  # Optional: publish the configuration's build output as a named pipeline
+  # artifact on success, so downstream jobs in the same pipeline can
+  # consume it via DownloadPipelineArtifact. The artifact is keyed by
+  # build_configuration (e.g. 'Debug', 'RelWithDebInfo') so downstream
+  # consumers can use a stable, simple name. Default-off keeps current
+  # behavior for consumers that don't have downstream artifact dependencies.
+  - ${{ if parameters.publish_artifacts_on_success }}:
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish ${{ parameters.build_configuration }} build artifact'
+      inputs:
+        targetPath: '$(Build.BinariesDirectory)/${{ parameters.build_configuration }}'
+        artifactName: '${{ parameters.build_configuration }}'
+        parallel: true
+      condition: succeeded()
 
   - template : build_teardown_steps.yml
     parameters:
