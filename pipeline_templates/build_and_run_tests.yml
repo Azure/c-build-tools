@@ -63,13 +63,16 @@ parameters:
     type: boolean
     default: false
   # When true, publish $(Build.BinariesDirectory)/<build_configuration> as
-  # a pipeline artifact named <build_configuration> on success. Mutually
-  # exclusive with build_teardown_steps.yml's failure-time publish
-  # (`condition: failed()`) -- never both, since a job is either success
-  # or failure. For consumers whose downstream jobs need the build output
-  # (e.g. .NET test jobs that download a 'Debug' artifact via
-  # DownloadPipelineArtifact). Default false -> step is skipped -> no
-  # cost for consumers without downstream artifact dependencies.
+  # a pipeline artifact named <BUILD_SUFFIX>_build_output on success.
+  # The artifact name is keyed on BUILD_SUFFIX (not just build_configuration)
+  # so flavors that share a build_configuration -- e.g. x64 + ARM64 Debug --
+  # don't collide on the artifact name. Mutually exclusive with
+  # build_teardown_steps.yml's failure-time publish (`condition: failed()`)
+  # -- never both, since a job is either success or failure. For consumers
+  # whose downstream jobs need the build output (e.g. .NET test jobs that
+  # DownloadPipelineArtifact the build output). Default false -> step is
+  # skipped -> no cost for consumers without downstream artifact
+  # dependencies.
   - name: publish_artifacts_on_success
     type: boolean
     default: false
@@ -253,15 +256,19 @@ jobs:
         condition: always()
 
   # Publish the configuration's build output on success, for downstream jobs in
-  # the same pipeline to consume via DownloadPipelineArtifact. The failure-time
-  # whole-binaries publish in build_teardown_steps.yml uses `condition: failed()`,
-  # so this success-only publish and that one are mutually exclusive -- never both.
+  # the same pipeline to consume via DownloadPipelineArtifact. The artifact
+  # name is keyed on BUILD_SUFFIX to be unique across the flavor matrix
+  # (build_configuration x arch x fsanitize x appverifier x gballoc) -- two
+  # build_and_run_tests jobs for different flavors must not collide on an
+  # artifact name. The failure-time whole-binaries publish in
+  # build_teardown_steps.yml uses `condition: failed()`, so this
+  # success-only publish and that one are mutually exclusive -- never both.
   - ${{ if parameters.publish_artifacts_on_success }}:
     - task: PublishPipelineArtifact@1
-      displayName: 'Publish ${{ parameters.build_configuration }} build artifact'
+      displayName: 'Publish ${{ parameters.build_configuration }} build output'
       inputs:
         targetPath: '$(Build.BinariesDirectory)/${{ parameters.build_configuration }}'
-        artifactName: '${{ parameters.build_configuration }}'
+        artifactName: '${{ parameters.BUILD_SUFFIX }}_build_output'
         parallel: true
       condition: succeeded()
 
