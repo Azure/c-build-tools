@@ -83,26 +83,6 @@ jobs:
   - ${{ if parameters.setup_nuget }}:
     - template: setup_nuget_tools.yml
 
-  # Stage a repo-root nuget.config (if present) into the binaries dir so
-  # msbuild's integrated /t:restore discovers it. See build_setup_steps.yml
-  # for rationale. No-op if no repo-root nuget.config exists.
-  - task: PowerShell@2
-    displayName: 'Stage repo-root nuget.config for msbuild restore'
-    inputs:
-      targetType: inline
-      script: |
-        $sourcesDir = "$(Build.SourcesDirectory)"
-        $binariesC = "$(Build.BinariesDirectory)/c"
-        $candidate = Get-ChildItem -Path $sourcesDir -Filter 'nuget.config' -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $candidate) {
-          Write-Host "No nuget.config at $sourcesDir; skipping."
-          return
-        }
-        New-Item -ItemType Directory -Force -Path $binariesC | Out-Null
-        $dst = Join-Path $binariesC $candidate.Name
-        Copy-Item -LiteralPath $candidate.FullName -Destination $dst -Force
-        Write-Host "Staged $($candidate.FullName) -> $dst"
-
   # CMake generate with repo validation and traceability enabled
   - template: tasks/cmake.yml
     parameters:
