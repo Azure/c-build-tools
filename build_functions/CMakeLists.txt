@@ -162,6 +162,16 @@ macro(set_default_build_options)
         add_definitions(-DUSE_VALGRIND)
     endif()
 
+    # Define USE_HELGRIND/USE_DRD globally (Linux only) so timing-sensitive tests can
+    # scale their constants when running under the corresponding tool.
+    if(${run_helgrind} AND (UNIX))
+        add_definitions(-DUSE_HELGRIND)
+    endif()
+
+    if(${run_drd} AND (UNIX))
+        add_definitions(-DUSE_DRD)
+    endif()
+
     if (WIN32)
         if (${use_segment_heap})
             if (CMAKE_GENERATOR MATCHES "Visual Studio")
