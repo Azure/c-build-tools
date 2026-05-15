@@ -2,8 +2,18 @@
 # this template file sets up NuGet tools to install the correct version consistently
 
 steps:
+# Retry to absorb the Node 24 task-host libuv assertion crash that occasionally
+# kills these wrappers on Windows ADO agents (Exit code 57005, faulting in
+# vss-agent\externals\node24\bin\node.exe). Tracked upstream as
+# https://github.com/nodejs/node/issues/56645 (open; pending fix in PR
+# https://github.com/nodejs/node/pull/61999) and in the agent as
+# https://github.com/microsoft/azure-pipelines-agent/issues/5498.
+# These tasks are idempotent setup -- retry is safe and any real failure will
+# still surface after the retries are exhausted.
 - task: NuGetAuthenticate@1
+  retryCountOnTaskFailure: 3
 
 - task: NuGetToolInstaller@1
   displayName: 'NuGet Install'
+  retryCountOnTaskFailure: 3
   continueOnError: true
