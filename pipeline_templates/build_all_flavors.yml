@@ -88,6 +88,14 @@ parameters:
     type: boolean
     default: false
 
+  # Forwarded to build_and_run_tests.yml. When true, publish the
+  # configuration's binaries dir as a named pipeline artifact so
+  # downstream jobs in the same pipeline can consume it. See
+  # build_and_run_tests.yml for details.
+  - name: publish_artifacts_on_success
+    type: boolean
+    default: false
+
 jobs:
 # Run repo validation and traceability once (not per-flavor)
 - ${{ if not(parameters.skip_repo_validation) }}:
@@ -123,6 +131,7 @@ jobs:
                 appverifier_skip_tests_list: ${{ parameters.appverifier_skip_tests_list }}
                 failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
                 setup_nuget: ${{ parameters.setup_nuget }}
+                publish_artifacts_on_success: ${{ parameters.publish_artifacts_on_success }}
                 # Per-architecture pool selection AND effective MAX_STAGE.
                 # Policy (not configuration): ARM64 -> UNIT_TESTS (CTest excludes
                 # _int / _perf / _e2e categories). x64 -> ALL (run everything
