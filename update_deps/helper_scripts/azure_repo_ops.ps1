@@ -260,12 +260,17 @@ function create-pr-azure
         # body fits within limits
     }
 
+    # az CLI --description takes each arg as a new line.
+    # Split multi-line body into an array; replace empty lines with a space
+    # so they aren't stripped.
+    $body_lines = $pr_body -split "`n" | ForEach-Object { if ($_ -eq "") { " " } else { $_ } }
+
     $pr_output = az repos pr create `
         --repository $repo_name `
         --source-branch $new_branch_name `
         --target-branch master `
         --title $pr_title `
-        --description $pr_body `
+        --description @body_lines `
         --organization $org `
         --project $project `
         --output json
