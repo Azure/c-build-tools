@@ -260,12 +260,17 @@ function create-pr-azure
         # body fits within limits
     }
 
+    # az CLI --description takes each arg as a new line.
+    # Split multi-line body into an array; replace empty lines with a space
+    # so they aren't stripped.
+    $body_lines = $pr_body -split "`n" | ForEach-Object { if ($_ -eq "") { " " } else { $_ } }
+
     $pr_output = az repos pr create `
         --repository $repo_name `
         --source-branch $new_branch_name `
         --target-branch master `
         --title $pr_title `
-        --description $pr_body `
+        --description @body_lines `
         --organization $org `
         --project $project `
         --output json
@@ -429,11 +434,13 @@ function wait-until-complete-azure
         Write-Host "Waiting for build to complete"
         Write-Host "`nWatching PR policies..."
         $success = watch-azure-pr-policies -pr_id $pr_id -org $org -poll_interval $global:poll_interval -timeout 120 -ShowBuildDetails -OnIteration { [void](show-propagation-status) }
+        Write-Verbose "watch-azure-pr-policies returned success=$success"
 
         if(!$success)
         {
             # Policy watch reported failure — check if PR already completed
             $pr_info = get-pr-status-with-retry -pr_id $pr_id -org $org
+            Write-Verbose "PR status after watch failure: $($pr_info.status)"
             if($pr_info -and $pr_info.status -eq "completed")
             {
                 Write-Host "PR completed successfully" -ForegroundColor Green
@@ -465,6 +472,7 @@ function wait-until-complete-azure
             {
                 # Check if a Build check actually failed (vs timeout or non-build policy failure)
                 $has_build_failure = $false
+                Write-Verbose "Rechecking policy data to confirm Build failure..."
                 $recheck_data = get-policy-display-data -pr_id $pr_id -org $org -ShowBuildDetails
                 if ($recheck_data -and $recheck_data.Checks)
                 {
@@ -472,12 +480,19 @@ function wait-until-complete-azure
                         $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
                     })
                     $has_build_failure = $failed_build_checks.Count -gt 0
+                    Write-Verbose "Recheck found $($recheck_data.Checks.Count) checks, $($failed_build_checks.Count) failed Build checks"
+                    if ($failed_build_checks.Count -gt 0)
+                    {
+                        $failed_names = ($failed_build_checks | ForEach-Object { $_.Name }) -join ", "
+                        Write-Verbose "Failed Build checks: $failed_names"
+                    }
                 }
                 else
                 {
-                    # couldn't recheck
+                    Write-Verbose "Recheck returned null — could not verify Build failure"
                 }
 
+                Write-Verbose "AutoFix decision: has_build_failure=$has_build_failure, auto_fix=$($global:auto_fix), attempts=$autofix_attempts/$($global:MAX_AUTOFIX_ATTEMPTS), cancelled=$($global:propagation_cancelled)"
                 if ($has_build_failure -and $global:auto_fix -and $autofix_attempts -lt $global:MAX_AUTOFIX_ATTEMPTS)
                 {
                     $autofix_attempts++

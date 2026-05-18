@@ -589,6 +589,8 @@ function global:Test-ChecksComplete
         # Filter out license/CLA checks and manual approval checks (e.g., Proof Of Presence)
         # — these don't indicate CI build status
         $ci_checks = $checks | Where-Object { $_.Name -notmatch "license|cla|proof.of.presence" }
+        $filtered_count = $checks.Count - @($ci_checks).Count
+        Write-Verbose "Test-ChecksComplete: $($checks.Count) total checks, $filtered_count filtered (license/cla/proof), $(@($ci_checks).Count) CI checks"
 
         if (-not $ci_checks -or $ci_checks.Count -eq 0)
         {
@@ -601,12 +603,20 @@ function global:Test-ChecksComplete
             $blocking_checks = $ci_checks | Where-Object {
                 $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
             }
+            $non_blocking = @($ci_checks | Where-Object { $_.IsBlocking -eq $false })
+            Write-Verbose "Test-ChecksComplete: $(@($blocking_checks).Count) blocking, $($non_blocking.Count) non-blocking"
 
         # Check if any BUILD check has failed — no need to wait for others.
         # Check all Build checks regardless of IsBlocking — a failed build is
         # always actionable, even if the policy is marked non-blocking.
         $failed_builds = $ci_checks | Where-Object {
             $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
+        }
+        $all_failed = @($ci_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed })
+        if ($all_failed.Count -gt 0)
+        {
+            $all_failed_names = ($all_failed | ForEach-Object { "$($_.Name) [IsBlocking=$($_.IsBlocking)]" }) -join ", "
+            Write-Verbose "Test-ChecksComplete: All failed checks: $all_failed_names"
         }
         if($failed_builds.Count -gt 0)
         {
@@ -726,6 +736,7 @@ function global:watch-pr-status
         if((Get-Date) -gt $timeout_time)
         {
             Write-Host "`nTimeout reached after $timeout minutes" -ForegroundColor Red
+            Write-Verbose "watch-pr-status timeout: started=$start_time, now=$(Get-Date), timeout_at=$timeout_time"
             $fn_result = @{ Success = $false; Message = "Timeout" }
         }
         else
@@ -792,6 +803,7 @@ function global:watch-pr-status
 
                 # Check if complete
                 $completion_result = & $TestComplete $display_data
+                Write-Verbose "TestComplete: Complete=$($completion_result.Complete), Success=$($completion_result.Success), Message='$($completion_result.Message)'"
                 if($completion_result.Complete)
                 {
                     Write-Host ""

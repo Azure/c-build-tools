@@ -67,6 +67,7 @@ PS> .\propagate_updates.ps1 -Resume
 #>
 
 
+[CmdletBinding()]
 param(
     [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
     [Parameter(Mandatory=$false)][Int32]$azure_work_item, # Work item id to link to Azure PRs
@@ -96,6 +97,61 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\update_repo.ps1"
 . "$helper_scripts\autofix.ps1"
 
+# Propagate -Verbose to all helper functions via global preference
+if ($VerbosePreference -ne 'SilentlyContinue')
+{
+    $global:VerbosePreference = $VerbosePreference
+}
+
+# Verbose log file path — set later by initialize-verbose-log once work_dir is known.
+# Write-Verbose messages are always appended to the log file for post-mortem debugging.
+$global:verbose_log_path = $null
+
+# Override Write-Verbose globally to also append to log file
+function global:Write-Verbose
+{
+    param([string] $Message)
+    if ($global:verbose_log_path)
+    {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        "$timestamp  $Message" | Add-Content -Path $global:verbose_log_path -Encoding UTF8
+    }
+    # Also write to console if -Verbose was passed
+    if ($global:VerbosePreference -ne 'SilentlyContinue')
+    {
+        Microsoft.PowerShell.Utility\Write-Verbose -Message $Message
+    }
+}
+
+# Initialize the verbose log file in the work directory.
+# Called after work_dir is established (fresh or resume).
+# Uses a run number so subsequent resumes create separate log files.
+function global:initialize-verbose-log
+{
+    if (-not $global:work_dir -or -not (Test-Path $global:work_dir))
+    {
+        return
+    }
+    $existing = @(Get-ChildItem -Path $global:work_dir -Filter "propagation_verbose_*.log" -ErrorAction SilentlyContinue)
+    $run_number = $existing.Count + 1
+    $global:verbose_log_path = Join-Path $global:work_dir "propagation_verbose_$run_number.log"
+    "" | Set-Content -Path $global:verbose_log_path -Encoding UTF8
+    Write-Verbose "Log file initialized: $global:verbose_log_path"
+}
+
+# Print log file path on script exit (success, failure, or Ctrl+C)
+function global:show-verbose-log-path
+{
+    if ($global:verbose_log_path -and (Test-Path $global:verbose_log_path))
+    {
+        $size = (Get-Item $global:verbose_log_path).Length
+        if ($size -gt 0)
+        {
+            Write-Host "Verbose log: $global:verbose_log_path" -ForegroundColor Gray
+        }
+    }
+}
+
 # Build the resume command from the current invocation args
 $resume_args = @()
 if ($azure_token) { $resume_args += "-azure_token `"$azure_token`"" }
@@ -104,6 +160,7 @@ if ($root_list) { $resume_args += "-root_list $($root_list -join ',')" }
 if ($poll_interval -ne 15) { $resume_args += "-poll_interval $poll_interval" }
 if ($NoCloseFailedPr) { $resume_args += "-NoCloseFailedPr" }
 if ($AutoFix) { $resume_args += "-AutoFix" }
+if ($VerbosePreference -ne 'SilentlyContinue') { $resume_args += "-Verbose" }
 $global:resume_command = "$($MyInvocation.MyCommand.Path) $($resume_args -join ' ') -Resume"
 
 
@@ -202,6 +259,7 @@ function propagate-updates
         }
 
         Set-Location $global:work_dir
+        initialize-verbose-log
         Write-Host "Work directory: $global:work_dir"
         Write-Host "Branch name: $new_branch_name"
 
@@ -261,6 +319,7 @@ function propagate-updates
         $global:work_dir = Join-Path (Get-Location).Path $new_branch_name
         New-Item -ItemType Directory -Path $global:work_dir -Force | Out-Null
         Set-Location $global:work_dir
+        initialize-verbose-log
         Write-Host "Working directory: $global:work_dir"
 
         # build dependency graph
@@ -372,6 +431,7 @@ function propagate-updates
         Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
         Write-Host "To resume from where it stopped, run:" -ForegroundColor Cyan
         Write-Host "  $global:resume_command" -ForegroundColor White
+        show-verbose-log-path
         exit 1
     }
     else
@@ -393,6 +453,7 @@ function propagate-updates
 
         # Restore original directory
         restore-original-directory
+        show-verbose-log-path
     }
 }
 
