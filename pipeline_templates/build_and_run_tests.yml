@@ -37,17 +37,26 @@ parameters:
   - name: failOnMinTestsNotRun
     type: boolean
     default: true
-  # ARM64 builds are optional (continueOnError) so they don't block the gate
-  - name: is_optional
-    type: boolean
-    default: false
   - name: pool_name
     type: string
     default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
-  # When true, tests are built but not executed
-  - name: skip_tests
-    type: boolean
-    default: false
+  # MAX_STAGE is set per-architecture by build_all_flavors.yml (the only intended
+  # caller). Policy:
+  #   ARM64     -> UNIT_TESTS  (CTest excludes _int / _perf / _e2e categories so
+  #                             the slower ARM64 leg only runs unit tests)
+  #   x64 / x86 -> ALL         (run every CTest test that cmake_options registered)
+  # Values:
+  #   BUILD       - compile only. No test execution.
+  #   UNIT_TESTS  - compile + run unit tests only (CTest applies a category
+  #                 exclude filter; VSTest's *_ut_*.dll glob already restricts).
+  #   ALL         - compile + run all registered CTest tests (no category filter).
+  - name: MAX_STAGE
+    type: string
+    default: "ALL"
+    values:
+      - "BUILD"
+      - "UNIT_TESTS"
+      - "ALL"
   # When true, run NuGetAuthenticate and NuGetToolInstaller before cmake
   # so that execute_process(COMMAND nuget ...) can access private feeds.
   - name: setup_nuget
@@ -56,8 +65,7 @@ parameters:
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
-  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}'
-  continueOnError: ${{ parameters.is_optional }}
+  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}, MAX_STAGE=${{ parameters.MAX_STAGE }}'
 
   variables:
     ${{ if eq(parameters.FSANITIZE_TYPE, 'ON') }}:
@@ -85,8 +93,8 @@ jobs:
       GBALLOC_LL_TYPE: ${{ parameters.GBALLOC_LL_TYPE }}
       use_vld_option: ${{ variables.use_vld_option }}
 
-  # skip_tests is only honored for ARM64 builds - x64 always runs tests
-  - ${{ if or(not(parameters.skip_tests), ne(parameters.ARCH_TYPE, 'ARM64')) }}:
+  # Run tests only when MAX_STAGE is UNIT_TESTS or ALL. BUILD mode compiles only.
+  - ${{ if or(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.MAX_STAGE, 'ALL')) }}:
 
     # When APP_VERIFIER is OFF, run normal tests (VSTest, CTest)
     - ${{ if eq(parameters.APP_VERIFIER, 'OFF') }}:
@@ -109,19 +117,23 @@ jobs:
             configuration: '${{ parameters.build_configuration }}'
             failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
             codeCoverageEnabled: ${{ ne(parameters.ARCH_TYPE, 'ARM64') }}
-            otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
+            # Code Coverage collector is not validated on ARM64 build pools, so only
+            # request it on x64. Mirrors codeCoverageEnabled above; passed via
+            # otherConsoleOptions because tasks/vstest.yml currently appends
+            # otherConsoleOptions verbatim and does not honor codeCoverageEnabled itself.
+            ${{ if ne(parameters.ARCH_TYPE, 'ARM64') }}:
+              otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
             runSettingsFile: '${{ parameters.repo_root_override }}/pipeline_templates/scripts/tests_native.runsettings'
             resultsFolder: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
             testRunTitle: 'VsTest Native ${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}'
-            # ARM64 is experimental, continue on error
-            continueOnError: ${{ eq(parameters.ARCH_TYPE, 'ARM64') }}
 
-        # Publish code coverage results from vstest
-        - task: PublishCodeCoverageResults@2
-          displayName: '📰 Publish Code Coverage'
-          inputs:
-            summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
-            pathToSources: '$(Build.SourcesDirectory)'
+        # Publish code coverage results from vstest (x64 only - ARM64 does not collect coverage)
+        - ${{ if ne(parameters.ARCH_TYPE, 'ARM64') }}:
+          - task: PublishCodeCoverageResults@2
+            displayName: '📰 Publish Code Coverage'
+            inputs:
+              summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
+              pathToSources: '$(Build.SourcesDirectory)'
 
       # Use wrapper template for CTest - handles ARM64 native tools transparently
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
@@ -131,6 +143,33 @@ jobs:
             workingDirectory: '$(Build.BinariesDirectory)/c'
             configuration: '${{ parameters.build_configuration }}'
             outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+            # MAX_STAGE=UNIT_TESTS: skip non-unit-test categories on every architecture.
+            # Test names registered by build_test_artifacts (in c-testrunnerswitcher)
+            # follow the convention of containing _ut, _int, _perf, or _e2e in the name
+            # (typically as the trailing or middle token, e.g. foo_ut, foo_int_tests,
+            # logger_int_console_x). CMake's run_unittests / run_int_tests /
+            # run_perf_tests / run_e2e_tests options control registration; with the
+            # gate's default cmake_options every category gets registered, and ctest
+            # then runs them all. VSTest already filters to *_ut_*.dll via its
+            # discovery glob, but ctest does not.
+            #
+            # We exclude (rather than include) so projects whose tests do not follow
+            # the _ut suffix convention - notably c-build-tools' own validate_*_test
+            # and RUN_REALS_CHECK_TEST gates - still run instead of being filtered out
+            # and tripping --no-tests=error.
+            #
+            # The regex uses ($|_) after each category so it matches both trailing
+            # uses (foo_int) and middle uses (foo_int_tests, logger_int_console_x).
+            # Filter at run time so BUILD-stage semantics still hold (int/perf/e2e
+            # still compile - useful as a compile-only ratchet) while UNIT_TESTS
+            # strictly skips them at run time. MAX_STAGE=ALL bypasses this filter.
+            #
+            # When the filter IS active (UNIT_TESTS), also disable --no-tests=error:
+            # repos that have only int/perf/e2e tests (e.g. macro-utils-c) legitimately
+            # match zero tests after the filter, and that is not a build error.
+            ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
+              excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
+              noTestsError: false
 
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
         - task: PublishTestResults@2
@@ -168,8 +207,28 @@ jobs:
               workingDirectory: '$(Build.BinariesDirectory)/c'
               configuration: '${{ parameters.build_configuration }}'
               outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-              excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
-              noTestsError: ${{ eq(parameters.appverifier_skip_tests_list, '') }}
+              # noTestsError is true only when no exclude reason is in play. Either
+              # an appverifier_skip_tests_list or the MAX_STAGE=UNIT_TESTS category
+              # filter constitutes a deliberate exclude, so matching zero tests is
+              # legitimate (e.g. macro-utils-c only has _int tests).
+              noTestsError: ${{ and(eq(parameters.appverifier_skip_tests_list, ''), ne(parameters.MAX_STAGE, 'UNIT_TESTS')) }}
+              # See the comment on the regular ctest invocation above for why
+              # MAX_STAGE=UNIT_TESTS skips _int/_perf/_e2e categories. AppVerifier-
+              # helper itself configures appverif for whatever ctest -N returns;
+              # that config is harmless for tests that won't actually run.
+              # The exclude regex is composed from up to two sources:
+              #   1. The caller-provided appverifier_skip_tests_list (tests known
+              #      to misbehave under AppVerifier).
+              #   2. The UNIT_TESTS test-category filter (_int|_perf|_e2e, with
+              #      ($|_) after each so it matches both trailing and middle uses).
+              # All three mutually-exclusive cases are spelled out here because
+              # the parts have to be combined with a regex '|' separator.
+              ${{ if and(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), ne(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '${{ parameters.appverifier_skip_tests_list }}|_int($|_)|_perf($|_)|_e2e($|_)'
+              ${{ if and(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
+              ${{ if ne(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
+                excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
 
       - task: PublishTestResults@2
         displayName: '📊 Publish ctest results'

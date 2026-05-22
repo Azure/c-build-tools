@@ -6,7 +6,13 @@
 
   .DESCRIPTION
   This can enable Application Verifier for all tests (with optional arguments to filter tests) from ctest.
-  An optional argument can also be provided to select which app verifier options are used
+  An optional argument can also be provided to select which app verifier options are used.
+
+  AppVerifier and ctest paths are NOT discovered by this script. Discovery is the
+  responsibility of discover_native_tools.yml, which sets the $(appverifPath) and
+  $(ctestPath) pipeline variables that callers MUST forward to this script via the
+  -appverifPath and -ctestPath parameters. If either path is missing, empty, or
+  invalid, this script aborts with a non-zero exit code.
 
   .PARAMETER on
   When set, this enables Application Verifier for the tests listed by ctest, otherwise, this disables Application Verifier for all images
@@ -24,6 +30,16 @@
   .PARAMETER binaryNameSuffix
   Suffix for binary names of tests. E.g. if ctest returns some test names like foo, bar, and the binaries are foo_x.exe and bar_x.exe then this should be "_x.exe"
 
+  .PARAMETER appverifPath
+  Required. Full path to appverif.exe, as discovered and emitted by
+  discover_native_tools.yml as the $(appverifPath) pipeline variable. The script
+  aborts if this is empty, an unresolved ADO macro literal, or refers to a missing
+  file. There is no PATH or env-var fallback - discovery is canonical.
+
+  .PARAMETER ctestPath
+  Required when -on is set (used to enumerate tests). Same contract as
+  -appverifPath: must be the discovered $(ctestPath) value. There is no fallback.
+
   .INPUTS
   None. You cannot pipe objects to appverifier_ctest_tests_helper.ps1.
 
@@ -31,10 +47,10 @@
   None. appverifier_ctest_tests_helper.ps1 does not generate any output.
 
   .EXAMPLE
-  PS> .\appverifier_ctest_tests_helper.ps1
-  By default, disables app verifier for all processes
+  PS> .\appverifier_ctest_tests_helper.ps1 -appverifPath C:\path\to\appverif.exe
+  Disables app verifier for all processes
 
-  PS> .\appverifier_ctest_tests_helper.ps1 -on
+  PS> .\appverifier_ctest_tests_helper.ps1 -on -appverifPath C:\path\to\appverif.exe -ctestPath C:\path\to\ctest.exe
   Enables app verifier for all test binaries found in ctest
 #>
 
@@ -43,19 +59,42 @@ param(
     [Parameter()][string]$appVerifierEnable = "exceptions handles heaps leak memory threadpool tls",
     [Parameter()][string]$appVerifierAdditionalProperties = "",
     [Parameter()][string]$ctestArgs = "",
-    [Parameter()][string]$binaryNameSuffix
+    [Parameter()][string]$binaryNameSuffix,
+    [Parameter()][string]$appverifPath = "",
+    [Parameter()][string]$ctestPath = ""
 )
 
-# Check if appverif is available (not installed on ARM64 build pools)
-$appverifPath = Get-Command appverif -ErrorAction SilentlyContinue
-if (-not $appverifPath) {
-    Write-Output "Application Verifier (appverif) is not installed on this machine. Skipping."
-    exit 0
+# Validate a path that was supposed to come from discover_native_tools.yml.
+# Treats empty/whitespace and unresolved ADO macro literals like "$(appverifPath)"
+# as missing, and ensures the path actually exists on disk. Any failure aborts
+# the script with a clear error - there are no fallbacks.
+function Assert-DiscoveredPath
+{
+    param(
+        [string]$Value,
+        [string]$Name
+    )
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '^\$\(.+\)$')
+    {
+        Write-Host "##vso[task.logissue type=error]$Name was not provided. discover_native_tools.yml must run before this script and successfully resolve $Name; the corresponding pipeline variable must be forwarded to this script."
+        exit 1
+    }
+    if (-not (Test-Path $Value))
+    {
+        Write-Host "##vso[task.logissue type=error]$Name resolved to '$Value', which does not exist on disk."
+        exit 1
+    }
 }
+
+Assert-DiscoveredPath -Value $appverifPath -Name "appverifPath"
+Write-Output "Using Application Verifier at: $appverifPath"
 
 if ($on)
 {
-    $allTests = & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe" -N $ctestArgs.Split()
+    Assert-DiscoveredPath -Value $ctestPath -Name "ctestPath"
+    Write-Output "Using CTest at: $ctestPath"
+
+    $allTests = & $ctestPath -N $ctestArgs.Split()
     $testsArray = $allTests.Split([Environment]::NewLine,[Stringsplitoptions]::RemoveEmptyEntries).trim()
 
     foreach ($t in $testsArray)
@@ -66,16 +105,13 @@ if ($on)
         {
             $testName = ($t -split ":")[1].Trim()
             $exeName = "$($testName)$($binaryNameSuffix)"
-            if ($on)
-            {
-                Write-Output "Enabling appverifier for $exeName"
-                & appverif -enable $appVerifierEnable.Split() -for $exeName -with exceptiononstop=true $appVerifierAdditionalProperties.Split()
-            }
+            Write-Output "Enabling appverifier for $exeName"
+            & $appverifPath -enable $appVerifierEnable.Split() -for $exeName -with exceptiononstop=true $appVerifierAdditionalProperties.Split()
         }
     }
 }
 else
 {
     Write-Output "Disabling all appverifier settings"
-    & appverif -disable * -for *
+    & $appverifPath -disable * -for *
 }
