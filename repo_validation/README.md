@@ -452,9 +452,9 @@ To exempt a test from this requirement, add '// no-srs' to the TEST_FUNCTION lin
 
 **Tool check:** `repo_validator_rs --check aaa_comments`
 
-**Purpose:** Ensures that all C unit test functions (`TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`, `PARAMETERIZED_TEST_FUNCTION`) in unit test (`*_ut.c`) files and all C# MSTest methods (`[TestMethod]`, `[DataTestMethod]`) contain AAA (Arrange, Act, Assert) comments in the correct order.
+**Purpose:** Ensures that all C unit test functions (`TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`, `PARAMETERIZED_TEST_FUNCTION`) in unit test (`*_ut.c`) files and all C# MSTest methods (`[TestMethod]`, `[DataTestMethod]`) in files ending with `Tests.cs` contain AAA (Arrange, Act, Assert) comments in the correct order.
 
-**Note:** C integration test files (`*_int.c`) are **not** validated by this check. C# MSTest files are validated regardless of whether they are unit, integration, performance, or endurance tests.
+**Note:** C integration test files (`*_int.c`) are **not** validated by this check. C# MSTest files ending in `Tests.cs` are validated regardless of whether they are unit, integration, performance, or endurance tests.
 
 **Rationale:** The AAA pattern provides a clear structure for test functions:
 - **Arrange**: Set up the test preconditions and inputs
@@ -473,9 +473,9 @@ Using AAA comments consistently:
 
 **File Types Checked:**
 - C unit test files (`*_ut.c`)
-- C# files (`*.cs`) containing MSTest `[TestMethod]` or `[DataTestMethod]` methods
+- C# test files whose names end with `Tests.cs` and contain MSTest `[TestMethod]` or `[DataTestMethod]` methods
 
-Generated/build-output C# files are skipped when their file names end with `.g.cs`, `.Designer.cs`, or `.AssemblyInfo.cs`, when the file is `GlobalUsings.cs`, or when the path contains `bin`, `obj`, or `generated`.
+Other C# files are skipped. Generated/build-output C# files are also skipped when their file names end with `.g.cs`, `.Designer.cs`, or `.AssemblyInfo.cs`, when the file is `GlobalUsings.cs`, or when the path contains `bin`, `obj`, or `generated`.
 
 **Test Function Macros/Attributes Detected:** `TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`, `PARAMETERIZED_TEST_FUNCTION`, `[TestMethod]`, `[DataTestMethod]`
 

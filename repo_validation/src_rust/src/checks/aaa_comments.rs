@@ -1257,7 +1257,8 @@ fn extract_filename(path: &str) -> &str {
 
 fn should_skip_csharp_file(relative_path: &str, filename: &str) -> bool {
     let lower_filename = filename.to_ascii_lowercase();
-    if lower_filename.ends_with(".g.cs")
+    if !lower_filename.ends_with("tests.cs")
+        || lower_filename.ends_with(".g.cs")
         || lower_filename.ends_with(".designer.cs")
         || lower_filename.ends_with(".assemblyinfo.cs")
         || lower_filename == "globalusings.cs"
