@@ -1066,27 +1066,32 @@ impl Check for AaaComments {
         }
 
         let filename = extract_filename(&file.path);
+        let (check_helpers, check_csharp_helpers) = if file.type_flags & FILE_TYPE_C != 0 {
+            // Only check C unit tests. Preserve the historical integration-test exclusion.
+            if !filename.ends_with("_ut.c") {
+                return;
+            }
+            (true, false)
+        } else if file.type_flags & FILE_TYPE_CS != 0 {
+            if !filename.to_ascii_lowercase().ends_with("tests.cs") {
+                return;
+            }
+            (true, true)
+        } else {
+            return;
+        };
+
         let content = &file.content;
         if content.is_empty() {
             return;
         }
 
         let line_index = build_line_index(content);
-        let (test_funcs, check_helpers, check_csharp_helpers) =
-            if file.type_flags & FILE_TYPE_C != 0 {
-                // Only check C unit tests. Preserve the historical integration-test exclusion.
-                if !filename.ends_with("_ut.c") {
-                    return;
-                }
-                (find_test_functions(content), true, false)
-            } else if file.type_flags & FILE_TYPE_CS != 0 {
-                if !filename.to_ascii_lowercase().ends_with("tests.cs") {
-                    return;
-                }
-                (find_csharp_test_methods(content), true, true)
-            } else {
-                return;
-            };
+        let test_funcs = if check_csharp_helpers {
+            find_csharp_test_methods(content)
+        } else {
+            find_test_functions(content)
+        };
 
         if test_funcs.is_empty() {
             return;
