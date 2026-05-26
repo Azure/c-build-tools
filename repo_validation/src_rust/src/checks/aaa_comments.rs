@@ -1080,7 +1080,7 @@ impl Check for AaaComments {
                 }
                 (find_test_functions(content), true, false)
             } else if file.type_flags & FILE_TYPE_CS != 0 {
-                if should_skip_csharp_file(&file.relative_path, filename) {
+                if !filename.to_ascii_lowercase().ends_with("tests.cs") {
                     return;
                 }
                 (find_csharp_test_methods(content), true, true)
@@ -1253,8 +1253,4 @@ fn extract_filename(path: &str) -> &str {
     } else {
         path
     }
-}
-
-fn should_skip_csharp_file(_relative_path: &str, filename: &str) -> bool {
-    !filename.to_ascii_lowercase().ends_with("tests.cs")
 }
