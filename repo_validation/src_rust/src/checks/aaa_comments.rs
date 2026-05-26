@@ -75,6 +75,8 @@ struct TestFuncMatch {
     test_name: String,
     match_pos: usize,
     match_end: usize,
+    body_start: Option<usize>,
+    has_no_aaa: bool,
 }
 
 /// Find all test macro invocations in content.
@@ -142,6 +144,8 @@ fn find_test_functions(content: &[u8]) -> Vec<TestFuncMatch> {
                             test_name,
                             match_pos: match_start,
                             match_end: p,
+                            body_start: Some(match_start),
+                            has_no_aaa: false,
                         });
                         matched = true;
                         // Skip to end of line
@@ -174,6 +178,384 @@ fn find_test_functions(content: &[u8]) -> Vec<TestFuncMatch> {
 
 fn is_ident_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
+}
+
+fn is_whitespace(b: u8) -> bool {
+    b == b' ' || b == b'\t' || b == b'\r' || b == b'\n'
+}
+
+fn trim_ascii_start(line: &[u8]) -> &[u8] {
+    let mut start = 0usize;
+    while start < line.len() && is_whitespace(line[start]) {
+        start += 1;
+    }
+    &line[start..]
+}
+
+fn line_bounds_at(content: &[u8], pos: usize) -> (usize, usize, usize) {
+    let len = content.len();
+    let mut line_start = pos.min(len);
+    while line_start > 0 && content[line_start - 1] != b'\n' {
+        line_start -= 1;
+    }
+
+    let mut line_end = line_start;
+    while line_end < len && content[line_end] != b'\n' {
+        line_end += 1;
+    }
+
+    let next_line = if line_end < len {
+        line_end + 1
+    } else {
+        line_end
+    };
+    (line_start, line_end, next_line)
+}
+
+fn matches_csharp_attribute(line: &[u8], attribute_name: &[u8]) -> bool {
+    let trimmed = trim_ascii_start(line);
+    if !trimmed.starts_with(b"[") {
+        return false;
+    }
+
+    let mut pos = 1usize;
+    while pos < trimmed.len() && is_whitespace(trimmed[pos]) {
+        pos += 1;
+    }
+
+    if pos + attribute_name.len() > trimmed.len()
+        || !eq_ignore_case(&trimmed[pos..pos + attribute_name.len()], attribute_name)
+    {
+        return false;
+    }
+
+    pos += attribute_name.len();
+    if pos + b"Attribute".len() <= trimmed.len()
+        && eq_ignore_case(&trimmed[pos..pos + b"Attribute".len()], b"Attribute")
+    {
+        pos += b"Attribute".len();
+    }
+
+    while pos < trimmed.len() && is_whitespace(trimmed[pos]) {
+        pos += 1;
+    }
+
+    pos < trimmed.len() && (trimmed[pos] == b']' || trimmed[pos] == b'(' || trimmed[pos] == b',')
+}
+
+fn is_csharp_test_attribute(line: &[u8]) -> Option<&'static str> {
+    if matches_csharp_attribute(line, b"TestMethod") {
+        Some("[TestMethod]")
+    } else if matches_csharp_attribute(line, b"DataTestMethod") {
+        Some("[DataTestMethod]")
+    } else {
+        None
+    }
+}
+
+fn is_csharp_attribute_or_blank(line: &[u8]) -> bool {
+    let trimmed = trim_ascii_start(line);
+    trimmed.is_empty()
+        || trimmed == b"\r"
+        || trimmed.starts_with(b"[")
+        || trimmed.starts_with(b"//")
+        || trimmed.starts_with(b"/*")
+        || trimmed.starts_with(b"*")
+}
+
+fn find_csharp_expression_body_end(content: &[u8], start: usize) -> usize {
+    let len = content.len();
+    let mut pos = start;
+    let mut in_string = false;
+    let mut in_char = false;
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    let mut brace_depth = 0i32;
+
+    while pos < len {
+        if !in_string && !in_char && pos + 1 < len && content[pos] == b'/' && content[pos + 1] == b'/' {
+            pos += 2;
+            while pos < len && content[pos] != b'\n' {
+                pos += 1;
+            }
+            continue;
+        }
+        if !in_string && !in_char && pos + 1 < len && content[pos] == b'/' && content[pos + 1] == b'*' {
+            pos += 2;
+            while pos + 1 < len {
+                if content[pos] == b'*' && content[pos + 1] == b'/' {
+                    pos += 2;
+                    break;
+                }
+                pos += 1;
+            }
+            continue;
+        }
+        if !in_string && !in_char && content[pos] == b'"' {
+            in_string = true;
+            pos += 1;
+            continue;
+        }
+        if in_string {
+            if content[pos] == b'\\' && pos + 1 < len {
+                pos += 2;
+            } else if content[pos] == b'"' {
+                in_string = false;
+                pos += 1;
+            } else {
+                pos += 1;
+            }
+            continue;
+        }
+        if !in_string && !in_char && content[pos] == b'\'' {
+            in_char = true;
+            pos += 1;
+            continue;
+        }
+        if in_char {
+            if content[pos] == b'\\' && pos + 1 < len {
+                pos += 2;
+            } else if content[pos] == b'\'' {
+                in_char = false;
+                pos += 1;
+            } else {
+                pos += 1;
+            }
+            continue;
+        }
+
+        match content[pos] {
+            b'(' => paren_depth += 1,
+            b')' => {
+                if paren_depth > 0 {
+                    paren_depth -= 1;
+                }
+            }
+            b'[' => bracket_depth += 1,
+            b']' => {
+                if bracket_depth > 0 {
+                    bracket_depth -= 1;
+                }
+            }
+            b'{' => brace_depth += 1,
+            b'}' => {
+                if brace_depth > 0 {
+                    brace_depth -= 1;
+                }
+            }
+            b';' if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => return pos + 1,
+            _ => {}
+        }
+
+        pos += 1;
+    }
+
+    len
+}
+
+fn find_csharp_body_start(content: &[u8], signature_start: usize) -> (usize, Option<usize>) {
+    let len = content.len();
+    let mut pos = signature_start;
+    let mut in_string = false;
+    let mut in_char = false;
+
+    while pos < len {
+        if !in_string && !in_char && content[pos] == b'"' {
+            in_string = true;
+            pos += 1;
+            continue;
+        }
+        if in_string {
+            if content[pos] == b'\\' && pos + 1 < len {
+                pos += 2;
+            } else if content[pos] == b'"' {
+                in_string = false;
+                pos += 1;
+            } else {
+                pos += 1;
+            }
+            continue;
+        }
+        if !in_string && !in_char && content[pos] == b'\'' {
+            in_char = true;
+            pos += 1;
+            continue;
+        }
+        if in_char {
+            if content[pos] == b'\\' && pos + 1 < len {
+                pos += 2;
+            } else if content[pos] == b'\'' {
+                in_char = false;
+                pos += 1;
+            } else {
+                pos += 1;
+            }
+            continue;
+        }
+
+        if content[pos] == b'{' {
+            return (pos, Some(pos));
+        }
+        if content[pos] == b';' {
+            return (pos + 1, None);
+        }
+        if content[pos] == b'=' && pos + 1 < len && content[pos + 1] == b'>' {
+            return (find_csharp_expression_body_end(content, pos + 2), None);
+        }
+
+        pos += 1;
+    }
+
+    (len, None)
+}
+
+fn extract_csharp_method_name(signature: &[u8]) -> String {
+    let paren_pos = match signature.iter().position(|b| *b == b'(') {
+        Some(pos) => pos,
+        None => return "<unknown>".to_string(),
+    };
+
+    let mut name_end = paren_pos;
+    while name_end > 0 && is_whitespace(signature[name_end - 1]) {
+        name_end -= 1;
+    }
+
+    let mut name_start = name_end;
+    while name_start > 0 && is_ident_char(signature[name_start - 1]) {
+        name_start -= 1;
+    }
+
+    if name_start < name_end {
+        String::from_utf8_lossy(&signature[name_start..name_end]).to_string()
+    } else {
+        "<unknown>".to_string()
+    }
+}
+
+fn find_csharp_test_methods(content: &[u8]) -> Vec<TestFuncMatch> {
+    let len = content.len();
+    let mut results = Vec::new();
+    let mut pos = 0usize;
+
+    while pos < len {
+        let (line_start, line_end, next_line) = line_bounds_at(content, pos);
+        let line = &content[line_start..line_end];
+
+        let attribute_name = match is_csharp_test_attribute(line) {
+            Some(name) => name,
+            None => {
+                pos = next_line;
+                continue;
+            }
+        };
+
+        let mut has_no_aaa = has_no_aaa_exemption(line);
+        let mut signature_start = next_line;
+
+        while signature_start < len {
+            let (candidate_start, candidate_end, candidate_next) =
+                line_bounds_at(content, signature_start);
+            let candidate_line = &content[candidate_start..candidate_end];
+            if is_csharp_attribute_or_blank(candidate_line) {
+                if has_no_aaa_exemption(candidate_line) {
+                    has_no_aaa = true;
+                }
+                signature_start = candidate_next;
+            } else {
+                signature_start = candidate_start;
+                break;
+            }
+        }
+
+        let (signature_end, body_start) = find_csharp_body_start(content, signature_start);
+        if signature_start >= len {
+            pos = next_line;
+            continue;
+        }
+
+        let signature = &content[signature_start..signature_end];
+        if has_no_aaa_exemption(signature) {
+            has_no_aaa = true;
+        }
+
+        let test_name = extract_csharp_method_name(signature);
+
+        results.push(TestFuncMatch {
+            macro_name: attribute_name.to_string(),
+            test_name,
+            match_pos: line_start,
+            match_end: signature_end,
+            body_start,
+            has_no_aaa,
+        });
+
+        pos = if signature_end > next_line {
+            signature_end
+        } else {
+            next_line
+        };
+    }
+
+    results
+}
+
+fn is_csharp_method_signature_start(line: &[u8]) -> bool {
+    let trimmed = trim_ascii_start(line);
+    if trimmed.starts_with(b"[")
+        || trimmed.starts_with(b"//")
+        || trimmed.starts_with(b"*")
+        || trimmed.starts_with(b"/*")
+    {
+        return false;
+    }
+
+    let method_keywords = [
+        b"public " as &[u8],
+        b"private ",
+        b"protected ",
+        b"internal ",
+        b"static ",
+        b"async ",
+        b"void ",
+        b"Task ",
+        b"ValueTask ",
+    ];
+
+    method_keywords
+        .iter()
+        .any(|keyword| trimmed.starts_with(keyword))
+}
+
+fn find_csharp_helper_functions(content: &[u8]) -> HashMap<String, HelperFunc> {
+    let len = content.len();
+    let mut helpers = HashMap::new();
+    let mut pos = 0usize;
+
+    while pos < len {
+        let (line_start, line_end, next_line) = line_bounds_at(content, pos);
+        let line = &content[line_start..line_end];
+        if !is_csharp_method_signature_start(line) {
+            pos = next_line;
+            continue;
+        }
+
+        let (signature_end, body_start) = find_csharp_body_start(content, line_start);
+        if let Some(brace_pos) = body_start {
+            let signature = &content[line_start..signature_end];
+            let method_name = extract_csharp_method_name(signature);
+            if method_name != "<unknown>" {
+                helpers.insert(method_name, HelperFunc { brace_pos });
+            }
+        }
+
+        pos = if signature_end > next_line {
+            signature_end
+        } else {
+            next_line
+        };
+    }
+
+    helpers
 }
 
 /// Extract function body starting from start_index.
@@ -612,6 +994,7 @@ fn find_called_functions(body: &[u8]) -> Vec<String> {
             while p < len && is_ident_char(body[p]) {
                 p += 1;
             }
+
             let name = &body[name_start..p];
             // Skip whitespace
             while p < len && (body[p] == b' ' || body[p] == b'\t') {
@@ -630,6 +1013,30 @@ fn find_called_functions(body: &[u8]) -> Vec<String> {
     calls
 }
 
+fn contains_identifier(body: &[u8], name: &[u8]) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+
+    let len = body.len();
+    let name_len = name.len();
+    let mut pos = 0usize;
+
+    while pos + name_len <= len {
+        if &body[pos..pos + name_len] == name {
+            let before_ok = pos == 0 || !is_ident_char(body[pos - 1]);
+            let after = pos + name_len;
+            let after_ok = after >= len || !is_ident_char(body[after]);
+            if before_ok && after_ok {
+                return true;
+            }
+        }
+        pos += 1;
+    }
+
+    false
+}
+
 impl Check for AaaComments {
     fn name(&self) -> &str {
         "aaa_comments"
@@ -640,7 +1047,7 @@ impl Check for AaaComments {
     }
 
     fn file_types(&self) -> u32 {
-        FILE_TYPE_C
+        FILE_TYPE_C | FILE_TYPE_CS
     }
 
     fn requires_devdoc(&self) -> bool {
@@ -654,23 +1061,33 @@ impl Check for AaaComments {
     }
 
     fn check_file(&mut self, file: &FileInfo, _config: &ValidatorConfig) {
-        if file.type_flags & FILE_TYPE_C == 0 {
+        if file.type_flags & (FILE_TYPE_C | FILE_TYPE_CS) == 0 {
             return;
         }
 
-        // Only check *_ut.c files (not integration tests)
         let filename = extract_filename(&file.path);
-        if !filename.ends_with("_ut.c") {
-            return;
-        }
-
         let content = &file.content;
         if content.is_empty() {
             return;
         }
 
         let line_index = build_line_index(content);
-        let test_funcs = find_test_functions(content);
+        let (test_funcs, check_helpers, check_csharp_helpers) =
+            if file.type_flags & FILE_TYPE_C != 0 {
+                // Only check C unit tests. Preserve the historical integration-test exclusion.
+                if !filename.ends_with("_ut.c") {
+                    return;
+                }
+                (find_test_functions(content), true, false)
+            } else if file.type_flags & FILE_TYPE_CS != 0 {
+                if should_skip_csharp_file(&file.relative_path, filename) {
+                    return;
+                }
+                (find_csharp_test_methods(content), true, true)
+            } else {
+                return;
+            };
+
         if test_funcs.is_empty() {
             return;
         }
@@ -682,15 +1099,27 @@ impl Check for AaaComments {
         for tf in &test_funcs {
             self.total_test_functions += 1;
 
-            // Check for no-aaa exemption on the test macro line
+            // Check for no-aaa exemption on the test marker line
             let test_line = get_line_at(content, tf.match_end);
-            if has_no_aaa_exemption(test_line) {
+            if tf.has_no_aaa || has_no_aaa_exemption(test_line) {
                 self.exempted_tests += 1;
                 continue;
             }
 
             // Extract function body
-            let body = match extract_function_body(content, tf.match_pos) {
+            let body_start = match tf.body_start {
+                Some(pos) => pos,
+                None => {
+                    let line_num = line_number_at(&line_index, tf.match_pos);
+                    println!(
+                        "  [ERROR] {}:{} {}({}) - missing AAA: arrange, act, assert",
+                        file.relative_path, line_num, tf.macro_name, tf.test_name
+                    );
+                    self.violations += 1;
+                    continue;
+                }
+            };
+            let body = match extract_function_body(content, body_start) {
                 Some((_, b)) => b,
                 None => continue,
             };
@@ -714,33 +1143,68 @@ impl Check for AaaComments {
                 continue;
             }
 
-            // Not all found - check helper functions
-            if helpers.is_none() {
-                helpers = Some(find_helper_functions(content));
-            }
-            let helper_map = helpers.as_ref().unwrap();
-
-            let called_fns = find_called_functions(&body);
-            for called in &called_fns {
-                if let Some(helper) = helper_map.get(called) {
-                    let h_positions = helper_aaa_cache.entry(called.clone()).or_insert_with(|| {
-                        match extract_function_body(content, helper.brace_pos) {
-                            Some((_, hbody)) => find_aaa_positions(&hbody),
-                            None => [-1, -1, -1],
-                        }
+            if check_helpers {
+                if helpers.is_none() {
+                    helpers = Some(if check_csharp_helpers {
+                        find_csharp_helper_functions(content)
+                    } else {
+                        find_helper_functions(content)
                     });
-                    if h_positions[0] >= 0 {
-                        positions[0] = 0;
+                }
+                let helper_map = helpers.as_ref().unwrap();
+
+                let called_fns = find_called_functions(&body);
+                for called in &called_fns {
+                    if let Some(helper) = helper_map.get(called) {
+                        let h_positions =
+                            helper_aaa_cache.entry(called.clone()).or_insert_with(|| {
+                                match extract_function_body(content, helper.brace_pos) {
+                                    Some((_, hbody)) => find_aaa_positions(&hbody),
+                                    None => [-1, -1, -1],
+                                }
+                            });
+                        if h_positions[0] >= 0 {
+                            positions[0] = 0;
+                        }
+                        if h_positions[1] >= 0 {
+                            positions[1] = 0;
+                        }
+                        if h_positions[2] >= 0 {
+                            positions[2] = 0;
+                        }
                     }
-                    if h_positions[1] >= 0 {
-                        positions[1] = 0;
-                    }
-                    if h_positions[2] >= 0 {
-                        positions[2] = 0;
+                    if positions[0] >= 0 && positions[1] >= 0 && positions[2] >= 0 {
+                        break;
                     }
                 }
-                if positions[0] >= 0 && positions[1] >= 0 && positions[2] >= 0 {
-                    break;
+
+                if check_csharp_helpers
+                    && !(positions[0] >= 0 && positions[1] >= 0 && positions[2] >= 0)
+                {
+                    for (helper_name, helper) in helper_map {
+                        if contains_identifier(&body, helper_name.as_bytes()) {
+                            let h_positions = helper_aaa_cache
+                                .entry(helper_name.clone())
+                                .or_insert_with(|| {
+                                    match extract_function_body(content, helper.brace_pos) {
+                                        Some((_, hbody)) => find_aaa_positions(&hbody),
+                                        None => [-1, -1, -1],
+                                    }
+                                });
+                            if h_positions[0] >= 0 {
+                                positions[0] = 0;
+                            }
+                            if h_positions[1] >= 0 {
+                                positions[1] = 0;
+                            }
+                            if h_positions[2] >= 0 {
+                                positions[2] = 0;
+                            }
+                        }
+                        if positions[0] >= 0 && positions[1] >= 0 && positions[2] >= 0 {
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -789,4 +1253,22 @@ fn extract_filename(path: &str) -> &str {
     } else {
         path
     }
+}
+
+fn should_skip_csharp_file(relative_path: &str, filename: &str) -> bool {
+    let lower_filename = filename.to_ascii_lowercase();
+    if lower_filename.ends_with(".g.cs")
+        || lower_filename.ends_with(".designer.cs")
+        || lower_filename.ends_with(".assemblyinfo.cs")
+        || lower_filename == "globalusings.cs"
+    {
+        return true;
+    }
+
+    relative_path.split(['/', '\\']).any(|part| {
+        matches!(
+            part.to_ascii_lowercase().as_str(),
+            "bin" | "obj" | "generated"
+        )
+    })
 }

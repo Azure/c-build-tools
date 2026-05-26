@@ -450,11 +450,11 @@ To exempt a test from this requirement, add '// no-srs' to the TEST_FUNCTION lin
 
 ### AAA Comment Validation
 
-**Script:** `scripts/validate_aaa_comments.ps1`
+**Tool check:** `repo_validator_rs --check aaa_comments`
 
-**Purpose:** Ensures that all test functions (`TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`) in unit test (`*_ut.c`) files contain AAA (Arrange, Act, Assert) comments in the correct order.
+**Purpose:** Ensures that all C unit test functions (`TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`, `PARAMETERIZED_TEST_FUNCTION`) in unit test (`*_ut.c`) files and all C# MSTest methods (`[TestMethod]`, `[DataTestMethod]`) contain AAA (Arrange, Act, Assert) comments in the correct order.
 
-**Note:** Integration test files (`*_int.c`) are **not** validated by this script. Integration tests often have more complex structures (setup/teardown across multiple functions, scenario-based testing, etc.) that don't fit the simple AAA pattern.
+**Note:** C integration test files (`*_int.c`) are **not** validated by this check. C# MSTest files are validated regardless of whether they are unit, integration, performance, or endurance tests.
 
 **Rationale:** The AAA pattern provides a clear structure for test functions:
 - **Arrange**: Set up the test preconditions and inputs
@@ -471,9 +471,13 @@ Using AAA comments consistently:
 - Default exclusions (if not customized): `deps`, `cmake`
 - Custom exclusions can be specified via `EXCLUDE_FOLDERS` parameter in `add_repo_validation()`
 
-**File Types Checked:** Unit test files (`*_ut.c`) only
+**File Types Checked:**
+- C unit test files (`*_ut.c`)
+- C# files (`*.cs`) containing MSTest `[TestMethod]` or `[DataTestMethod]` methods
 
-**Test Function Macros Detected:** `TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`
+Generated/build-output C# files are skipped when their file names end with `.g.cs`, `.Designer.cs`, or `.AssemblyInfo.cs`, when the file is `GlobalUsings.cs`, or when the path contains `bin`, `obj`, or `generated`.
+
+**Test Function Macros/Attributes Detected:** `TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`, `PARAMETERIZED_TEST_FUNCTION`, `[TestMethod]`, `[DataTestMethod]`
 
 **Comment Styles Accepted:** All common C comment styles (case-insensitive):
 - `// arrange`, `// act`, `// assert`
@@ -549,6 +553,15 @@ TEST_FUNCTION(infrastructure_test) // no-aaa
 TEST_FUNCTION(another_exempt_test) /* no-aaa */
 {
     // Also exempted
+}
+
+[TestMethod] // no-aaa
+public void IntentionalCSharpExemption() => Assert.IsTrue(true);
+
+[TestMethod]
+public void AnotherCSharpExemption() // no-aaa
+{
+    Assert.IsTrue(true);
 }
 ```
 
@@ -878,4 +891,3 @@ add_test(NAME test_validate_your_feature_fix
 ```
 
 The testing framework ensures validation scripts are robust, reliable, and maintain consistent behavior across changes and updates.
-
