@@ -180,29 +180,18 @@ fn is_ident_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
-fn is_whitespace(b: u8) -> bool {
-    b == b' ' || b == b'\t' || b == b'\r' || b == b'\n'
-}
-
-fn trim_ascii_start(line: &[u8]) -> &[u8] {
-    let mut start = 0usize;
-    while start < line.len() && is_whitespace(line[start]) {
-        start += 1;
-    }
-    &line[start..]
-}
-
 fn line_bounds_at(content: &[u8], pos: usize) -> (usize, usize, usize) {
     let len = content.len();
-    let mut line_start = pos.min(len);
-    while line_start > 0 && content[line_start - 1] != b'\n' {
-        line_start -= 1;
-    }
+    let pos = pos.min(len);
 
-    let mut line_end = line_start;
-    while line_end < len && content[line_end] != b'\n' {
-        line_end += 1;
-    }
+    let line_start = content[..pos]
+        .iter()
+        .rposition(|b| *b == b'\n')
+        .map_or(0, |i| i + 1);
+    let line_end = content[pos..]
+        .iter()
+        .position(|b| *b == b'\n')
+        .map_or(len, |i| pos + i);
 
     let next_line = if line_end < len {
         line_end + 1
@@ -213,13 +202,13 @@ fn line_bounds_at(content: &[u8], pos: usize) -> (usize, usize, usize) {
 }
 
 fn matches_csharp_attribute(line: &[u8], attribute_name: &[u8]) -> bool {
-    let trimmed = trim_ascii_start(line);
+    let trimmed = line.trim_ascii_start();
     if !trimmed.starts_with(b"[") {
         return false;
     }
 
     let mut pos = 1usize;
-    while pos < trimmed.len() && is_whitespace(trimmed[pos]) {
+    while pos < trimmed.len() && trimmed[pos].is_ascii_whitespace() {
         pos += 1;
     }
 
@@ -236,7 +225,7 @@ fn matches_csharp_attribute(line: &[u8], attribute_name: &[u8]) -> bool {
         pos += b"Attribute".len();
     }
 
-    while pos < trimmed.len() && is_whitespace(trimmed[pos]) {
+    while pos < trimmed.len() && trimmed[pos].is_ascii_whitespace() {
         pos += 1;
     }
 
@@ -254,7 +243,7 @@ fn is_csharp_test_attribute(line: &[u8]) -> Option<&'static str> {
 }
 
 fn is_csharp_attribute_or_blank(line: &[u8]) -> bool {
-    let trimmed = trim_ascii_start(line);
+    let trimmed = line.trim_ascii_start();
     trimmed.is_empty()
         || trimmed == b"\r"
         || trimmed.starts_with(b"[")
@@ -416,7 +405,7 @@ fn extract_csharp_method_name(signature: &[u8]) -> String {
     };
 
     let mut name_end = paren_pos;
-    while name_end > 0 && is_whitespace(signature[name_end - 1]) {
+    while name_end > 0 && signature[name_end - 1].is_ascii_whitespace() {
         name_end -= 1;
     }
 
@@ -500,7 +489,7 @@ fn find_csharp_test_methods(content: &[u8]) -> Vec<TestFuncMatch> {
 }
 
 fn is_csharp_method_signature_start(line: &[u8]) -> bool {
-    let trimmed = trim_ascii_start(line);
+    let trimmed = line.trim_ascii_start();
     if trimmed.starts_with(b"[")
         || trimmed.starts_with(b"//")
         || trimmed.starts_with(b"*")
