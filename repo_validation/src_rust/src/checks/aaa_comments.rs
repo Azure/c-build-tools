@@ -1255,21 +1255,6 @@ fn extract_filename(path: &str) -> &str {
     }
 }
 
-fn should_skip_csharp_file(relative_path: &str, filename: &str) -> bool {
-    let lower_filename = filename.to_ascii_lowercase();
-    if !lower_filename.ends_with("tests.cs")
-        || lower_filename.ends_with(".g.cs")
-        || lower_filename.ends_with(".designer.cs")
-        || lower_filename.ends_with(".assemblyinfo.cs")
-        || lower_filename == "globalusings.cs"
-    {
-        return true;
-    }
-
-    relative_path.split(['/', '\\']).any(|part| {
-        matches!(
-            part.to_ascii_lowercase().as_str(),
-            "bin" | "obj" | "generated"
-        )
-    })
+fn should_skip_csharp_file(_relative_path: &str, filename: &str) -> bool {
+    !filename.to_ascii_lowercase().ends_with("tests.cs")
 }

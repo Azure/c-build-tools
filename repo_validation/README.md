@@ -475,7 +475,7 @@ Using AAA comments consistently:
 - C unit test files (`*_ut.c`)
 - C# test files whose names end with `Tests.cs` and contain MSTest `[TestMethod]` or `[DataTestMethod]` methods
 
-Other C# files are skipped. Generated/build-output C# files are also skipped when their file names end with `.g.cs`, `.Designer.cs`, or `.AssemblyInfo.cs`, when the file is `GlobalUsings.cs`, or when the path contains `bin`, `obj`, or `generated`.
+Other C# files are skipped.
 
 **Test Function Macros/Attributes Detected:** `TEST_FUNCTION`, `TEST_METHOD`, `CTEST_FUNCTION`, `PARAMETERIZED_TEST_FUNCTION`, `[TestMethod]`, `[DataTestMethod]`
 
