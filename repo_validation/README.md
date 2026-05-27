@@ -554,7 +554,9 @@ TEST_FUNCTION(another_exempt_test) /* no-aaa */
 {
     // Also exempted
 }
+```
 
+```csharp
 [TestMethod] // no-aaa
 public void IntentionalCSharpExemption() => Assert.IsTrue(true);
 
