@@ -163,4 +163,29 @@ function check-az-cli-exists
             Write-Host "Authenticated via WAM as: $($accountInfo.user.name)" -ForegroundColor Green
         }
     }
+
+    # Configure Azure DevOps CLI defaults (organization and project)
+    # Without this, 'az repos' and 'az devops' commands require --organization and --project on every call
+    $devops_config = az devops configure --list 2>$null | Out-String
+    $needs_org = $devops_config -notmatch "organization\s*=\s*https://msazure\.visualstudio\.com"
+    $needs_project = $devops_config -notmatch "project\s*=\s*One"
+    if ($needs_org -or $needs_project)
+    {
+        Write-Host "Configuring Azure DevOps CLI defaults..."
+        az devops configure --defaults organization=https://msazure.visualstudio.com/ project=One
+        if ($LASTEXITCODE -eq 0)
+        {
+            Write-Host "Azure DevOps defaults configured (org=msazure, project=One)" -ForegroundColor Green
+        }
+        else
+        {
+            Write-Error "Failed to configure Azure DevOps defaults. Run manually:"
+            Write-Error "  az devops configure --defaults organization=https://msazure.visualstudio.com/ project=One"
+            exit -1
+        }
+    }
+    else
+    {
+        Write-Host "Azure DevOps CLI defaults already configured" -ForegroundColor Green
+    }
 }
