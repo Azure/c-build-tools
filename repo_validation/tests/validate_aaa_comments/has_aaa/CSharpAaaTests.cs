@@ -64,32 +64,24 @@ namespace RepoValidation.Tests
         }
 
         [TestMethod]
-        public void TestMethodUsesHelpersForAaa()
+        public void TestMethodUsesHelperForAaa()
         {
-            int value = ArrangeValue();
-            int actual = ActOnValue(value);
-            AssertValue(value, actual);
+            HelperWithAaa();
         }
 
         [TestMethod] // no-aaa
         public void IntentionalExemption() => Assert.IsTrue(true);
 
-        private int ArrangeValue()
+        private void HelperWithAaa()
         {
             // arrange
-            return 1;
-        }
+            int value = 1;
 
-        private int ActOnValue(int value)
-        {
             // act
-            return value;
-        }
+            int actual = value;
 
-        private void AssertValue(int expected, int actual)
-        {
             // assert
-            Assert.AreEqual(expected, actual);
+            Assert.AreEqual(value, actual);
         }
     }
 }
