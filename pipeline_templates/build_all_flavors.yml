@@ -69,13 +69,15 @@ parameters:
   # MAX_STAGE for the ARM64 test leg only. x64 always runs ALL; ARM64 test depth
   # is being migrated repo-by-repo, so only the ARM64 leg is caller-settable.
   # Default UNIT_TESTS preserves the historical policy (ARM64 runs unit tests
-  # only). A repo opts into deeper coverage by passing arm64_max_stage: ALL.
+  # only). A repo opts into deeper coverage by passing arm64_max_stage: INT_TESTS
+  # (unit + integration) or ALL (every registered category).
   - name: arm64_max_stage
     type: string
     default: "UNIT_TESTS"
     values:
       - "BUILD"
       - "UNIT_TESTS"
+      - "INT_TESTS"
       - "ALL"
 
   # Per-architecture test stage:
