@@ -42,13 +42,16 @@ parameters:
     default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
   # MAX_STAGE is set per-architecture by build_all_flavors.yml (the only intended
   # caller). Policy:
-  #   ARM64     -> UNIT_TESTS  (CTest excludes _int / _perf / _e2e categories so
-  #                             the slower ARM64 leg only runs unit tests)
+  #   ARM64     -> arm64_max_stage (default UNIT_TESTS; caller-settable so repos
+  #                                 migrate ARM64 test depth one at a time)
   #   x64 / x86 -> ALL         (run every CTest test that cmake_options registered)
   # Values:
   #   BUILD       - compile only. No test execution.
-  #   UNIT_TESTS  - compile + run unit tests only (CTest applies a category
-  #                 exclude filter; VSTest's *_ut_*.dll glob already restricts).
+  #   UNIT_TESTS  - compile + run unit tests only (CTest excludes the _int / _perf
+  #                 / _e2e categories; VSTest's *_ut_*.dll glob already restricts).
+  #   INT_TESTS   - compile + run unit AND integration tests (CTest excludes only
+  #                 the _perf / _e2e categories). Intermediate migration step
+  #                 between UNIT_TESTS and ALL.
   #   ALL         - compile + run all registered CTest tests (no category filter).
   - name: MAX_STAGE
     type: string
@@ -56,6 +59,7 @@ parameters:
     values:
       - "BUILD"
       - "UNIT_TESTS"
+      - "INT_TESTS"
       - "ALL"
   # When true, run NuGetAuthenticate and NuGetToolInstaller before cmake
   # so that execute_process(COMMAND nuget ...) can access private feeds.
@@ -99,8 +103,8 @@ jobs:
       GBALLOC_LL_TYPE: ${{ parameters.GBALLOC_LL_TYPE }}
       use_vld_option: ${{ variables.use_vld_option }}
 
-  # Run tests only when MAX_STAGE is UNIT_TESTS or ALL. BUILD mode compiles only.
-  - ${{ if or(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.MAX_STAGE, 'ALL')) }}:
+  # Run tests only when MAX_STAGE runs tests. BUILD mode compiles only.
+  - ${{ if or(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.MAX_STAGE, 'INT_TESTS'), eq(parameters.MAX_STAGE, 'ALL')) }}:
 
     # When APP_VERIFIER is OFF, run normal tests (VSTest, CTest)
     - ${{ if eq(parameters.APP_VERIFIER, 'OFF') }}:
@@ -168,13 +172,18 @@ jobs:
             # uses (foo_int) and middle uses (foo_int_tests, logger_int_console_x).
             # Filter at run time so BUILD-stage semantics still hold (int/perf/e2e
             # still compile - useful as a compile-only ratchet) while UNIT_TESTS
-            # strictly skips them at run time. MAX_STAGE=ALL bypasses this filter.
+            # strictly skips _int/_perf/_e2e and INT_TESTS skips only _perf/_e2e at
+            # run time. MAX_STAGE=ALL bypasses this filter.
             #
-            # When the filter IS active (UNIT_TESTS), also disable --no-tests=error:
-            # repos that have only int/perf/e2e tests (e.g. macro-utils-c) legitimately
-            # match zero tests after the filter, and that is not a build error.
+            # When the filter IS active (UNIT_TESTS or INT_TESTS), also disable
+            # --no-tests=error: repos that have only int/perf/e2e tests (e.g.
+            # macro-utils-c) legitimately match zero tests after the filter, and
+            # that is not a build error.
             ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
               excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
+              noTestsError: false
+            ${{ if eq(parameters.MAX_STAGE, 'INT_TESTS') }}:
+              excludeTests: '_perf($|_)|_e2e($|_)'
               noTestsError: false
 
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
@@ -214,26 +223,33 @@ jobs:
               configuration: '${{ parameters.build_configuration }}'
               outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
               # noTestsError is true only when no exclude reason is in play. Either
-              # an appverifier_skip_tests_list or the MAX_STAGE=UNIT_TESTS category
-              # filter constitutes a deliberate exclude, so matching zero tests is
-              # legitimate (e.g. macro-utils-c only has _int tests).
-              noTestsError: ${{ and(eq(parameters.appverifier_skip_tests_list, ''), ne(parameters.MAX_STAGE, 'UNIT_TESTS')) }}
+              # an appverifier_skip_tests_list or a MAX_STAGE category filter
+              # (UNIT_TESTS or INT_TESTS) constitutes a deliberate exclude, so
+              # matching zero tests is legitimate (e.g. macro-utils-c only has _int
+              # tests). Only ALL with no skip list expects every listed test to run.
+              noTestsError: ${{ and(eq(parameters.appverifier_skip_tests_list, ''), eq(parameters.MAX_STAGE, 'ALL')) }}
               # See the comment on the regular ctest invocation above for why
-              # MAX_STAGE=UNIT_TESTS skips _int/_perf/_e2e categories. AppVerifier-
-              # helper itself configures appverif for whatever ctest -N returns;
-              # that config is harmless for tests that won't actually run.
+              # UNIT_TESTS skips _int/_perf/_e2e and INT_TESTS skips only
+              # _perf/_e2e. AppVerifier helper itself configures appverif for
+              # whatever ctest -N returns; that config is harmless for tests that
+              # won't actually run.
               # The exclude regex is composed from up to two sources:
               #   1. The caller-provided appverifier_skip_tests_list (tests known
               #      to misbehave under AppVerifier).
-              #   2. The UNIT_TESTS test-category filter (_int|_perf|_e2e, with
-              #      ($|_) after each so it matches both trailing and middle uses).
-              # All three mutually-exclusive cases are spelled out here because
-              # the parts have to be combined with a regex '|' separator.
+              #   2. The MAX_STAGE test-category filter (UNIT_TESTS: _int|_perf|_e2e;
+              #      INT_TESTS: _perf|_e2e), each token suffixed with ($|_) so it
+              #      matches both trailing and middle uses.
+              # The mutually-exclusive cases are spelled out here because the parts
+              # have to be combined with a regex '|' separator.
               ${{ if and(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), ne(parameters.appverifier_skip_tests_list, '')) }}:
                 excludeTests: '${{ parameters.appverifier_skip_tests_list }}|_int($|_)|_perf($|_)|_e2e($|_)'
               ${{ if and(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.appverifier_skip_tests_list, '')) }}:
                 excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
-              ${{ if ne(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
+              ${{ if and(eq(parameters.MAX_STAGE, 'INT_TESTS'), ne(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '${{ parameters.appverifier_skip_tests_list }}|_perf($|_)|_e2e($|_)'
+              ${{ if and(eq(parameters.MAX_STAGE, 'INT_TESTS'), eq(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '_perf($|_)|_e2e($|_)'
+              ${{ if eq(parameters.MAX_STAGE, 'ALL') }}:
                 excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
 
       - task: PublishTestResults@2

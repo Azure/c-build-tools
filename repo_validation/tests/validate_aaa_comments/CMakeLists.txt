@@ -8,9 +8,14 @@
 # missing or incorrectly ordered AAA (Arrange, Act, Assert) comments in test functions.
 #
 
+set(EXPECT_VALIDATION_FAILURE_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/expect_validation_failure.cmake")
+
 # Test 1: Verify tool detects missing AAA comments
 add_custom_target(test_validate_aaa_comments_detection
-    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa" --check aaa_comments
+    COMMAND ${CMAKE_COMMAND}
+        -DREPO_VALIDATOR_RS_EXE="${REPO_VALIDATOR_RS_EXE}"
+        -DREPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa"
+        -P "${EXPECT_VALIDATION_FAILURE_SCRIPT}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment detection on files with missing comments"
     DEPENDS repo_validator_rs
@@ -45,7 +50,8 @@ add_custom_target(test_validate_aaa_comments
     COMMENT "Running all AAA comment validation tests"
 )
 
-# Add dependencies - detection test should fail (exit code 1), clean tests should pass
+# Add dependencies. Failure-detection tests are wrapped so they pass only when
+# the validator rejects the invalid fixtures.
 add_dependencies(test_validate_aaa_comments 
     test_validate_aaa_comments_clean
     test_validate_aaa_comments_exempted
@@ -54,7 +60,10 @@ add_dependencies(test_validate_aaa_comments
 
 # Test 5: Verify tool detects missing AAA in PARAMETERIZED_TEST_FUNCTION
 add_custom_target(test_validate_aaa_comments_parameterized_detection
-    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa_parameterized" --check aaa_comments
+    COMMAND ${CMAKE_COMMAND}
+        -DREPO_VALIDATOR_RS_EXE="${REPO_VALIDATOR_RS_EXE}"
+        -DREPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa_parameterized"
+        -P "${EXPECT_VALIDATION_FAILURE_SCRIPT}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment detection on parameterized tests with missing comments"
     DEPENDS repo_validator_rs
@@ -62,9 +71,23 @@ add_custom_target(test_validate_aaa_comments_parameterized_detection
 
 # Test 6: Verify tool detects partial AAA (2 out of 3 comments present)
 add_custom_target(test_validate_aaa_comments_partial_detection
-    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa_partial" --check aaa_comments
+    COMMAND ${CMAKE_COMMAND}
+        -DREPO_VALIDATOR_RS_EXE="${REPO_VALIDATOR_RS_EXE}"
+        -DREPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa_partial"
+        -P "${EXPECT_VALIDATION_FAILURE_SCRIPT}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Testing AAA comment detection on tests with only 2 of 3 AAA comments"
+    DEPENDS repo_validator_rs
+)
+
+# Test 7: Verify tool detects combined Act & Assert in C# MSTest tests
+add_custom_target(test_validate_aaa_comments_csharp_detection
+    COMMAND ${CMAKE_COMMAND}
+        -DREPO_VALIDATOR_RS_EXE="${REPO_VALIDATOR_RS_EXE}"
+        -DREPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/missing_aaa_csharp"
+        -P "${EXPECT_VALIDATION_FAILURE_SCRIPT}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing AAA comment detection on C# MSTest tests with combined Act and Assert"
     DEPENDS repo_validator_rs
 )
 
@@ -76,4 +99,9 @@ add_dependencies(test_validate_aaa_comments_failures
     test_validate_aaa_comments_detection
     test_validate_aaa_comments_parameterized_detection
     test_validate_aaa_comments_partial_detection
+    test_validate_aaa_comments_csharp_detection
+)
+
+add_dependencies(test_validate_aaa_comments
+    test_validate_aaa_comments_failures
 )
