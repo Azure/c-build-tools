@@ -66,6 +66,12 @@ parameters:
   - name: setup_nuget
     type: boolean
     default: false
+  # When true, publish $(Build.BinariesDirectory)/<build_configuration> on success
+  # as artifact build_output_<BUILD_SUFFIX>. Separate from the failure-time publish
+  # in build_teardown_steps.yml.
+  - name: publish_artifacts_on_success
+    type: boolean
+    default: false
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -256,6 +262,19 @@ jobs:
           buildConfiguration: ${{ parameters.build_configuration }}
           failTaskOnMissingResultsFile: true
         condition: always()
+
+  # Publish the configuration's build output on success, for downstream jobs in
+  # the same pipeline to consume via DownloadPipelineArtifact. The artifact
+  # Publish the build output on success as artifact build_output_<BUILD_SUFFIX>.
+  # Separate from the failure-time publish in build_teardown_steps.yml.
+  - ${{ if parameters.publish_artifacts_on_success }}:
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish ${{ parameters.build_configuration }} build output'
+      inputs:
+        targetPath: '$(Build.BinariesDirectory)/${{ parameters.build_configuration }}'
+        artifactName: 'build_output_${{ parameters.BUILD_SUFFIX }}'
+        parallel: true
+      condition: succeeded()
 
   - template : build_teardown_steps.yml
     parameters:
