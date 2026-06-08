@@ -72,6 +72,16 @@ function(copy_default_vld_ini target output_directory)
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${build_c_tests_internal_dir}/default_vld.ini" "${output_directory}/vld.ini" )
+
+    # Stage VLD's bundled dbghelp.dll alongside vld.ini so the loader resolves
+    # dbghelp.dll from the application directory (DLL search position 1) instead of
+    # System32 (position 2). dbghelp.dll is not a KnownDLL, so the app-local copy
+    # wins; VLD's bin on PATH (searched last) would lose to System32.
+    if(WIN32 AND EXISTS "${VLD_DBGHELP}")
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VLD_DBGHELP}" "${output_directory}/dbghelp.dll" )
+    endif()
 endfunction()
 
 
@@ -247,7 +257,7 @@ macro(set_default_build_options)
 
         # Remember VLD's bundled dbghelp.dll (arch-specific bin subfolder) so it can be
         # staged next to each VLD-enabled exe. CACHE INTERNAL makes it visible from
-        # add_use_vld_if_no_cs, which runs in a different directory scope.
+        # copy_default_vld_ini, which runs in a different directory scope.
         if (${ARCHITECTURE} STREQUAL "ARM64")
             set(_vld_bin_arch "ARM64")
         elseif (${ARCHITECTURE} STREQUAL "x86_64")
@@ -501,15 +511,6 @@ function(add_use_vld_if_no_cs target)
     if(NOT FOUND_CS)
         target_link_libraries(${target} $<LINK_LIBRARY:WHOLE_ARCHIVE,use_vld>) #WHOLE_ARCHIVE forces the linker to not discard use_vld lib
         #message(STATUS "Added use_vld to ${target}")
-
-        # Record this exe so a single staging target (created later in the top-level
-        # directory by add_vld_if_defined) can copy VLD's bundled dbghelp.dll next to
-        # it. We cannot use add_custom_command(TARGET) here: this function runs while
-        # walking the whole target tree, and add_custom_command(TARGET) must be called
-        # in the same directory that created the target.
-        if(WIN32 AND EXISTS "${VLD_DBGHELP}")
-            set_property(GLOBAL APPEND PROPERTY VLD_DBGHELP_EXE_TARGETS ${target})
-        endif()
     endif()
 endfunction()
 
@@ -553,29 +554,6 @@ function(add_vld_if_defined DIR)
         endif()
 
         add_vld_if_defined_impl(${DIR})
-
-        # Stage VLD's bundled dbghelp.dll next to every VLD-enabled exe via a single
-        # target created here in the top-level directory. Placing dbghelp.dll in the
-        # exe's own folder makes the loader use it (DLL search position 1) instead of
-        # System32 (position 2); dbghelp.dll is not a KnownDLL, so the app-local copy
-        # wins. A single target is used (instead of a per-exe add_custom_command in
-        # add_use_vld_if_no_cs) because add_custom_command(TARGET) must run in the
-        # directory that created the target, while the walk above visits targets from
-        # every directory; referencing each exe via $<TARGET_FILE_DIR:...> is allowed
-        # across directories.
-        if(WIN32 AND (DIR STREQUAL CMAKE_SOURCE_DIR) AND EXISTS "${VLD_DBGHELP}" AND NOT TARGET stage_vld_dbghelp)
-            get_property(_vld_dbghelp_exes GLOBAL PROPERTY VLD_DBGHELP_EXE_TARGETS)
-            if(_vld_dbghelp_exes)
-                list(REMOVE_DUPLICATES _vld_dbghelp_exes)
-                add_custom_target(stage_vld_dbghelp ALL)
-                foreach(_vld_exe IN LISTS _vld_dbghelp_exes)
-                    add_custom_command(TARGET stage_vld_dbghelp POST_BUILD
-                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                            "${VLD_DBGHELP}" "$<TARGET_FILE_DIR:${_vld_exe}>/dbghelp.dll")
-                endforeach()
-                add_dependencies(stage_vld_dbghelp ${_vld_dbghelp_exes})
-            endif()
-        endif()
     endif()
 endfunction()
 
