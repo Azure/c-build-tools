@@ -1,0 +1,69 @@
+# Shared pre-build setup steps used by both build_setup_steps.yml and run_repo_validation.yml.
+# Performs: machine info, checkout with submodule auth, ARM64 verification, native tool discovery,
+# VS environment setup, and optional NuGet feed authentication.
+
+parameters:
+  - name: ARCH_TYPE
+    default: "x64"
+  - name: setup_nuget
+    type: boolean
+    default: false
+
+steps:
+  - template: get_machine_information.yml
+
+  # submodules: true puts the System.AccessToken on the auth header for every submodule URL (not just the outer repo URL), so consumers with internal-ADO submodules work.
+  - checkout: self
+    submodules: true
+    clean: false
+    fetchDepth: 1
+
+  # ARM64: Verify agent architecture
+  - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
+    - template: verify_agent_architecture.yml
+      parameters:
+        expected_architecture: 'ARM64'
+
+  # Discover native tools
+  - template: discover_native_tools.yml
+    parameters:
+      architecture: ${{ parameters.ARCH_TYPE }}
+
+  # Setup VS environment - use discovered vsPath for correct VS version
+  - task: PowerShell@2
+    displayName: 'Setup VS Vars'
+    inputs:
+      targetType: 'inline'
+      script: |
+        # Find VS using vswhere (works for any VS version)
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+          $vsPath = & $vswhere -latest -products * -property installationPath
+          if ($vsPath) {
+            $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
+            if (Test-Path $vsDevCmd) {
+              # Set architecture parameters for VsDevCmd based on target architecture
+              $arch = "${{ parameters.ARCH_TYPE }}"
+              if ($arch -eq "ARM64") {
+                $archArgs = "-arch=arm64 -host_arch=arm64"
+                Write-Host "Running VsDevCmd with ARM64 architecture: $vsDevCmd $archArgs"
+              } else {
+                $archArgs = "-arch=amd64"
+                Write-Host "Running VsDevCmd with x64 architecture: $vsDevCmd $archArgs"
+              }
+              cmd /c "`"$vsDevCmd`" $archArgs && set" | ForEach-Object {
+                if ($_ -match "^([^=]+)=(.*)$") {
+                  [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+                }
+              }
+            } else {
+              Write-Host "##[warning]VsDevCmd.bat not found at $vsDevCmd"
+            }
+          }
+        } else {
+          Write-Host "##[warning]vswhere not found"
+        }
+
+  # Authenticate NuGet feeds so cmake configure can restore packages
+  - ${{ if parameters.setup_nuget }}:
+    - template: setup_nuget_tools.yml
