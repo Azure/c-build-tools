@@ -54,16 +54,17 @@ steps:
   - task: PowerShell@2
     displayName: ${{ parameters.display_name }}
     inputs:
-      targetType: filePath
-      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/run_with_hang_watchdog.ps1'
-      arguments: >-
-        -Executable '${{ parameters.executable }}'
-        -Arguments '${{ parameters.arguments }}'
-        -WorkingDirectory '${{ parameters.working_directory }}'
-        -DumpThresholdSec ${{ parameters.dump_threshold_sec }}
-        -PollIntervalSec ${{ parameters.poll_interval_sec }}
-        -NamePattern '${{ parameters.name_pattern }}'
-        -IncludeWatched $${{ parameters.include_watched }}
-        -KillAfterDump $${{ parameters.kill_after_dump }}
-        -WatchdogScript '${{ parameters.repo_root }}/pipeline_templates/scripts/test_hang_watchdog.ps1'
+      targetType: inline
+      script: |
+        & '${{ parameters.repo_root }}/pipeline_templates/scripts/run_with_hang_watchdog.ps1' `
+          -Executable '${{ parameters.executable }}' `
+          -Arguments '${{ parameters.arguments }}' `
+          -WorkingDirectory '${{ parameters.working_directory }}' `
+          -DumpThresholdSec ${{ parameters.dump_threshold_sec }} `
+          -PollIntervalSec ${{ parameters.poll_interval_sec }} `
+          -NamePattern '${{ parameters.name_pattern }}' `
+          -IncludeWatched $${{ parameters.include_watched }} `
+          -KillAfterDump $${{ parameters.kill_after_dump }} `
+          -WatchdogScript '${{ parameters.repo_root }}/pipeline_templates/scripts/test_hang_watchdog.ps1'
+        exit $LASTEXITCODE
     env: ${{ parameters.env }}
