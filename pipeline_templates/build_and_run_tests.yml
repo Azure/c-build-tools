@@ -72,6 +72,17 @@ parameters:
   - name: publish_artifacts_on_success
     type: boolean
     default: false
+  # Hang watchdog: wraps CTest execution with a background process that captures
+  # full-memory dumps of test exes approaching their per-test timeout.
+  - name: enable_hang_watchdog
+    type: boolean
+    default: true
+  - name: hang_watchdog_name_pattern
+    type: string
+    default: '_exe_'
+  - name: hang_dump_threshold_sec
+    type: number
+    default: 1380
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -145,46 +156,55 @@ jobs:
               summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
               pathToSources: '$(Build.SourcesDirectory)'
 
-      # Use wrapper template for CTest - handles ARM64 native tools transparently
+      # CTest execution — when hang watchdog is enabled, wrap with watchdog for dump capture.
+      # When disabled, use the original tasks/ctest.yml template.
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
-        - template: tasks/ctest.yml
-          parameters:
-            architecture: ${{ parameters.ARCH_TYPE }}
-            workingDirectory: '$(Build.BinariesDirectory)/c'
-            configuration: '${{ parameters.build_configuration }}'
-            outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-            # MAX_STAGE=UNIT_TESTS: skip non-unit-test categories on every architecture.
-            # Test names registered by build_test_artifacts (in c-testrunnerswitcher)
-            # follow the convention of containing _ut, _int, _perf, or _e2e in the name
-            # (typically as the trailing or middle token, e.g. foo_ut, foo_int_tests,
-            # logger_int_console_x). CMake's run_unittests / run_int_tests /
-            # run_perf_tests / run_e2e_tests options control registration; with the
-            # gate's default cmake_options every category gets registered, and ctest
-            # then runs them all. VSTest already filters to *_ut_*.dll via its
-            # discovery glob, but ctest does not.
-            #
-            # We exclude (rather than include) so projects whose tests do not follow
-            # the _ut suffix convention - notably c-build-tools' own validate_*_test
-            # and RUN_REALS_CHECK_TEST gates - still run instead of being filtered out
-            # and tripping --no-tests=error.
-            #
-            # The regex uses ($|_) after each category so it matches both trailing
-            # uses (foo_int) and middle uses (foo_int_tests, logger_int_console_x).
-            # Filter at run time so BUILD-stage semantics still hold (int/perf/e2e
-            # still compile - useful as a compile-only ratchet) while UNIT_TESTS
-            # strictly skips _int/_perf/_e2e and INT_TESTS skips only _perf/_e2e at
-            # run time. MAX_STAGE=ALL bypasses this filter.
-            #
-            # When the filter IS active (UNIT_TESTS or INT_TESTS), also disable
-            # --no-tests=error: repos that have only int/perf/e2e tests (e.g.
-            # macro-utils-c) legitimately match zero tests after the filter, and
-            # that is not a build error.
-            ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
-              excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
-              noTestsError: false
-            ${{ if eq(parameters.MAX_STAGE, 'INT_TESTS') }}:
-              excludeTests: '_perf($|_)|_e2e($|_)'
-              noTestsError: false
+        - ${{ if parameters.enable_hang_watchdog }}:
+          # Watchdog-wrapped CTest: builds ctest arguments per MAX_STAGE filter
+          - ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
+            - template: run_with_hang_watchdog.yml
+              parameters:
+                repo_root: ${{ parameters.repo_root_override }}
+                display_name: 'CTest (${{ parameters.ARCH_TYPE }}) [watchdog]'
+                executable: '$(ctestPath)'
+                working_directory: '$(Build.BinariesDirectory)/c'
+                name_pattern: '${{ parameters.hang_watchdog_name_pattern }}'
+                dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
+                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml -E "_int($|_)|_perf($|_)|_e2e($|_)"'
+          - ${{ if eq(parameters.MAX_STAGE, 'INT_TESTS') }}:
+            - template: run_with_hang_watchdog.yml
+              parameters:
+                repo_root: ${{ parameters.repo_root_override }}
+                display_name: 'CTest (${{ parameters.ARCH_TYPE }}) [watchdog]'
+                executable: '$(ctestPath)'
+                working_directory: '$(Build.BinariesDirectory)/c'
+                name_pattern: '${{ parameters.hang_watchdog_name_pattern }}'
+                dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
+                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml -E "_perf($|_)|_e2e($|_)"'
+          - ${{ if eq(parameters.MAX_STAGE, 'ALL') }}:
+            - template: run_with_hang_watchdog.yml
+              parameters:
+                repo_root: ${{ parameters.repo_root_override }}
+                display_name: 'CTest (${{ parameters.ARCH_TYPE }}) [watchdog]'
+                executable: '$(ctestPath)'
+                working_directory: '$(Build.BinariesDirectory)/c'
+                name_pattern: '${{ parameters.hang_watchdog_name_pattern }}'
+                dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
+                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+
+        - ${{ if not(parameters.enable_hang_watchdog) }}:
+          - template: tasks/ctest.yml
+            parameters:
+              architecture: ${{ parameters.ARCH_TYPE }}
+              workingDirectory: '$(Build.BinariesDirectory)/c'
+              configuration: '${{ parameters.build_configuration }}'
+              outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+              ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
+                excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
+                noTestsError: false
+              ${{ if eq(parameters.MAX_STAGE, 'INT_TESTS') }}:
+                excludeTests: '_perf($|_)|_e2e($|_)'
+                noTestsError: false
 
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
         - task: PublishTestResults@2

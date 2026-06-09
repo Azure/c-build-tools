@@ -25,4 +25,13 @@ steps:
       parallel: true
     condition: failed()
 
+  # Publish hang watchdog dumps if any were captured
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish hang dumps'
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)/test_hang_dumps'
+      artifactName: 'test_hang_dumps_${{ parameters.artifact_name_suffix }}'
+      parallel: true
+    condition: and(always(), eq(variables['HangDumpsCaptured'], 'true'))
+
   - template : clean_ado_folders.yml

@@ -109,6 +109,18 @@ parameters:
     type: boolean
     default: false
 
+  # Hang watchdog: wraps CTest with a background process that captures
+  # full-memory dumps of test exes approaching their per-test timeout.
+  - name: enable_hang_watchdog
+    type: boolean
+    default: true
+  - name: hang_watchdog_name_pattern
+    type: string
+    default: '_exe_'
+  - name: hang_dump_threshold_sec
+    type: number
+    default: 1380
+
 jobs:
 # Run repo validation and traceability once (not per-flavor)
 - ${{ if not(parameters.skip_repo_validation) }}:
@@ -145,6 +157,9 @@ jobs:
                 failOnMinTestsNotRun: ${{ parameters.failOnMinTestsNotRun }}
                 setup_nuget: ${{ parameters.setup_nuget }}
                 publish_artifacts_on_success: ${{ parameters.publish_artifacts_on_success }}
+                enable_hang_watchdog: ${{ parameters.enable_hang_watchdog }}
+                hang_watchdog_name_pattern: ${{ parameters.hang_watchdog_name_pattern }}
+                hang_dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
                 # Per-architecture pool selection AND effective MAX_STAGE.
                 # ARM64 -> arm64_max_stage (default UNIT_TESTS; caller-settable so
                 # repos migrate ARM64 test depth one at a time). x64 -> ALL (run

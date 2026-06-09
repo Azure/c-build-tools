@@ -1,0 +1,69 @@
+# Runs an arbitrary executable (ctest or a single test exe) alongside a watchdog process that
+# captures full-memory dumps of test processes which approach their per-test timeout.
+#
+# When a candidate process's age exceeds dump_threshold_sec the watchdog calls awdump
+# (preferred, available on gate machines via MonAgentCore install dir) or procdump
+# (fallback).
+#
+# All logic lives in pipeline_templates/scripts/run_with_hang_watchdog.ps1 so it can also be
+# run from a developer shell against a locally-built test exe.
+#
+# Dumps and hang_summary.txt are written to $(Build.ArtifactStagingDirectory)/test_hang_dumps,
+# which build_teardown_steps.yml publishes as the test_hang_dumps pipeline artifact on failure.
+#
+# The wrapper preserves the wrapped executable's exit code so failure semantics are unchanged.
+
+parameters:
+  - name: display_name
+    type: string
+  - name: executable
+    type: string
+  - name: arguments
+    type: string
+    default: ''
+  - name: working_directory
+    type: string
+  - name: dump_threshold_sec
+    type: number
+    default: 1380
+  - name: poll_interval_sec
+    type: number
+    default: 30
+  - name: name_pattern
+    type: string
+    default: '_exe_'
+  # When the wrapped executable IS the test exe (single-exe runner) set this true.
+  # When the wrapped executable is ctest (and the actual test exes are its children) leave it false.
+  - name: include_watched
+    type: boolean
+    default: false
+  # When true, the watchdog kills each candidate process after capturing its dump. Use this for
+  # single-exe runs so the wrapped exe exits promptly after the dump is taken -- otherwise the
+  # surrounding ADO job timeout can reap the task before the dump artifact gets published.
+  # Leave false under ctest (killing a child would skip remaining tests).
+  - name: kill_after_dump
+    type: boolean
+    default: false
+  - name: env
+    type: object
+    default: {}
+  - name: repo_root
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
+
+steps:
+  - task: PowerShell@2
+    displayName: ${{ parameters.display_name }}
+    inputs:
+      targetType: filePath
+      filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/run_with_hang_watchdog.ps1'
+      arguments: >-
+        -Executable '${{ parameters.executable }}'
+        -Arguments '${{ parameters.arguments }}'
+        -WorkingDirectory '${{ parameters.working_directory }}'
+        -DumpThresholdSec ${{ parameters.dump_threshold_sec }}
+        -PollIntervalSec ${{ parameters.poll_interval_sec }}
+        -NamePattern '${{ parameters.name_pattern }}'
+        -IncludeWatched $${{ parameters.include_watched }}
+        -KillAfterDump $${{ parameters.kill_after_dump }}
+        -WatchdogScript '${{ parameters.repo_root }}/pipeline_templates/scripts/test_hang_watchdog.ps1'
+    env: ${{ parameters.env }}
