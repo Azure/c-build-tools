@@ -21,7 +21,7 @@
         to conditionally publish the test_hang_dumps artifact).
 
 .PARAMETER Executable
-    Full path to the executable to run (e.g. ctest.exe, or a single _exe_ebs.exe).
+    Full path to the executable to run (e.g. ctest.exe, or a single test exe).
 
 .PARAMETER Arguments
     Argument string passed to the executable. May contain embedded quotes; passed as-is to
@@ -39,13 +39,13 @@
     Full path to test_hang_watchdog.ps1. Defaults to the watchdog next to this script.
 
 .PARAMETER DumpThresholdSec
-    Process age (seconds) at which the watchdog captures a dump. Default 1380.
+    Process age (seconds) at which the watchdog captures a dump. Default 1200.
 
 .PARAMETER PollIntervalSec
     Watchdog poll interval (seconds). Default 30.
 
 .PARAMETER NamePattern
-    Regex applied to candidate process names. Default '_int_exe_ebs'.
+    Regex applied to candidate process names. Default '_exe_'.
 
 .PARAMETER IncludeWatched
     If set, the launched executable itself (not just its children) is a dump candidate.
@@ -63,12 +63,12 @@
             -Executable 'C:\...\ctest.exe' `
             -Arguments '-j 16 -C Debug -V --output-on-failure -E _perf' `
             -WorkingDirectory C:\src\cmake `
-            -DumpThresholdSec 1380
+            -DumpThresholdSec 1200
 
 .EXAMPLE
     # Single-exe: wrap a developer-test invocation, dumping if the test exe itself runs > 60s
     PS> .\run_with_hang_watchdog.ps1 `
-            -Executable C:\bin\bsi_with_wait_chaos_int_exe_ebs.exe `
+            -Executable C:\bin\my_test_int_exe_myproject.exe `
             -DumpThresholdSec 60 -PollIntervalSec 5 -IncludeWatched
 #>
 
@@ -90,7 +90,7 @@ param (
     [string]$WatchdogScript = '',
 
     [Parameter(Mandatory = $false)]
-    [int]$DumpThresholdSec = 1380,
+    [int]$DumpThresholdSec = 1200,
 
     [Parameter(Mandatory = $false)]
     [int]$PollIntervalSec = 30,

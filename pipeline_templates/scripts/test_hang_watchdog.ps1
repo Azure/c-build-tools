@@ -22,8 +22,7 @@
     Children of this process whose name matches -NamePattern are candidates for dumping.
 
 .PARAMETER DumpThresholdSec
-    Process age (in seconds) at which a dump is captured. Defaults to 1380 (2 minutes under
-    ctest's 1500 s default per-test timeout).
+    Process age (in seconds) at which a dump is captured. Defaults to 1200 (20 minutes).
 
 .PARAMETER DumpDir
     Directory where dumps and the hang_summary.txt log are written.
@@ -33,7 +32,7 @@
 
 .PARAMETER NamePattern
     Regex applied to process Name. Only matching processes are eligible for dumping.
-    Defaults to '_int_exe_ebs'.
+    Defaults to '_exe_'.
 
 .PARAMETER IncludeWatched
     If set, the -WatchedPid itself is also a dump candidate (in addition to its children).
@@ -48,7 +47,7 @@
     killing a child test would corrupt ctest's bookkeeping and skip remaining tests.
 
 .EXAMPLE
-    PS> .\test_hang_watchdog.ps1 -WatchedPid 12345 -DumpDir C:\dumps -DumpThresholdSec 1380
+    PS> .\test_hang_watchdog.ps1 -WatchedPid 12345 -DumpDir C:\dumps -DumpThresholdSec 1200
 #>
 
 [CmdletBinding()]
@@ -60,7 +59,7 @@ param (
     [string]$DumpDir,
 
     [Parameter(Mandatory = $false)]
-    [int]$DumpThresholdSec = 1380,
+    [int]$DumpThresholdSec = 1200,
 
     [Parameter(Mandatory = $false)]
     [int]$PollIntervalSec = 30,

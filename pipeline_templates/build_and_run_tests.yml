@@ -82,7 +82,7 @@ parameters:
     default: '_exe_'
   - name: hang_dump_threshold_sec
     type: number
-    default: 1380
+    default: 1200
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}

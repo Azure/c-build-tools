@@ -119,7 +119,7 @@ parameters:
     default: '_exe_'
   - name: hang_dump_threshold_sec
     type: number
-    default: 1380
+    default: 1200
 
 jobs:
 # Run repo validation and traceability once (not per-flavor)
