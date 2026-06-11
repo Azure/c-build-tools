@@ -42,13 +42,16 @@ parameters:
     default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
   # MAX_STAGE is set per-architecture by build_all_flavors.yml (the only intended
   # caller). Policy:
-  #   ARM64     -> UNIT_TESTS  (CTest excludes _int / _perf / _e2e categories so
-  #                             the slower ARM64 leg only runs unit tests)
+  #   ARM64     -> arm64_max_stage (default UNIT_TESTS; caller-settable so repos
+  #                                 migrate ARM64 test depth one at a time)
   #   x64 / x86 -> ALL         (run every CTest test that cmake_options registered)
   # Values:
   #   BUILD       - compile only. No test execution.
-  #   UNIT_TESTS  - compile + run unit tests only (CTest applies a category
-  #                 exclude filter; VSTest's *_ut_*.dll glob already restricts).
+  #   UNIT_TESTS  - compile + run unit tests only (CTest excludes the _int / _perf
+  #                 / _e2e categories; VSTest's *_ut_*.dll glob already restricts).
+  #   INT_TESTS   - compile + run unit AND integration tests (CTest excludes only
+  #                 the _perf / _e2e categories). Intermediate migration step
+  #                 between UNIT_TESTS and ALL.
   #   ALL         - compile + run all registered CTest tests (no category filter).
   - name: MAX_STAGE
     type: string
@@ -56,12 +59,30 @@ parameters:
     values:
       - "BUILD"
       - "UNIT_TESTS"
+      - "INT_TESTS"
       - "ALL"
   # When true, run NuGetAuthenticate and NuGetToolInstaller before cmake
   # so that execute_process(COMMAND nuget ...) can access private feeds.
   - name: setup_nuget
     type: boolean
     default: false
+  # When true, publish $(Build.BinariesDirectory)/<build_configuration> on success
+  # as artifact build_output_<BUILD_SUFFIX>. Separate from the failure-time publish
+  # in build_teardown_steps.yml.
+  - name: publish_artifacts_on_success
+    type: boolean
+    default: false
+  # Hang watchdog: wraps CTest execution with a background process that captures
+  # full-memory dumps of test exes approaching their per-test timeout.
+  - name: enable_hang_watchdog
+    type: boolean
+    default: true
+  - name: hang_watchdog_name_pattern
+    type: string
+    default: '_exe_'
+  - name: hang_dump_threshold_sec
+    type: number
+    default: 1200
 
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
@@ -93,8 +114,8 @@ jobs:
       GBALLOC_LL_TYPE: ${{ parameters.GBALLOC_LL_TYPE }}
       use_vld_option: ${{ variables.use_vld_option }}
 
-  # Run tests only when MAX_STAGE is UNIT_TESTS or ALL. BUILD mode compiles only.
-  - ${{ if or(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.MAX_STAGE, 'ALL')) }}:
+  # Run tests only when MAX_STAGE runs tests. BUILD mode compiles only.
+  - ${{ if or(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.MAX_STAGE, 'INT_TESTS'), eq(parameters.MAX_STAGE, 'ALL')) }}:
 
     # When APP_VERIFIER is OFF, run normal tests (VSTest, CTest)
     - ${{ if eq(parameters.APP_VERIFIER, 'OFF') }}:
@@ -135,41 +156,55 @@ jobs:
               summaryFileLocation: '$(build.ArtifactStagingDirectory)/Test/VsTest/Results/${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}/*/*.xml'
               pathToSources: '$(Build.SourcesDirectory)'
 
-      # Use wrapper template for CTest - handles ARM64 native tools transparently
+      # CTest execution — when hang watchdog is enabled, wrap with watchdog for dump capture.
+      # When disabled, use the original tasks/ctest.yml template.
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
-        - template: tasks/ctest.yml
-          parameters:
-            architecture: ${{ parameters.ARCH_TYPE }}
-            workingDirectory: '$(Build.BinariesDirectory)/c'
-            configuration: '${{ parameters.build_configuration }}'
-            outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
-            # MAX_STAGE=UNIT_TESTS: skip non-unit-test categories on every architecture.
-            # Test names registered by build_test_artifacts (in c-testrunnerswitcher)
-            # follow the convention of containing _ut, _int, _perf, or _e2e in the name
-            # (typically as the trailing or middle token, e.g. foo_ut, foo_int_tests,
-            # logger_int_console_x). CMake's run_unittests / run_int_tests /
-            # run_perf_tests / run_e2e_tests options control registration; with the
-            # gate's default cmake_options every category gets registered, and ctest
-            # then runs them all. VSTest already filters to *_ut_*.dll via its
-            # discovery glob, but ctest does not.
-            #
-            # We exclude (rather than include) so projects whose tests do not follow
-            # the _ut suffix convention - notably c-build-tools' own validate_*_test
-            # and RUN_REALS_CHECK_TEST gates - still run instead of being filtered out
-            # and tripping --no-tests=error.
-            #
-            # The regex uses ($|_) after each category so it matches both trailing
-            # uses (foo_int) and middle uses (foo_int_tests, logger_int_console_x).
-            # Filter at run time so BUILD-stage semantics still hold (int/perf/e2e
-            # still compile - useful as a compile-only ratchet) while UNIT_TESTS
-            # strictly skips them at run time. MAX_STAGE=ALL bypasses this filter.
-            #
-            # When the filter IS active (UNIT_TESTS), also disable --no-tests=error:
-            # repos that have only int/perf/e2e tests (e.g. macro-utils-c) legitimately
-            # match zero tests after the filter, and that is not a build error.
-            ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
-              excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
-              noTestsError: false
+        - ${{ if parameters.enable_hang_watchdog }}:
+          # Watchdog-wrapped CTest: builds ctest arguments per MAX_STAGE filter
+          - ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
+            - template: run_with_hang_watchdog.yml
+              parameters:
+                repo_root: ${{ parameters.repo_root_override }}
+                display_name: 'CTest (${{ parameters.ARCH_TYPE }}) [watchdog]'
+                executable: '$(ctestPath)'
+                working_directory: '$(Build.BinariesDirectory)/c'
+                name_pattern: '${{ parameters.hang_watchdog_name_pattern }}'
+                dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
+                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml -E "_int($|_)|_perf($|_)|_e2e($|_)"'
+          - ${{ if eq(parameters.MAX_STAGE, 'INT_TESTS') }}:
+            - template: run_with_hang_watchdog.yml
+              parameters:
+                repo_root: ${{ parameters.repo_root_override }}
+                display_name: 'CTest (${{ parameters.ARCH_TYPE }}) [watchdog]'
+                executable: '$(ctestPath)'
+                working_directory: '$(Build.BinariesDirectory)/c'
+                name_pattern: '${{ parameters.hang_watchdog_name_pattern }}'
+                dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
+                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml -E "_perf($|_)|_e2e($|_)"'
+          - ${{ if eq(parameters.MAX_STAGE, 'ALL') }}:
+            - template: run_with_hang_watchdog.yml
+              parameters:
+                repo_root: ${{ parameters.repo_root_override }}
+                display_name: 'CTest (${{ parameters.ARCH_TYPE }}) [watchdog]'
+                executable: '$(ctestPath)'
+                working_directory: '$(Build.BinariesDirectory)/c'
+                name_pattern: '${{ parameters.hang_watchdog_name_pattern }}'
+                dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
+                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+
+        - ${{ if not(parameters.enable_hang_watchdog) }}:
+          - template: tasks/ctest.yml
+            parameters:
+              architecture: ${{ parameters.ARCH_TYPE }}
+              workingDirectory: '$(Build.BinariesDirectory)/c'
+              configuration: '${{ parameters.build_configuration }}'
+              outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+              ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
+                excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
+                noTestsError: false
+              ${{ if eq(parameters.MAX_STAGE, 'INT_TESTS') }}:
+                excludeTests: '_perf($|_)|_e2e($|_)'
+                noTestsError: false
 
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
         - task: PublishTestResults@2
@@ -208,26 +243,33 @@ jobs:
               configuration: '${{ parameters.build_configuration }}'
               outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
               # noTestsError is true only when no exclude reason is in play. Either
-              # an appverifier_skip_tests_list or the MAX_STAGE=UNIT_TESTS category
-              # filter constitutes a deliberate exclude, so matching zero tests is
-              # legitimate (e.g. macro-utils-c only has _int tests).
-              noTestsError: ${{ and(eq(parameters.appverifier_skip_tests_list, ''), ne(parameters.MAX_STAGE, 'UNIT_TESTS')) }}
+              # an appverifier_skip_tests_list or a MAX_STAGE category filter
+              # (UNIT_TESTS or INT_TESTS) constitutes a deliberate exclude, so
+              # matching zero tests is legitimate (e.g. macro-utils-c only has _int
+              # tests). Only ALL with no skip list expects every listed test to run.
+              noTestsError: ${{ and(eq(parameters.appverifier_skip_tests_list, ''), eq(parameters.MAX_STAGE, 'ALL')) }}
               # See the comment on the regular ctest invocation above for why
-              # MAX_STAGE=UNIT_TESTS skips _int/_perf/_e2e categories. AppVerifier-
-              # helper itself configures appverif for whatever ctest -N returns;
-              # that config is harmless for tests that won't actually run.
+              # UNIT_TESTS skips _int/_perf/_e2e and INT_TESTS skips only
+              # _perf/_e2e. AppVerifier helper itself configures appverif for
+              # whatever ctest -N returns; that config is harmless for tests that
+              # won't actually run.
               # The exclude regex is composed from up to two sources:
               #   1. The caller-provided appverifier_skip_tests_list (tests known
               #      to misbehave under AppVerifier).
-              #   2. The UNIT_TESTS test-category filter (_int|_perf|_e2e, with
-              #      ($|_) after each so it matches both trailing and middle uses).
-              # All three mutually-exclusive cases are spelled out here because
-              # the parts have to be combined with a regex '|' separator.
+              #   2. The MAX_STAGE test-category filter (UNIT_TESTS: _int|_perf|_e2e;
+              #      INT_TESTS: _perf|_e2e), each token suffixed with ($|_) so it
+              #      matches both trailing and middle uses.
+              # The mutually-exclusive cases are spelled out here because the parts
+              # have to be combined with a regex '|' separator.
               ${{ if and(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), ne(parameters.appverifier_skip_tests_list, '')) }}:
                 excludeTests: '${{ parameters.appverifier_skip_tests_list }}|_int($|_)|_perf($|_)|_e2e($|_)'
               ${{ if and(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.appverifier_skip_tests_list, '')) }}:
                 excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
-              ${{ if ne(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
+              ${{ if and(eq(parameters.MAX_STAGE, 'INT_TESTS'), ne(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '${{ parameters.appverifier_skip_tests_list }}|_perf($|_)|_e2e($|_)'
+              ${{ if and(eq(parameters.MAX_STAGE, 'INT_TESTS'), eq(parameters.appverifier_skip_tests_list, '')) }}:
+                excludeTests: '_perf($|_)|_e2e($|_)'
+              ${{ if eq(parameters.MAX_STAGE, 'ALL') }}:
                 excludeTests: '${{ parameters.appverifier_skip_tests_list }}'
 
       - task: PublishTestResults@2
@@ -240,6 +282,19 @@ jobs:
           buildConfiguration: ${{ parameters.build_configuration }}
           failTaskOnMissingResultsFile: true
         condition: always()
+
+  # Publish the configuration's build output on success, for downstream jobs in
+  # the same pipeline to consume via DownloadPipelineArtifact. The artifact
+  # Publish the build output on success as artifact build_output_<BUILD_SUFFIX>.
+  # Separate from the failure-time publish in build_teardown_steps.yml.
+  - ${{ if parameters.publish_artifacts_on_success }}:
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish ${{ parameters.build_configuration }} build output'
+      inputs:
+        targetPath: '$(Build.BinariesDirectory)/${{ parameters.build_configuration }}'
+        artifactName: 'build_output_${{ parameters.BUILD_SUFFIX }}'
+        parallel: true
+      condition: succeeded()
 
   - template : build_teardown_steps.yml
     parameters:

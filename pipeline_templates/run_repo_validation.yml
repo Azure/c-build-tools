@@ -39,53 +39,10 @@ jobs:
     clean: all
 
   steps:
-  - template: get_machine_information.yml
-
-  # Shallow clone - only need the code at this commit, not full history
-  - checkout: self
-    submodules: false
-    clean: false
-    fetchDepth: 1
-
-  # Shallow submodules - only need the pinned commit, not full history
-  - script: git submodule update --init --depth 1 --jobs 20
-    displayName: 'Shallow checkout submodules'
-
-  - template: discover_native_tools.yml
+  - template: common_setup_steps.yml
     parameters:
-      architecture: 'x64'
-
-  # Setup VS environment - use discovered vsPath for correct VS version
-  - task: PowerShell@2
-    displayName: 'Setup VS Vars'
-    inputs:
-      targetType: 'inline'
-      script: |
-        # Find VS using vswhere (works for any VS version)
-        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-        if (Test-Path $vswhere) {
-          $vsPath = & $vswhere -latest -products * -property installationPath
-          if ($vsPath) {
-            $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
-            if (Test-Path $vsDevCmd) {
-              $archArgs = "-arch=amd64"
-              Write-Host "Running VsDevCmd with x64 architecture: $vsDevCmd $archArgs"
-              cmd /c "`"$vsDevCmd`" $archArgs && set" | ForEach-Object {
-                if ($_ -match "^([^=]+)=(.*)$") {
-                  [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
-                }
-              }
-            } else {
-              Write-Host "##[warning]VsDevCmd.bat not found at $vsDevCmd"
-            }
-          }
-        } else {
-          Write-Host "##[warning]vswhere not found"
-        }
-
-  # Authenticate NuGet feeds so cmake configure can restore packages
-  - ${{ if parameters.setup_nuget }}:
-    - template: setup_nuget_tools.yml
+      ARCH_TYPE: 'x64'
+      setup_nuget: ${{ parameters.setup_nuget }}
 
   # CMake generate with repo validation and traceability enabled
   - template: tasks/cmake.yml

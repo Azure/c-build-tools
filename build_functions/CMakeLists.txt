@@ -72,6 +72,16 @@ function(copy_default_vld_ini target output_directory)
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${build_c_tests_internal_dir}/default_vld.ini" "${output_directory}/vld.ini" )
+
+    # Stage VLD's bundled dbghelp.dll alongside vld.ini so the loader resolves
+    # dbghelp.dll from the application directory (DLL search position 1) instead of
+    # System32 (position 2). dbghelp.dll is not a KnownDLL, so the app-local copy
+    # wins; VLD's bin on PATH (searched last) would lose to System32.
+    if(WIN32 AND EXISTS "${VLD_DBGHELP_DLL}")
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VLD_DBGHELP_DLL}" "${output_directory}/dbghelp.dll" )
+    endif()
 endfunction()
 
 
@@ -244,6 +254,18 @@ macro(set_default_build_options)
         else()
             link_directories("${VLD_ROOT}/lib/Win32")
         endif()
+
+        # Remember VLD's bundled dbghelp.dll (arch-specific bin subfolder) so it can be
+        # staged next to each VLD-enabled exe. CACHE INTERNAL makes it visible from
+        # copy_default_vld_ini, which runs in a different directory scope.
+        if (${ARCHITECTURE} STREQUAL "ARM64")
+            set(_vld_bin_arch "ARM64")
+        elseif (${ARCHITECTURE} STREQUAL "x86_64")
+            set(_vld_bin_arch "Win64")
+        else()
+            set(_vld_bin_arch "Win32")
+        endif()
+        set(VLD_DBGHELP_DLL "${VLD_ROOT}/bin/${_vld_bin_arch}/dbghelp.dll" CACHE INTERNAL "VLD bundled dbghelp.dll")
     endif()
 
     if (WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio") AND (${fsanitize_address}))

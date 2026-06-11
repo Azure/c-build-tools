@@ -19,67 +19,10 @@ parameters:
     type: string
 
 steps:
-  - template: get_machine_information.yml
-
-  # Shallow clone - only need the code at this commit, not full history
-  - checkout: self
-    submodules: false
-    clean: false
-    fetchDepth: 1
-
-  # Shallow submodules - only need the pinned commit, not full history
-  - script: git submodule update --init --depth 1 --jobs 20
-    displayName: 'Shallow checkout submodules'
-
-  # Authenticate NuGet feed so cmake configure can restore packages
-  - ${{ if parameters.setup_nuget }}:
-    - template: setup_nuget_tools.yml
-
-  # ARM64: Verify agent architecture
-  - ${{ if eq(parameters.ARCH_TYPE, 'ARM64') }}:
-    - template: verify_agent_architecture.yml
-      parameters:
-        expected_architecture: 'ARM64'
-
-  # Discover native tools
-  - template: discover_native_tools.yml
+  - template: common_setup_steps.yml
     parameters:
-      architecture: ${{ parameters.ARCH_TYPE }}
-
-  # Setup VS environment - use discovered vsPath for correct VS version
-  - task: PowerShell@2
-    displayName: 'Setup VS Vars'
-    inputs:
-      targetType: 'inline'
-      script: |
-        # Find VS using vswhere (works for any VS version)
-        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-        if (Test-Path $vswhere) {
-          $vsPath = & $vswhere -latest -products * -property installationPath
-          if ($vsPath) {
-            $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
-            if (Test-Path $vsDevCmd) {
-              # Set architecture parameters for VsDevCmd based on target architecture
-              $arch = "${{ parameters.ARCH_TYPE }}"
-              if ($arch -eq "ARM64") {
-                $archArgs = "-arch=arm64 -host_arch=arm64"
-                Write-Host "Running VsDevCmd with ARM64 architecture: $vsDevCmd $archArgs"
-              } else {
-                $archArgs = "-arch=amd64"
-                Write-Host "Running VsDevCmd with x64 architecture: $vsDevCmd $archArgs"
-              }
-              cmd /c "`"$vsDevCmd`" $archArgs && set" | ForEach-Object {
-                if ($_ -match "^([^=]+)=(.*)$") {
-                  [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
-                }
-              }
-            } else {
-              Write-Host "##[warning]VsDevCmd.bat not found at $vsDevCmd"
-            }
-          }
-        } else {
-          Write-Host "##[warning]vswhere not found"
-        }
+      ARCH_TYPE: ${{ parameters.ARCH_TYPE }}
+      setup_nuget: ${{ parameters.setup_nuget }}
 
   # Cleanup appverifier from any previous runs
   - template : disable_appverifier.yml

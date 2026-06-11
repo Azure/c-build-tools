@@ -220,6 +220,140 @@ steps:
         }
         Write-Host ""
 
+        # --- Azure VM Metadata (IMDS) ---
+        # IMDS (169.254.169.254) is a local, unauthenticated endpoint that only
+        # exists on Azure VMs. To guarantee this never hangs the pipeline on a
+        # non-Azure or proxied agent, access is gated behind a fast TCP probe and
+        # every HTTP call disables the proxy and uses a hard timeout. Any failure
+        # is swallowed and simply skips the Azure sections.
+        Write-Host "--- Azure VM Metadata (IMDS) ---"
+
+        function Test-Imds {
+            param([int]$TimeoutMs = 1500)
+            try {
+                $client = New-Object System.Net.Sockets.TcpClient
+                $async = $client.BeginConnect('169.254.169.254', 80, $null, $null)
+                $connected = $async.AsyncWaitHandle.WaitOne($TimeoutMs)
+                $ok = $connected -and $client.Connected
+                $client.Close()
+                return $ok
+            } catch {
+                return $false
+            }
+        }
+
+        function Get-ImdsJson {
+            param([string]$Url, [int]$TimeoutMs = 5000)
+            try {
+                $req = [System.Net.HttpWebRequest]::Create($Url)
+                $req.Method = 'GET'
+                $req.Headers.Add('Metadata', 'true')
+                $req.Proxy = $null
+                $req.Timeout = $TimeoutMs
+                $req.ReadWriteTimeout = $TimeoutMs
+                $resp = $req.GetResponse()
+                $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+                $body = $reader.ReadToEnd()
+                $reader.Close()
+                $resp.Close()
+                return $body | ConvertFrom-Json
+            } catch {
+                return $null
+            }
+        }
+
+        $instance = $null
+        if (Test-Imds) {
+            $instance = Get-ImdsJson 'http://169.254.169.254/metadata/instance?api-version=2023-07-01'
+            if ($null -eq $instance) {
+                $instance = Get-ImdsJson 'http://169.254.169.254/metadata/instance?api-version=2021-02-01'
+            }
+        }
+
+        if ($null -eq $instance) {
+            Write-Host "  IMDS not reachable - not an Azure VM, blocked, or timed out. Skipping Azure metadata."
+        } else {
+            try {
+                $comp = $instance.compute
+                $img = $comp.storageProfile.imageReference
+                $imgVersion = $img.exactVersion
+                if ([string]::IsNullOrWhiteSpace($imgVersion) -and $img.id) {
+                    $imgVersion = ($img.id -split '/versions/')[-1]
+                }
+                $ephemeral = if ($comp.storageProfile.osDisk.diffDiskSettings.option) { 'Yes' } else { 'No' }
+                Write-Host "  VM Name         : $($comp.name)"
+                Write-Host "  Azure SKU       : $($comp.vmSize)"
+                Write-Host "  Priority        : $($comp.priority)"
+                Write-Host "  Location        : $($comp.location)"
+                Write-Host "  Zone            : $($comp.zone)"
+                Write-Host "  Fault Domain    : $($comp.platformFaultDomain)"
+                Write-Host "  OS Type         : $($comp.osType)"
+                Write-Host "  Image Version   : $imgVersion"
+                Write-Host "  Image Id        : $($img.id)"
+                Write-Host "  OS Disk (GB)    : $($comp.storageProfile.osDisk.diskSizeGB)"
+                Write-Host "  Ephemeral OS    : $ephemeral"
+                Write-Host "  VMSS Name       : $($comp.vmScaleSetName)"
+                Write-Host "  VM Id           : $($comp.vmId)"
+                Write-Host "  Resource Id     : $($comp.resourceId)"
+            } catch {
+                Write-Host "  Failed to parse IMDS compute metadata: $_"
+            }
+        }
+        Write-Host ""
+
+        # --- Azure Network (IMDS) ---
+        Write-Host "--- Azure Network (IMDS) ---"
+        if ($null -eq $instance) {
+            Write-Host "  IMDS not reachable - skipping."
+        } else {
+            try {
+                $nicIndex = 0
+                foreach ($nic in @($instance.network.interface)) {
+                    $privIps = ($nic.ipv4.ipAddress | ForEach-Object { $_.privateIpAddress } | Where-Object { $_ }) -join ', '
+                    $pubIps  = ($nic.ipv4.ipAddress | ForEach-Object { $_.publicIpAddress } | Where-Object { $_ }) -join ', '
+                    $subnets = ($nic.ipv4.subnet | ForEach-Object { "$($_.address)/$($_.prefix)" }) -join ', '
+                    $v6Ips   = ($nic.ipv6.ipAddress | ForEach-Object { $_.privateIpAddress } | Where-Object { $_ }) -join ', '
+                    Write-Host "  NIC ${nicIndex}:"
+                    Write-Host "    MAC          : $($nic.macAddress)"
+                    Write-Host "    Private IPv4 : $privIps"
+                    if ($pubIps) { Write-Host "    Public IPv4  : $pubIps" }
+                    Write-Host "    Subnet       : $subnets"
+                    if ($v6Ips) { Write-Host "    IPv6         : $v6Ips" }
+                    $nicIndex++
+                }
+            } catch {
+                Write-Host "  Failed to parse IMDS network metadata: $_"
+            }
+        }
+        Write-Host ""
+
+        # --- Network Adapters (in-box) ---
+        # Capabilities such as link speed and Accelerated Networking are not in
+        # IMDS; they are read from the OS. Accelerated Networking surfaces as an
+        # extra Mellanox / ConnectX virtual-function adapter next to the synthetic
+        # Hyper-V NIC.
+        Write-Host "--- Network Adapters ---"
+        try {
+            $adapters = Get-NetAdapter -ErrorAction SilentlyContinue | Sort-Object Name
+            if ($adapters) {
+                foreach ($a in $adapters) {
+                    Write-Host "  $($a.Name) | $($a.InterfaceDescription)"
+                    Write-Host "    Status: $($a.Status) | LinkSpeed: $($a.LinkSpeed) | MAC: $($a.MacAddress)"
+                }
+                $accel = $adapters | Where-Object { $_.InterfaceDescription -match 'Mellanox|ConnectX|Virtual Function' }
+                if ($accel) {
+                    Write-Host "  Accelerated Networking: Enabled (VF adapter present)"
+                } else {
+                    Write-Host "  Accelerated Networking: Not detected"
+                }
+            } else {
+                Write-Host "  No network adapters reported (or Get-NetAdapter unavailable)"
+            }
+        } catch {
+            Write-Host "  Failed to get network adapter information: $_"
+        }
+        Write-Host ""
+
         Write-Host "=============================================="
         Write-Host "  End of Machine Information Report"
         Write-Host "=============================================="
