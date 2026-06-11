@@ -985,7 +985,10 @@ function update-local-repo
             }
 
             # If a build YAML ref changed, extract the c-build-tools commit log
-            # between old and new SHAs to include meaningful change descriptions
+            # between old and new SHAs to include meaningful change descriptions.
+            # Some repos reference c-build-tools via a YAML ref: (e.g., build/devops.yml)
+            # instead of or in addition to a submodule. Without this, those repos would
+            # get a generic "updated build/devops.yml" description with no commit details.
             $yaml_changes = @($changed_files | Where-Object { $_ -match "^build/.*\.yml$" })
             if ($yaml_changes.Count -gt 0)
             {

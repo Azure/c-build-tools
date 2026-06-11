@@ -614,6 +614,10 @@ function global:Test-ChecksComplete
             $all_failed_names = ($all_failed | ForEach-Object { "$($_.Name) [IsBlocking=$($_.IsBlocking)]" }) -join ", "
             Write-Verbose "Test-ChecksComplete: failed checks: $all_failed_names"
         }
+        else
+        {
+            # no failed checks
+        }
         if($failed_builds.Count -gt 0)
         {
             $failed_names = ($failed_builds | ForEach-Object { $_.Name }) -join ", "
