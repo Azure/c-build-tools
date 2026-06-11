@@ -603,7 +603,7 @@ function collect-upstream-changes
                     # Get the current (old) submodule SHA from the index
                     $old_sha = $null
                     $diff_output = git diff --cached --submodule=short -- $sub_path 2>$null
-                    Write-Verbose "  submodule $sub_path: diff_output='$diff_output'"
+                    Write-Verbose "  submodule ${sub_path}: diff_output='$diff_output'"
                     if ($diff_output)
                     {
                         # diff output looks like: "Submodule deps/foo oldsha..newsha:"
@@ -623,7 +623,7 @@ function collect-upstream-changes
 
                     if (-not $old_sha)
                     {
-                        Write-Verbose "  submodule $sub_path: no old_sha found, skipping"
+                        Write-Verbose "  submodule ${sub_path}: no old_sha found, skipping"
                         # submodule wasn't changed, skip
                     }
                     else
@@ -635,10 +635,10 @@ function collect-upstream-changes
                         }
                         else
                         {
-                            Write-Verbose "  submodule $sub_path: no fixed commit for '$sub_repo_name'"
+                            Write-Verbose "  submodule ${sub_path}: no fixed commit for '$sub_repo_name'"
                         }
 
-                        Write-Verbose "  submodule $sub_path: old=$old_sha new=$new_sha"
+                        Write-Verbose "  submodule ${sub_path}: old=$old_sha new=$new_sha"
                         if ($new_sha -and $old_sha -ne $new_sha)
                         {
                             Push-Location $sub_path
