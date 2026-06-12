@@ -496,7 +496,7 @@ function update-repo-github
                     }
                 }
 
-                if(-not $merged)
+                if(-not $merged -and -not $global:propagation_cancelled)
                 {
                     # Auto-merge didn't fire — try merging directly
                     Write-Host "Auto-merge did not complete, attempting direct merge..." -ForegroundColor Yellow
