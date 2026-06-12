@@ -83,8 +83,7 @@ parameters:
   - name: hang_dump_threshold_sec
     type: number
     default: 1200
-  # nuget.config for an explicit DotNetCoreCLI restore before msbuild (empty = combined
-  # /t:restore /t:build). See build_setup_steps.yml.
+  # nuget.config passed to msbuild restore via /p:RestoreConfigFile. See build_setup_steps.yml.
   - name: nuget_config_path
     type: string
     default: ''

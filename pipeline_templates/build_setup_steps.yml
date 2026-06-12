@@ -17,8 +17,8 @@ parameters:
     type: string
   - name: use_vld_option
     type: string
-  # nuget.config for an explicit DotNetCoreCLI restore before msbuild. Empty (default)
-  # keeps combined /t:restore /t:build. Set when restore can't find the consumer's feed config.
+  # nuget.config passed to msbuild restore via /p:RestoreConfigFile. Empty (default)
+  # relies on NuGet walk-up from the solution. Set when that can't find the consumer's feed config.
   - name: nuget_config_path
     type: string
     default: ''
@@ -43,28 +43,15 @@ steps:
       buildDirectory: '$(Build.BinariesDirectory)/c'
       cmakeArgs: '${{ parameters.cmake_options }} ${{ parameters.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}'
 
-  # When nuget_config_path is set, run a dedicated restore here so the build step
-  # below can run /t:build only (the source-tree config isn't on the sln's walk-up path).
-  - ${{ if ne(parameters.nuget_config_path, '') }}:
-    - task: DotNetCoreCLI@2
-      displayName: 'NuGet restore $(Build.BinariesDirectory)/c/*.sln*'
-      inputs:
-        command: 'restore'
-        projects: '$(Build.BinariesDirectory)/c/*.sln*'
-        feedsToUse: 'config'
-        nugetConfigPath: '${{ parameters.nuget_config_path }}'
-        noCache: true
-
   # Use wrapper template for MSBuild - handles ARM64 native tools transparently.
+  # restoreConfigFile (when set) points NuGet restore at the consumer's nuget.config.
   - template: tasks/msbuild.yml
     parameters:
       architecture: ${{ parameters.ARCH_TYPE }}
       solution: '$(Build.BinariesDirectory)/c/*.sln*'
       configuration: '${{ parameters.build_configuration }}'
-      ${{ if ne(parameters.nuget_config_path, '') }}:
-        msbuildArgs: '/t:build'
-      ${{ else }}:
-        msbuildArgs: '/t:restore /t:build'
+      msbuildArgs: '/t:restore /t:build'
+      restoreConfigFile: '${{ parameters.nuget_config_path }}'
 
   - template : start_logman.yml
     parameters:
