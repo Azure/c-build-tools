@@ -121,17 +121,12 @@ parameters:
     type: number
     default: 1200
 
-  # Forwarded to build_setup_steps.yml / run_repo_validation.yml. When set to a
-  # non-empty string, a dedicated DotNetCoreCLI@2 restore with this nuget.config
-  # runs before msbuild (which then runs /t:build only). Default empty keeps the
-  # combined /t:restore /t:build behavior. See build_setup_steps.yml for rationale.
+  # Forwarded to build_setup_steps.yml / run_repo_validation.yml. See build_setup_steps.yml.
   - name: nuget_config_path
     type: string
     default: ''
 
-  # Forwarded to build_and_run_tests.yml. Extra pool demands (agent capabilities)
-  # required on top of the default msbuild + visualstudio for the per-flavor
-  # build+test jobs (e.g. a local Service Fabric cluster).
+  # Forwarded to build_and_run_tests.yml. Extra agent demands for the build+test jobs.
   - name: pool_demands
     type: object
     default: []

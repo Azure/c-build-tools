@@ -83,16 +83,12 @@ parameters:
   - name: hang_dump_threshold_sec
     type: number
     default: 1200
-  # When set to a non-empty string, run a dedicated DotNetCoreCLI@2 restore using
-  # this nuget.config path before msbuild (which then runs /t:build only). Default
-  # empty -> combined /t:restore /t:build. See build_setup_steps.yml for rationale.
+  # nuget.config for an explicit DotNetCoreCLI restore before msbuild (empty = combined
+  # /t:restore /t:build). See build_setup_steps.yml.
   - name: nuget_config_path
     type: string
     default: ''
-  # Extra pool demands (agent capabilities) required on top of the default
-  # msbuild + visualstudio. Use for consumers whose tests need specific agent
-  # capabilities (e.g. a local Service Fabric cluster). The job queues until an
-  # agent in the pool advertising all listed capabilities is available.
+  # Extra agent demands appended to the pool defaults (e.g. a local Service Fabric cluster).
   - name: pool_demands
     type: object
     default: []
