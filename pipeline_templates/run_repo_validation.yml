@@ -25,6 +25,15 @@ parameters:
     type: boolean
     default: false
 
+  # When set to a non-empty string, run a dedicated DotNetCoreCLI@2 restore
+  # task using this nuget.config path before the msbuild build step (and run
+  # msbuild with /t:build only). Default: empty -> combined /t:restore /t:build.
+  # Set this when the consumer's internal-feed nuget.config cannot be found by
+  # NuGet's walk-up search from the generated solution under ${CMAKE_BINARY_DIR}.
+  - name: nuget_config_path
+    type: string
+    default: ''
+
 jobs:
 - job: run_repo_validation
   displayName: 'Run repo validation and traceability'
@@ -52,14 +61,30 @@ jobs:
       buildDirectory: '$(Build.BinariesDirectory)/c'
       cmakeArgs: '${{ parameters.cmake_options }} ${{ parameters.additional_cmake_options }} -DCMAKE_BUILD_TYPE=Debug'
 
+  # Optional dedicated NuGet restore using an explicit nuget.config path. See
+  # build_setup_steps.yml for rationale.
+  - ${{ if ne(parameters.nuget_config_path, '') }}:
+    - task: DotNetCoreCLI@2
+      displayName: 'NuGet restore $(Build.BinariesDirectory)/c/*.sln*'
+      inputs:
+        command: 'restore'
+        projects: '$(Build.BinariesDirectory)/c/*.sln*'
+        feedsToUse: 'config'
+        nugetConfigPath: '${{ parameters.nuget_config_path }}'
+        noCache: true
+
   # Build the solution - repo validation and traceability targets are marked ALL
   # so they execute as part of the default ALL_BUILD target without needing
-  # project-specific target names.
+  # project-specific target names. When a dedicated restore ran above, build only;
+  # otherwise combined restore+build.
   - template: tasks/msbuild.yml
     parameters:
       architecture: 'x64'
       solution: '$(Build.BinariesDirectory)/c/*.sln*'
       configuration: 'Debug'
-      msbuildArgs: '/t:restore /t:build'
+      ${{ if ne(parameters.nuget_config_path, '') }}:
+        msbuildArgs: '/t:build'
+      ${{ else }}:
+        msbuildArgs: '/t:restore /t:build'
 
   - template : clean_ado_folders.yml

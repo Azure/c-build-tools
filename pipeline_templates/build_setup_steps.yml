@@ -17,6 +17,15 @@ parameters:
     type: string
   - name: use_vld_option
     type: string
+  # When set to a non-empty string, run a dedicated DotNetCoreCLI@2 restore
+  # task using this nuget.config path before the msbuild build step (and run
+  # msbuild with /t:build only). Default: empty -> combined /t:restore /t:build
+  # (existing behavior). Set this when the consumer's internal-feed nuget.config
+  # cannot be found by NuGet's walk-up search from the generated solution under
+  # ${CMAKE_BINARY_DIR} (which is outside the source tree).
+  - name: nuget_config_path
+    type: string
+    default: ''
 
 steps:
   - template: common_setup_steps.yml
@@ -38,13 +47,31 @@ steps:
       buildDirectory: '$(Build.BinariesDirectory)/c'
       cmakeArgs: '${{ parameters.cmake_options }} ${{ parameters.use_vld_option }} -DGBALLOC_LL_TYPE:string=${{ parameters.GBALLOC_LL_TYPE }} -DCMAKE_BUILD_TYPE=${{ parameters.build_configuration }}'
 
-  # Use wrapper template for MSBuild - handles ARM64 native tools transparently
+  # Optional dedicated NuGet restore using an explicit nuget.config path. Needed
+  # when the generated solution lives under ${CMAKE_BINARY_DIR} and the consumer's
+  # nuget.config sits in the source tree -- msbuild's /t:restore walk-up never
+  # crosses that boundary.
+  - ${{ if ne(parameters.nuget_config_path, '') }}:
+    - task: DotNetCoreCLI@2
+      displayName: 'NuGet restore $(Build.BinariesDirectory)/c/*.sln*'
+      inputs:
+        command: 'restore'
+        projects: '$(Build.BinariesDirectory)/c/*.sln*'
+        feedsToUse: 'config'
+        nugetConfigPath: '${{ parameters.nuget_config_path }}'
+        noCache: true
+
+  # Use wrapper template for MSBuild - handles ARM64 native tools transparently.
+  # When a dedicated restore ran above, build only; otherwise combined restore+build.
   - template: tasks/msbuild.yml
     parameters:
       architecture: ${{ parameters.ARCH_TYPE }}
       solution: '$(Build.BinariesDirectory)/c/*.sln*'
       configuration: '${{ parameters.build_configuration }}'
-      msbuildArgs: '/t:restore /t:build'
+      ${{ if ne(parameters.nuget_config_path, '') }}:
+        msbuildArgs: '/t:build'
+      ${{ else }}:
+        msbuildArgs: '/t:restore /t:build'
 
   - template : start_logman.yml
     parameters:
