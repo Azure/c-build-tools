@@ -35,12 +35,6 @@ parameters:
     type: string
     default: ''
 
-  # When set, passes /p:RestoreConfigFile=<path> so NuGet restore uses this
-  # nuget.config instead of relying on directory walk-up from the solution.
-  - name: restoreConfigFile
-    type: string
-    default: ''
-
   - name: maximumCpuCount
     type: boolean
     default: true
@@ -73,7 +67,6 @@ steps:
         $solutionPattern = "${{ parameters.solution }}"
         $configuration = "${{ parameters.configuration }}"
         $msbuildArgs = "${{ parameters.msbuildArgs }}"
-        $restoreConfigFile = "${{ parameters.restoreConfigFile }}"
         $maxCpuCount = [bool]::Parse("${{ parameters.maximumCpuCount }}")
         $restoreNuget = [bool]::Parse("${{ parameters.restoreNuGetPackages }}")
         
@@ -126,11 +119,6 @@ steps:
             $args += "/restore"
           }
           
-          if ($restoreConfigFile) {
-            # Single array element so paths containing spaces are not split.
-            $args += "/p:RestoreConfigFile=$restoreConfigFile"
-          }
-
           if ($msbuildArgs) {
             $args += ($msbuildArgs -split ' ' | Where-Object { $_ -ne '' })
           }

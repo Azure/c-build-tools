@@ -121,11 +121,6 @@ parameters:
     type: number
     default: 1200
 
-  # Forwarded to build_setup_steps.yml / run_repo_validation.yml. See build_setup_steps.yml.
-  - name: nuget_config_path
-    type: string
-    default: ''
-
   # Forwarded to build_and_run_tests.yml. Extra agent demands for the build+test jobs.
   - name: pool_demands
     type: object
@@ -139,7 +134,6 @@ jobs:
       additional_cmake_options: ${{ parameters.additional_cmake_options }}
       pool_name: ${{ parameters.pool_name_x64 }}
       setup_nuget: ${{ parameters.setup_nuget }}
-      nuget_config_path: ${{ parameters.nuget_config_path }}
 
 - ${{ each GBALLOC_LL_TYPE in parameters.GBALLOC_LL_TYPE_VALUES }}:
   - ${{ each FSANITIZE_TYPE in parameters.FSANITIZE_TYPE_VALUES }}:
@@ -171,7 +165,6 @@ jobs:
                 enable_hang_watchdog: ${{ parameters.enable_hang_watchdog }}
                 hang_watchdog_name_pattern: ${{ parameters.hang_watchdog_name_pattern }}
                 hang_dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
-                nuget_config_path: ${{ parameters.nuget_config_path }}
                 pool_demands: ${{ parameters.pool_demands }}
                 # Per-architecture pool selection AND effective MAX_STAGE.
                 # ARM64 -> arm64_max_stage (default UNIT_TESTS; caller-settable so

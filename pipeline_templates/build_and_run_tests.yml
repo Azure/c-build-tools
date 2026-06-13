@@ -83,10 +83,6 @@ parameters:
   - name: hang_dump_threshold_sec
     type: number
     default: 1200
-  # nuget.config passed to msbuild restore via /p:RestoreConfigFile. See build_setup_steps.yml.
-  - name: nuget_config_path
-    type: string
-    default: ''
   # Extra agent demands appended to the pool defaults (e.g. a local Service Fabric cluster).
   - name: pool_demands
     type: object
@@ -123,7 +119,6 @@ jobs:
       build_configuration: ${{ parameters.build_configuration }}
       GBALLOC_LL_TYPE: ${{ parameters.GBALLOC_LL_TYPE }}
       use_vld_option: ${{ variables.use_vld_option }}
-      nuget_config_path: ${{ parameters.nuget_config_path }}
 
   # Run tests only when MAX_STAGE runs tests. BUILD mode compiles only.
   - ${{ if or(eq(parameters.MAX_STAGE, 'UNIT_TESTS'), eq(parameters.MAX_STAGE, 'INT_TESTS'), eq(parameters.MAX_STAGE, 'ALL')) }}:
