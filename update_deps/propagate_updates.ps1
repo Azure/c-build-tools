@@ -67,7 +67,6 @@ PS> .\propagate_updates.ps1 -Resume
 #>
 
 
-[CmdletBinding()]
 param(
     [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
     [Parameter(Mandatory=$false)][Int32]$azure_work_item, # Work item id to link to Azure PRs
@@ -97,17 +96,11 @@ $helper_scripts = "$PSScriptRoot\helper_scripts"
 . "$helper_scripts\update_repo.ps1"
 . "$helper_scripts\autofix.ps1"
 
-# Propagate -Verbose to all helper functions via global preference
-if ($VerbosePreference -ne 'SilentlyContinue')
-{
-    $global:VerbosePreference = $VerbosePreference
-}
-
 # Verbose log file path — set later by initialize-verbose-log once work_dir is known.
 # Write-Verbose messages are always appended to the log file for post-mortem debugging.
 $global:verbose_log_path = $null
 
-# Override Write-Verbose globally to also append to log file
+# Override Write-Verbose globally to append to log file
 function global:Write-Verbose
 {
     param([string] $Message)
@@ -115,11 +108,6 @@ function global:Write-Verbose
     {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         "$timestamp  $Message" | Add-Content -Path $global:verbose_log_path -Encoding UTF8
-    }
-    # Also write to console if -Verbose was passed
-    if ($global:VerbosePreference -ne 'SilentlyContinue')
-    {
-        Microsoft.PowerShell.Utility\Write-Verbose -Message $Message
     }
 }
 
@@ -160,7 +148,6 @@ if ($root_list) { $resume_args += "-root_list $($root_list -join ',')" }
 if ($poll_interval -ne 15) { $resume_args += "-poll_interval $poll_interval" }
 if ($NoCloseFailedPr) { $resume_args += "-NoCloseFailedPr" }
 if ($AutoFix) { $resume_args += "-AutoFix" }
-if ($VerbosePreference -ne 'SilentlyContinue') { $resume_args += "-Verbose" }
 $global:resume_command = "$($MyInvocation.MyCommand.Path) $($resume_args -join ' ') -Resume"
 
 
