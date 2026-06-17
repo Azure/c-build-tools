@@ -64,7 +64,7 @@ parameters:
     default: "Azure-MessagingStore-WinBuildPoolVS2022_1"
   - name: pool_name_arm64
     type: string
-    default: "Azure-MessagingStore-Win-ARM64-Dpldsv6-v04"
+    default: "Azure-MessagingStore-Win-ARM64-Dpldsv6-v15"
 
   # MAX_STAGE for the ARM64 test leg only. x64 always runs ALL; ARM64 test depth
   # is being migrated repo-by-repo, so only the ARM64 leg is caller-settable.
