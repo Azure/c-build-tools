@@ -411,10 +411,12 @@ function watch-azure-pr-policies
 
     if($watch_result.Success)
     {
+        Write-Verbose "watch-azure-pr-policies: success (Message='$($watch_result.Message)')"
         $fn_result = $true
     }
     else
     {
+        Write-Verbose "watch-azure-pr-policies: failure (Message='$($watch_result.Message)')"
         $fn_result = $false
     }
 

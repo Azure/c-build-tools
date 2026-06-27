@@ -161,6 +161,7 @@ function fail-with-status
     {
         Write-Host "  propagate_updates.ps1 -Resume" -ForegroundColor White
     }
+    show-verbose-log-path
     exit -1
 }
 
