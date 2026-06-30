@@ -11,10 +11,15 @@
 #   (`stable` on rustup, an `ms-*` toolchain on msrustup), which builds the validator in both cases.
 #
 #   The one gap is a machine that has `rustup` installed but NO default toolchain configured (some CI
-#   agents previously relied solely on the rust-toolchain.toml). There cargo fails with
+#   agents previously relied solely on rust-toolchain.toml). There cargo fails with
 #   "rustup could not choose a version of cargo to run ... no default is configured". For that case we
 #   configure rustup's `stable` as the default and retry. msrustup machines always have a default, so
 #   this fallback is never reached there (rustup may not even be installed).
+#
+#   The first cargo attempt's output is CAPTURED rather than streamed: when it fails with the
+#   recoverable "no default toolchain" error, the message matches MSBuild's custom-build error
+#   pattern and would fail the build even though we recover below. Capturing it keeps that recoverable
+#   failure out of MSBuild's error parser; captured output is printed only on a final, real failure.
 #
 # Required -D arguments:
 #   CARGO_MANIFEST    - absolute path to Cargo.toml
@@ -23,38 +28,42 @@
 
 separate_arguments(_cargo_flags NATIVE_COMMAND "${CARGO_BUILD_FLAGS}")
 
-function(_cargo_build _result_var)
-    execute_process(
-        COMMAND cargo build --manifest-path "${CARGO_MANIFEST}" ${_cargo_flags}
-        WORKING_DIRECTORY "${RUST_SRC_DIR}"
-        RESULT_VARIABLE _rc
-    )
-    set(${_result_var} "${_rc}" PARENT_SCOPE)
-endfunction()
-
-# 1. Build with the machine's default toolchain.
-_cargo_build(_rc)
+# Build with the machine's default toolchain. Output captured (see note above).
+execute_process(
+    COMMAND cargo build --manifest-path "${CARGO_MANIFEST}" ${_cargo_flags}
+    WORKING_DIRECTORY "${RUST_SRC_DIR}"
+    RESULT_VARIABLE _rc
+    OUTPUT_VARIABLE _out
+    ERROR_VARIABLE _err
+)
 if(_rc EQUAL 0)
     return()
 endif()
 
-# 2. Fallback for a rustup machine with no default toolchain configured: set 'stable' as the default
-#    and retry. (Never reached on msrustup, which always has a default toolchain.)
+# Fallback for a rustup machine with no default toolchain configured: set 'stable' and retry.
+# (Never reached on msrustup, which always has a default toolchain.)
 find_program(_RUSTUP rustup)
 if(_RUSTUP)
-    message(STATUS "repo_validator_rs: initial cargo build failed; running 'rustup default stable' and retrying.")
-    execute_process(COMMAND "${_RUSTUP}" default stable RESULT_VARIABLE _set_default)
+    message(STATUS "repo_validator_rs: initial cargo build did not resolve a toolchain; running 'rustup default stable' and retrying.")
+    execute_process(COMMAND "${_RUSTUP}" default stable RESULT_VARIABLE _set_default OUTPUT_QUIET ERROR_QUIET)
     if(_set_default EQUAL 0)
-        _cargo_build(_rc_retry)
+        execute_process(
+            COMMAND cargo build --manifest-path "${CARGO_MANIFEST}" ${_cargo_flags}
+            WORKING_DIRECTORY "${RUST_SRC_DIR}"
+            RESULT_VARIABLE _rc_retry
+            OUTPUT_VARIABLE _out
+            ERROR_VARIABLE _err
+        )
         if(_rc_retry EQUAL 0)
             return()
         endif()
     endif()
 endif()
 
+# Total failure: surface the captured cargo output so the real error is visible, then fail.
+message("${_out}${_err}")
 message(FATAL_ERROR
-    "Failed to build repo_validator_rs.\n"
-    "If this is a 'no default toolchain' error, configure a default Rust toolchain and re-run:\n"
+    "Failed to build repo_validator_rs. If this is a 'no default toolchain' error, configure a default Rust toolchain and re-run:\n"
     "  - rustup:   rustup default stable\n"
     "  - msrustup: msrustup default ms-prod\n"
-    "Otherwise, see the cargo error output above. See deps/c-build-tools/repo_validation/README.md.")
+    "Otherwise, see the cargo output above. See deps/c-build-tools/repo_validation/README.md.")
