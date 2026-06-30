@@ -33,14 +33,21 @@ endif()
 set(RUST_EXE_PATH "${RUST_SRC_DIR}/target/${CARGO_PROFILE}/${RUST_EXE_NAME}")
 
 # Custom target to build the Rust binary
-# The stamp file ensures cargo is only re-invoked when sources change
+# The stamp file ensures cargo is only re-invoked when sources change.
+# Cargo is invoked through build_repo_validator.cmake so the build works with either the public
+# `rustup` 'stable' channel or Microsoft-internal `msrustup` ('ms-*') toolchains (see that script).
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/repo_validator_rs.stamp"
-    COMMAND cargo build --manifest-path "${RUST_MANIFEST}" ${CARGO_BUILD_FLAGS}
+    COMMAND ${CMAKE_COMMAND}
+        "-DCARGO_MANIFEST=${RUST_MANIFEST}"
+        "-DCARGO_BUILD_FLAGS=${CARGO_BUILD_FLAGS}"
+        "-DRUST_SRC_DIR=${RUST_SRC_DIR}"
+        -P "${RUST_SRC_DIR}/build_repo_validator.cmake"
     COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/repo_validator_rs.stamp"
     WORKING_DIRECTORY "${RUST_SRC_DIR}"
     COMMENT "Building Rust repo_validator_rs via cargo"
     DEPENDS
+        "${RUST_SRC_DIR}/build_repo_validator.cmake"
         "${RUST_MANIFEST}"
         "${RUST_SRC_DIR}/src/main.rs"
         "${RUST_SRC_DIR}/src/config.rs"
