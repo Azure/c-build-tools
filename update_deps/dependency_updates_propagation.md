@@ -143,7 +143,7 @@ resources:
     type: github
     name: azure/c-build-tools
     endpoint: github.com_azure
-    ref: a479dd2fd437d3a0adf2010b22d2c944ea8e6047
+    ref: 82082c8bdbb8070bd4522786e6627f57adc17083
 ```
 
 When propagating updates, the script updates both the `deps/c-build-tools` submodule pointer AND the `ref:` SHA in `build/*.yml` pipeline files so they stay in sync.
