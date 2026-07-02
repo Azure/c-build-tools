@@ -26,6 +26,8 @@ jobs:
 
   steps:
   - checkout: self
+    # Retry on failure to handle transient network connection failures (curl 56 / early EOF).
+    retryCountOnTaskFailure: 3
     submodules: true
     clean: false
 
