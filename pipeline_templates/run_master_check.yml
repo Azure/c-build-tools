@@ -12,6 +12,9 @@ parameters:
   - name: pool_name
     type: string
     default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
+  - name: submodule_checkout_retry_count # Number of automatic retries for the submodule-fetching checkout/update steps. Defaults to 0 (no retry) so existing consumers are unaffected; set to a small value (e.g. 3) in repos with a large submodule that occasionally fails mid-transfer with a connection reset (curl 56 / early EOF).
+    type: number
+    default: 0
 
 jobs:
 - job: run_master_check
@@ -28,12 +31,20 @@ jobs:
   - checkout: self
     submodules: true
     clean: false
+    # Retry on failure to handle the fetch of a large submodule, which can
+    # occasionally fail mid-transfer with a connection reset (curl 56 / early EOF).
+    # Defaults to 0 (no retry) so other consumers are unaffected.
+    retryCountOnTaskFailure: ${{ parameters.submodule_checkout_retry_count }}
 
   - task: BatchScript@1
     displayName: 'Git submodule update'
     inputs:
       filename: 'C:\Program Files\Git\bin\git.exe'
       arguments: 'submodule update --init --force --jobs 20'
+    # Retry on failure to handle the fetch of a large submodule, which can
+    # occasionally fail mid-transfer with a connection reset (curl 56 / early EOF).
+    # Defaults to 0 (no retry) so other consumers are unaffected.
+    retryCountOnTaskFailure: ${{ parameters.submodule_checkout_retry_count }}
 
   - task: BatchScript@1
     displayName: 'Git submodule clean'
