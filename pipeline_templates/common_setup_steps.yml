@@ -14,6 +14,8 @@ steps:
 
   # submodules: true puts the System.AccessToken on the auth header for every submodule URL (not just the outer repo URL), so consumers with internal-ADO submodules work.
   - checkout: self
+    # Retry on failure to handle transient network connection failures (curl 56 / early EOF).
+    retryCountOnTaskFailure: 3
     submodules: true
     clean: false
     fetchDepth: 1
