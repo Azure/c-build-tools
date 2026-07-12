@@ -14,7 +14,7 @@ parameters:
   default: $(Build.SourcesDirectory)/deps/c-build-tools
 - name: pool_name
   type: string
-  default: 'Azure-MessagingStore-Win-x64-Dadsv7-v03'
+  default: 'Azure-MessagingStore-Win-x64-Daldsv7-v07'
 - name: setup_nuget
   type: boolean
   default: false
