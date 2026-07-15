@@ -1,0 +1,13 @@
+diff --git a/configure.ac b/configure.ac
+index 3115504e2..ffb504b08 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -749,6 +749,8 @@ case "${host}" in
+ 	so="dll"
+ 	if test "x$je_cv_msvc" = "xyes" ; then
+ 	  importlib="lib"
++	  JE_APPEND_VS(CPPFLAGS, -DJEMALLOC_NO_PRIVATE_NAMESPACE)
++	  JE_APPEND_VS(CPPFLAGS, -DJEMALLOC_LEGACY_WINDOWS_SUPPORT)
+ 	  DSO_LDFLAGS="-LD"
+ 	  EXTRA_LDFLAGS="-link -DEBUG"
+ 	  CTARGET='-Fo$@'
