@@ -1,0 +1,95 @@
+# valex_msal_auto_tap.ps1
+# Automates browser spawning with remote debugging and hooks the MSAL tap payload.
+
+$BrowserPath = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe" # Or use chrome.exe
+$DebugPort   = 9222
+$TargetUrl   = "https://portal.azure.com"
+
+# 1. The VALEX-MSAL JS Payload to inject
+$JsPayload = @"
+(function valexMsalTap() {
+    const TARGET_HEADERS = { requestId: 'x-ms-request-id', conditionalAccess: 'xms_cc', retryAfter: 'Retry-After' };
+    const AUTH_PARAMS = { clientId: 'client_id', reqCnf: 'req_cnf', brokerId: 'brk_client_id', spaCode: 'return_spa_code', telemetry: 'server-telemetry' };
+    
+    if (window.hasValexTap) return;
+    window.hasValexTap = true;
+    
+    console.log('%c[VALEX] Automated MSAL-1P Tap Active.', 'color: #00ff00; font-weight: bold;');
+    
+    const originalFetch = window.fetch;
+    window.fetch = async function (...args) {
+        const urlOrRequest = args[0];
+        const options = args[1] || {};
+        let urlString = typeof urlOrRequest === 'string' ? urlOrRequest : urlOrRequest.url;
+        
+        if (urlString.includes('login.microsoftonline.com') || urlString.includes('discovery/instance')) {
+            try {
+                const urlObj = new URL(urlString);
+                const params = new URLSearchParams(urlObj.search);
+                let bodyParams = new URLSearchParams();
+                if (options.body && typeof options.body === 'string') bodyParams = new URLSearchParams(options.body);
+                
+                console.group(`%c[VALEX Auth Request] -> \${urlObj.pathname}`, 'color: #00bcd4; font-weight: bold;');
+                console.log(`Target Client ID: \${params.get(AUTH_PARAMS.clientId) || bodyParams.get(AUTH_PARAMS.clientId) || 'Unknown'}`);
+                console.log(`PoP (req_cnf): \${params.has(AUTH_PARAMS.reqCnf) || bodyParams.has(AUTH_PARAMS.reqCnf) ? 'ACTIVE' : 'INACTIVE'}`);
+                console.log(`OS Broker (brk_client_id): \${params.has(AUTH_PARAMS.brokerId) || bodyParams.has(AUTH_PARAMS.brokerId) ? 'YES' : 'NO'}`);
+                console.groupEnd();
+            } catch (err) {}
+        }
+        return originalFetch.apply(this, args);
+    };
+})();
+"@
+
+# 2. Launch Browser with Debugging Enabled
+Write-Host "[*] Launching browser instance with CDP port $DebugPort..." -ForegroundColor Cyan
+Start-Process -FilePath $BrowserPath -ArgumentList "--remote-debugging-port=$DebugPort", "--no-first-run", $TargetUrl
+
+# Give the browser a moment to initialize and open the tab
+Start-Sleep -Seconds 3
+
+# 3. Discover the Target Tab via HTTP CDP Endpoint
+Write-Host "[*] Interrogating browser targets..." -ForegroundColor Cyan
+try {
+    $CdpTargets = Invoke-RestMethod -Uri "http://localhost:$DebugPort/json" -UseBasicParsing
+    $TargetTab = $CdpTargets | Where-Object { $_.url -like "*portal.azure.com*" } | Select-Object -First 1
+    
+    if (-not $TargetTab) {
+        Write-Error "Could not find an active Azure Portal tab."
+        return
+    }
+} catch {
+    Write-Error "Failed to connect to browser debugging interface. Ensure no other instances are locking the profile."
+    return
+}
+
+# 4. Connect via WebSockets and Inject the Payload
+Write-Host "[+] Found Azure Portal Target. Connecting to WebSocket debugger..." -ForegroundColor Green
+$WsUri = New-Object System.Uri($TargetTab.webSocketDebuggerUrl)
+$WS = New-Object System.Net.WebSockets.ClientWebSocket
+$CT = New-Object System.Threading.CancellationTokenSource
+
+$ConnectTask = $WS.ConnectAsync($WsUri, $CT.Token)
+while (-not $ConnectTask.IsCompleted) { Start-Sleep -Milliseconds 100 }
+
+# Format the CDP command payload (Runtime.evaluate)
+$CdpCommand = @{
+    id = 1
+    method = "Runtime.evaluate"
+    params = @{
+        expression = $JsPayload
+        userGesture = $true
+    }
+} | ConvertTo-Json -Compress
+
+# Send payload to the tab execution context
+Write-Host "[+] Injecting VALEX-MSAL Tap into execution space..." -ForegroundColor Green
+$Buffer = [System.Text.Encoding]::UTF8.GetBytes($CdpCommand)
+$ArraySegment = New-Object System.ArraySegment[Byte] ($Buffer, 0, $Buffer.Length)
+$SendTask = $WS.SendAsync($ArraySegment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $CT.Token)
+
+while (-not $SendTask.IsCompleted) { Start-Sleep -Milliseconds 50 }
+
+# Cleanup connection gracefully
+$CloseTask = $WS.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, "Done", $CT.Token)
+Write-Host "[+] Injection completed. Monitor the browser console for live auth streams." -ForegroundColor Green
