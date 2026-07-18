@@ -468,6 +468,11 @@ macro(use_vcpkg vcpkgPath)
 
     if (EXISTS ${vcpkgPath}/scripts/buildsystems/vcpkg.cmake)
         set(VCPKG_OVERLAY_TRIPLETS "${build_c_tests_internal_dir}/../vcpkg_triplets/")
+        # VCPKG_OVERLAY_PORTS must be set BEFORE including vcpkg.cmake: the toolchain captures it
+        # into a FORCE cache variable at include time and uses it for the manifest-mode install.
+        # Setting it after the include (as was previously done) is too late - the overlay ports are
+        # silently ignored and the in-tree ports are used instead.
+        set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports;${VCPKG_OVERLAY_PORTS}")
         if (${ARCHITECTURE} STREQUAL "x86_64")
             if(${fsanitize_address})
                 set(VCPKG_TARGET_TRIPLET "x64-windows-static-cbt-asan")
@@ -490,8 +495,6 @@ macro(use_vcpkg vcpkgPath)
         endif()
         include(deps/vcpkg/scripts/buildsystems/vcpkg.cmake)
     endif()
-
-    set(VCPKG_OVERLAY_PORTS "${build_c_tests_internal_dir}/../overlay_ports;${VCPKG_OVERLAY_PORTS}")
 endmacro()
 
 function(add_use_vld_if_no_cs target)
