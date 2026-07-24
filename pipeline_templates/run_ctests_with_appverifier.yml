@@ -1,10 +1,8 @@
 # this template file will run tests under ctest with appverifier enabled
 # it will disable app verifier after running
 # If the list of tests from ctest is filtered, pass the filter arguments as ctest_additional_args so appverifier is enabled for the correct binaries
-# The filter is forwarded to the helper script via the CTEST_ADDITIONAL_ARGS environment
-# variable (not the task 'arguments' input) so that pipe characters in ctest exclusion
-# regexes are not flagged/stripped by the "Enable shell tasks arguments validation" org
-# policy (https://aka.ms/ado/75787). Callers do NOT need to backtick-escape the value.
+# The filter is forwarded via the CTEST_ADDITIONAL_ARGS env var rather than the task 'arguments'
+# input to keep its pipe characters out of shell-args validation (https://aka.ms/ado/75787).
 # The steps in the steps parameter will all be run after enabling app verifier
 #
 # Forwards $(appverifPath) and $(ctestPath) emitted by discover_native_tools.yml
@@ -33,14 +31,6 @@ steps:
     inputs:
       targetType: 'filePath'
       filePath: '${{ parameters.repo_root }}/pipeline_templates/scripts/appverifier_ctest_tests_helper.ps1'
-      # The ctest filter is forwarded to the helper via the CTEST_ADDITIONAL_ARGS
-      # environment variable (see the env block below) instead of the -ctestArgs
-      # argument. ctest exclusion regexes contain pipe (|) characters, which are
-      # outside the allow-list enforced by the org-level "Enable shell tasks
-      # arguments validation" policy (https://aka.ms/ado/75787) for a shell task's
-      # 'arguments' input. Keeping the filter out of 'arguments' avoids the warning
-      # today and the regex corruption that would occur if the policy is switched to
-      # enforce. Environment variable values are not subject to that validation.
       arguments: '-on -binaryNameSuffix ${{ parameters.binary_name_suffix }} -appVerifierEnable "${{ parameters.app_verifier_enable }}" -appVerifierAdditionalProperties "${{ parameters.app_verifier_additional_properties }}" -appverifPath "$(appverifPath)" -ctestPath "$(ctestPath)"'
       workingDirectory: ${{ parameters.ctest_tests_bin_directory }}
     env:
