@@ -25,7 +25,11 @@
   See: https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/application-verifier-testing-applications#using-the-command-line
 
   .PARAMETER ctestArgs
-  Arguments to pass to ctest. By default ctest is run with "-N" which will just list all tests. This option may be used to filter the tests
+  Arguments to pass to ctest. By default ctest is run with "-N" which will just list all tests. This option may be used to filter the tests.
+  When this parameter is empty, the value of the CTEST_ADDITIONAL_ARGS environment variable is used instead. Pipeline callers
+  (e.g. run_ctests_with_appverifier.yml) forward the filter via that environment variable rather than this argument so that pipe
+  characters in ctest exclusion regexes are not flagged/stripped by the "Enable shell tasks arguments validation" org policy
+  (https://aka.ms/ado/75787), which only inspects a shell task's 'arguments' input.
 
   .PARAMETER binaryNameSuffix
   Suffix for binary names of tests. E.g. if ctest returns some test names like foo, bar, and the binaries are foo_x.exe and bar_x.exe then this should be "_x.exe"
@@ -93,6 +97,22 @@ if ($on)
 {
     Assert-DiscoveredPath -Value $ctestPath -Name "ctestPath"
     Write-Output "Using CTest at: $ctestPath"
+
+    # When -ctestArgs was not supplied, fall back to the CTEST_ADDITIONAL_ARGS
+    # environment variable. Callers forward the ctest filter via env instead of the
+    # task 'arguments' input so that pipe characters in exclusion regexes are not
+    # flagged/stripped by the shell-task arguments-validation policy
+    # (https://aka.ms/ado/75787). Shell-quoting artifacts (escape backticks and double
+    # quotes) that callers previously needed to embed the filter inside the double-quoted
+    # 'arguments' string are removed here: this helper tokenizes on whitespace and passes
+    # each token straight to ctest, so a stray backtick/quote would corrupt the exclusion
+    # regex (e.g. leave the first/last alternative unmatched). Neither character is
+    # meaningful in a ctest test-name regex, so removing them yields the intended filter.
+    if ([string]::IsNullOrWhiteSpace($ctestArgs) -and -not [string]::IsNullOrWhiteSpace($env:CTEST_ADDITIONAL_ARGS))
+    {
+        $ctestArgs = $env:CTEST_ADDITIONAL_ARGS -replace '[`"]', ''
+        Write-Output "Using ctest args from CTEST_ADDITIONAL_ARGS environment variable: $ctestArgs"
+    }
 
     $allTests = & $ctestPath -N $ctestArgs.Split()
     $testsArray = $allTests.Split([Environment]::NewLine,[Stringsplitoptions]::RemoveEmptyEntries).trim()
