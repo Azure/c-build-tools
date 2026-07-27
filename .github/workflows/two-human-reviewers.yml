@@ -5,6 +5,11 @@ name: Two human reviewers
 # and the approver. When the agent opens the PR that first human is missing, so one approval would be
 # the only human judgement applied. This job restores the second.
 #
+# This is the shared definition. Other repositories call it from a thin caller workflow, so the logic
+# is maintained once; it also triggers directly on this repository's own PRs, which is why it declares
+# `pull_request` alongside `workflow_call`. When called, `github.repository` and the event payload are
+# the caller's, so it gates the calling repository's PR.
+#
 # Why a job and not a branch rule: GitHub cannot condition an approval count on the PR author, and a
 # required check that never reports blocks a PR forever ("Expected - waiting for status to be
 # reported"). So this runs on every PR and passes immediately for human authors, and only bot-authored
@@ -18,6 +23,18 @@ name: Two human reviewers
 # writable token) cannot execute anything from the branch under review.
 
 on:
+  workflow_call:
+    inputs:
+      required-approvals:
+        description: How many distinct humans must approve a bot-authored PR.
+        type: number
+        required: false
+        default: 2
+      exempt-bot-logins:
+        description: Comma-separated bot logins exempt from the second approval.
+        type: string
+        required: false
+        default: ''
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
   pull_request_review:
@@ -34,15 +51,16 @@ jobs:
     steps:
       - name: Count human approvals
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # github.token rather than secrets.GITHUB_TOKEN so this works without the caller passing
+          # `secrets: inherit`.
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
           AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
-          # Comma-separated bot logins exempt from the second approval. Empty by default: every
-          # bot-authored PR lacks the human author, so it is gated unless someone opts it out here.
-          EXEMPT_BOT_LOGINS: ""
-          REQUIRED_APPROVALS: "2"
+          # `inputs` is empty when this runs on its own repository's PRs rather than being called.
+          EXEMPT_BOT_LOGINS: ${{ inputs.exempt-bot-logins || '' }}
+          REQUIRED_APPROVALS: ${{ inputs.required-approvals || 2 }}
         run: |
           set -euo pipefail
 
