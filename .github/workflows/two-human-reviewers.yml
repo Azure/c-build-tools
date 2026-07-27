@@ -10,6 +10,10 @@ name: Two human reviewers
 # reported"). So this runs on every PR and passes immediately for human authors, and only bot-authored
 # PRs are actually gated.
 #
+# Gating on "the author is a bot" rather than on a list of bot logins is deliberate: an app can be
+# renamed, and a stale login would silently let bot PRs through with one approval. Exempting a bot is
+# therefore an explicit act, and forgetting to update this file can only ever be too strict.
+#
 # It deliberately never checks out the PR's code, so running on `pull_request_review` (which carries a
 # writable token) cannot execute anything from the branch under review.
 
@@ -34,22 +38,27 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
-          # Comma-separated logins whose PRs are gated. Other bots (e.g. dependabot) are intentionally
-          # not listed: this is about the agent merging its own unreviewed work, not bots in general.
-          BOT_LOGINS: "aiagentpool-mrbot-2[bot]"
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          # Comma-separated bot logins exempt from the second approval. Empty by default: every
+          # bot-authored PR lacks the human author, so it is gated unless someone opts it out here.
+          EXEMPT_BOT_LOGINS: ""
           REQUIRED_APPROVALS: "2"
         run: |
           set -euo pipefail
 
-          gated=0
-          IFS=',' read -ra logins <<< "$BOT_LOGINS"
-          for login in "${logins[@]}"; do
-            if [ "$(echo "$login" | xargs)" = "$AUTHOR" ]; then gated=1; fi
-          done
-
-          if [ "$gated" -eq 0 ]; then
+          if [ "$AUTHOR_TYPE" != "Bot" ]; then
             echo "PR #$PR was opened by $AUTHOR, so the repository's normal review rules apply."
             exit 0
+          fi
+
+          if [ -n "$EXEMPT_BOT_LOGINS" ]; then
+            IFS=',' read -ra exempt <<< "$EXEMPT_BOT_LOGINS"
+            for login in "${exempt[@]}"; do
+              if [ "$(echo "$login" | xargs)" = "$AUTHOR" ]; then
+                echo "PR #$PR was opened by $AUTHOR, which this repository exempts."
+                exit 0
+              fi
+            done
           fi
 
           # A reviewer's standing verdict is their most recent APPROVED / CHANGES_REQUESTED review;
