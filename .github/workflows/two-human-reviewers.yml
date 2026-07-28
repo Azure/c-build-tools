@@ -10,6 +10,11 @@ name: Two human reviewers
 # `pull_request` alongside `workflow_call`. When called, `github.repository` and the event payload are
 # the caller's, so it gates the calling repository's PR.
 #
+# A called workflow's own triggers are ignored - only the caller's events run it - so a caller MUST
+# declare `pull_request_review` as well as `pull_request`. Without it the gate evaluates once at open,
+# finds no approvals, and never re-runs when humans approve, leaving the required check stuck failing.
+# `two-human-reviewers.caller.yml` next to this file is the template to copy.
+#
 # Why a job and not a branch rule: GitHub cannot condition an approval count on the PR author, and a
 # required check that never reports blocks a PR forever ("Expected - waiting for status to be
 # reported"). So this runs on every PR and passes immediately for human authors, and only bot-authored
@@ -110,11 +115,19 @@ jobs:
           # and leaving that approval standing. COMMENTED and PENDING reviews say nothing either way.
           # Grouping by reviewer also means re-approving can never count as two people.
           #
+          # Only approvals from people with write access count. These repositories are public, so anyone
+          # with a GitHub account can submit an approving review, and counting those would let two
+          # throwaway accounts satisfy the gate. This mirrors how GitHub counts its own required
+          # approvals, which ignores reviewers without write access.
+          #
           # An approval counts only for the commit it was given on: the bot pushes to its own PR, so an
           # approval of an earlier commit must not carry over to code no human has looked at.
           approvals=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" | jq -s --arg head "$head_sha" '
             add // []
             | map(select(.user.type != "Bot"))
+            | map(select(.author_association == "OWNER"
+                         or .author_association == "MEMBER"
+                         or .author_association == "COLLABORATOR"))
             | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED"))
             | group_by(.user.id)
             | map(max_by(.id))
