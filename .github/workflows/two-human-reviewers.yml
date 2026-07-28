@@ -25,6 +25,11 @@ name: Two human reviewers
 on:
   workflow_call:
     inputs:
+      pr:
+        description: PR number to evaluate. Only needed when running from `workflow_dispatch`.
+        type: string
+        required: false
+        default: ''
       required-approvals:
         description: How many distinct humans must approve a bot-authored PR.
         type: number
@@ -37,6 +42,15 @@ on:
         type: string
         required: false
         default: ''
+  # A repository that adds this workflow while pull requests are already open has no event to evaluate
+  # them with - those events don't fire retroactively - so each one would sit on a required check that
+  # never reports. Dispatching with the PR number produces that first result.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to evaluate.
+        type: string
+        required: true
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
   pull_request_review:
@@ -57,40 +71,54 @@ jobs:
           # `secrets: inherit`.
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          AUTHOR: ${{ github.event.pull_request.user.login }}
-          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
           # `inputs` is empty when this runs on its own repository's PRs rather than being called.
           EXEMPT_BOTS: ${{ inputs.exempt-bots || '' }}
           REQUIRED_APPROVALS: ${{ inputs.required-approvals || 2 }}
         run: |
           set -euo pipefail
 
-          if [ "$AUTHOR_TYPE" != "Bot" ]; then
-            echo "PR #$PR was opened by $AUTHOR, so the repository's normal review rules apply."
+          if [ -z "$PR" ]; then
+            echo "::error::No pull request to evaluate; pass the PR number when dispatching manually."
+            exit 1
+          fi
+
+          # Read the PR from the API rather than the event payload, so a manual dispatch - which carries
+          # no pull_request payload - evaluates exactly what an event-triggered run would.
+          pr_json=$(gh api "repos/$REPO/pulls/$PR")
+          author=$(jq -r '.user.login' <<< "$pr_json")
+          author_type=$(jq -r '.user.type' <<< "$pr_json")
+          head_sha=$(jq -r '.head.sha' <<< "$pr_json")
+
+          if [ "$author_type" != "Bot" ]; then
+            echo "PR #$PR was opened by $author, so the repository's normal review rules apply."
             exit 0
           fi
 
           if [ -n "$EXEMPT_BOTS" ]; then
             IFS=',' read -ra exempt <<< "$EXEMPT_BOTS"
             for bot in "${exempt[@]}"; do
-              if [ "$(echo "$bot" | xargs)" = "$AUTHOR" ]; then
-                echo "PR #$PR was opened by $AUTHOR, which this repository exempts."
+              if [ "$(echo "$bot" | xargs)" = "$author" ]; then
+                echo "PR #$PR was opened by $author, which this repository exempts."
                 exit 0
               fi
             done
           fi
 
-          # A reviewer's standing verdict is their most recent APPROVED / CHANGES_REQUESTED review;
-          # COMMENTED and PENDING reviews say nothing either way and DISMISSED ones no longer count.
-          # Group by reviewer so re-approving the same PR twice can never count as two people.
-          approvals=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" | jq -s '
+          # Reduce each reviewer to their most recent verdict *before* judging it, so a dismissal that
+          # arrives as its own record supersedes the approval it dismissed instead of being filtered out
+          # and leaving that approval standing. COMMENTED and PENDING reviews say nothing either way.
+          # Grouping by reviewer also means re-approving can never count as two people.
+          #
+          # An approval counts only for the commit it was given on: the bot pushes to its own PR, so an
+          # approval of an earlier commit must not carry over to code no human has looked at.
+          approvals=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" | jq -s --arg head "$head_sha" '
             add // []
             | map(select(.user.type != "Bot"))
-            | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"))
+            | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED"))
             | group_by(.user.id)
             | map(max_by(.id))
-            | map(select(.state == "APPROVED"))
+            | map(select(.state == "APPROVED" and .commit_id == $head))
             | length')
 
           if [ "$approvals" -ge "$REQUIRED_APPROVALS" ]; then
@@ -98,5 +126,5 @@ jobs:
             exit 0
           fi
 
-          echo "::error::This PR was opened by $AUTHOR and needs $REQUIRED_APPROVALS approvals from distinct humans; $approvals so far."
+          echo "::error::This PR was opened by $author and needs $REQUIRED_APPROVALS approvals from distinct humans on the current commit; $approvals so far."
           exit 1
