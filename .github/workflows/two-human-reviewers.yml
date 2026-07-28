@@ -1,9 +1,9 @@
 name: Two human reviewers
-# Bot-authored pull requests need approvals from two distinct humans.
+# Bot-authored pull requests need approvals from two distinct humans (see `required-approvals`).
 #
 # A human-authored PR already has two people in the loop: the author who wrote and vetted the change,
-# and the approver. When the agent opens the PR that first human is missing, so one approval would be
-# the only human judgement applied. This job restores the second.
+# and the approver. When the agent opens the PR that first human is missing, so a single approval would
+# be the only human judgement applied to it. This restores the second.
 #
 # This is the shared definition. Other repositories call it from a thin caller workflow, so the logic
 # is maintained once; it also triggers directly on this repository's own PRs, which is why it declares
@@ -15,9 +15,9 @@ name: Two human reviewers
 # reported"). So this runs on every PR and passes immediately for human authors, and only bot-authored
 # PRs are actually gated.
 #
-# Gating on "the author is a bot" rather than on a list of bot logins is deliberate: an app can be
-# renamed, and a stale login would silently let bot PRs through with one approval. Exempting a bot is
-# therefore an explicit act, and forgetting to update this file can only ever be too strict.
+# Gating on "the author is a bot" rather than on a list of named bots is deliberate: an app can be
+# renamed, and a stale name would silently let its pull requests through under-reviewed. Exempting a bot
+# is therefore an explicit act, and forgetting to update this file can only ever be too strict.
 #
 # It deliberately never checks out the PR's code, so running on `pull_request_review` (which carries a
 # writable token) cannot execute anything from the branch under review.
@@ -30,8 +30,10 @@ on:
         type: number
         required: false
         default: 2
-      exempt-bot-logins:
-        description: Comma-separated bot logins exempt from the second approval.
+      exempt-bots:
+        description: >-
+          Comma-separated GitHub account names of bots that may merge under the repository's normal
+          rules, e.g. "dependabot[bot]".
         type: string
         required: false
         default: ''
@@ -59,7 +61,7 @@ jobs:
           AUTHOR: ${{ github.event.pull_request.user.login }}
           AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
           # `inputs` is empty when this runs on its own repository's PRs rather than being called.
-          EXEMPT_BOT_LOGINS: ${{ inputs.exempt-bot-logins || '' }}
+          EXEMPT_BOTS: ${{ inputs.exempt-bots || '' }}
           REQUIRED_APPROVALS: ${{ inputs.required-approvals || 2 }}
         run: |
           set -euo pipefail
@@ -69,10 +71,10 @@ jobs:
             exit 0
           fi
 
-          if [ -n "$EXEMPT_BOT_LOGINS" ]; then
-            IFS=',' read -ra exempt <<< "$EXEMPT_BOT_LOGINS"
-            for login in "${exempt[@]}"; do
-              if [ "$(echo "$login" | xargs)" = "$AUTHOR" ]; then
+          if [ -n "$EXEMPT_BOTS" ]; then
+            IFS=',' read -ra exempt <<< "$EXEMPT_BOTS"
+            for bot in "${exempt[@]}"; do
+              if [ "$(echo "$bot" | xargs)" = "$AUTHOR" ]; then
                 echo "PR #$PR was opened by $AUTHOR, which this repository exempts."
                 exit 0
               fi
