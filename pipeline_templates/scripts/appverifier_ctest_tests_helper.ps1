@@ -25,7 +25,8 @@
   See: https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/application-verifier-testing-applications#using-the-command-line
 
   .PARAMETER ctestArgs
-  Arguments to pass to ctest. By default ctest is run with "-N" which will just list all tests. This option may be used to filter the tests
+  Arguments to pass to ctest. By default ctest is run with "-N" which will just list all tests. This option may be used to filter the tests.
+  When empty, falls back to the CTEST_ADDITIONAL_ARGS environment variable.
 
   .PARAMETER binaryNameSuffix
   Suffix for binary names of tests. E.g. if ctest returns some test names like foo, bar, and the binaries are foo_x.exe and bar_x.exe then this should be "_x.exe"
@@ -93,6 +94,15 @@ if ($on)
 {
     Assert-DiscoveredPath -Value $ctestPath -Name "ctestPath"
     Write-Output "Using CTest at: $ctestPath"
+
+    # Fall back to the env var used by pipeline callers (keeps pipe chars out of shell-args
+    # validation, https://aka.ms/ado/75787). Strip backticks/double-quotes: shell-quoting
+    # artifacts that are never meaningful in a ctest regex but would otherwise corrupt the filter.
+    if ([string]::IsNullOrWhiteSpace($ctestArgs) -and -not [string]::IsNullOrWhiteSpace($env:CTEST_ADDITIONAL_ARGS))
+    {
+        $ctestArgs = $env:CTEST_ADDITIONAL_ARGS -replace '[`"]', ''
+        Write-Output "Using ctest args from CTEST_ADDITIONAL_ARGS environment variable: $ctestArgs"
+    }
 
     $allTests = & $ctestPath -N $ctestArgs.Split()
     $testsArray = $allTests.Split([Environment]::NewLine,[Stringsplitoptions]::RemoveEmptyEntries).trim()

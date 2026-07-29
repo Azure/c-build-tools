@@ -8,7 +8,7 @@ parameters:
   - name: pool_name_windows_arm64
     displayName: 'Windows ARM64 Pool'
     type: string
-    default: 'Azure-MessagingStore-Win-ARM64-Dpldsv6-v20'
+    default: 'Azure-MessagingStore-Win-ARM64-Dpldsv6-v26'
   - name: pool_name_linux
     displayName: 'Linux Pool'
     type: string
@@ -53,7 +53,7 @@ jobs:
 - template: /pipeline_templates/codeql3000_default.yml
   parameters:
     repo_root: $(Build.SourcesDirectory)
-    pool_name: 'Azure-MessagingStore-Win-x64-Dadsv7-v03'
+    pool_name: 'Azure-MessagingStore-Win-x64-Daldsv7-v07'
 
 - template: /pipeline_templates/build_linux.yml
   parameters:
