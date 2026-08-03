@@ -115,24 +115,43 @@ jobs:
           # and leaving that approval standing. COMMENTED and PENDING reviews say nothing either way.
           # Grouping by reviewer also means re-approving can never count as two people.
           #
-          # Only approvals from people with write access count. These repositories are public, so anyone
+          # Only approvals from reviewers who can push count. These repositories are public, so anyone
           # with a GitHub account can submit an approving review, and counting those would let two
-          # throwaway accounts satisfy the gate. This mirrors how GitHub counts its own required
-          # approvals, which ignores reviewers without write access.
+          # throwaway accounts satisfy the gate. Push access is the test rather than the reviewer's
+          # association with the repository, because association does not imply write: an organisation
+          # member or a collaborator can be read-only, while an outside collaborator granted write is
+          # legitimately a reviewer. This mirrors how GitHub counts its own required approvals.
           #
           # An approval counts only for the commit it was given on: the bot pushes to its own PR, so an
           # approval of an earlier commit must not carry over to code no human has looked at.
-          approvals=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" | jq -s --arg head "$head_sha" '
-            add // []
-            | map(select(.user.type != "Bot"))
-            | map(select(.author_association == "OWNER"
-                         or .author_association == "MEMBER"
-                         or .author_association == "COLLABORATOR"))
-            | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED"))
-            | group_by(.user.id)
-            | map(max_by(.id))
-            | map(select(.state == "APPROVED" and .commit_id == $head))
-            | length')
+          approvals=$(gh api graphql --paginate \
+            -F owner="${REPO%/*}" -F repo="${REPO#*/}" -F pr="$PR" \
+            -f query='
+              query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $pr) {
+                    reviews(first: 100, after: $endCursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes {
+                        databaseId
+                        state
+                        authorCanPushToRepository
+                        author { login __typename }
+                        commit { oid }
+                      }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequest.reviews.nodes[]' \
+            | jq -s --arg head "$head_sha" '
+              map(select(.author.__typename != "Bot"))
+              | map(select(.authorCanPushToRepository == true))
+              | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED"))
+              | group_by(.author.login)
+              | map(max_by(.databaseId))
+              | map(select(.state == "APPROVED" and .commit.oid == $head))
+              | length')
 
           if [ "$approvals" -ge "$REQUIRED_APPROVALS" ]; then
             echo "::notice::$approvals of $REQUIRED_APPROVALS human approvals - this bot-authored PR may merge."
