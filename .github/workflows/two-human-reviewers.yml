@@ -13,7 +13,16 @@ name: Two human reviewers
 # A called workflow's own triggers are ignored - only the caller's events run it - so a caller MUST
 # declare `pull_request_review` as well as `pull_request`. Without it the gate evaluates once at open,
 # finds no approvals, and never re-runs when humans approve, leaving the required check stuck failing.
-# `two-human-reviewers.caller.yml` next to this file is the template to copy.
+# `.github/workflow-templates/two-human-reviewers.caller.yml` is the template to copy.
+#
+# What this does and does not defend against: for `pull_request` events GitHub runs the definition from
+# the pull request's own head, so a pull request may edit this file and be judged by its edited copy.
+# Deleting it fails safe - the required check never reports and the pull request cannot merge - but
+# weakening it does not, so treat a diff that touches this file as security-relevant and review it as
+# such. Consuming repositories are not exposed that way: they call this definition at a fixed ref, so a
+# pull request in the calling repository cannot alter the logic, only its own caller stub. Requiring code
+# owner review on `.github/workflows/**` is what actually closes this, and belongs in branch protection
+# rather than here.
 #
 # Why a job and not a branch rule: GitHub cannot condition an approval count on the PR author, and a
 # required check that never reports blocks a PR forever ("Expected - waiting for status to be
