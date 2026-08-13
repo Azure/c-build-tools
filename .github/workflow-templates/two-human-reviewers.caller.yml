@@ -15,8 +15,10 @@ name: Two human reviewers
 # it.
 #
 # Do not add a required status check for this until the file is on the default branch, or every open pull
-# request will wait forever on a check that cannot run. Use the `workflow_dispatch` below to produce a
-# first result on pull requests that were already open when it landed.
+# request will wait forever on a check that cannot run. Pull requests that were already open when it landed
+# get no event either, and are unstuck by reopening them, or by any push to them. Dispatching does not do
+# it: a dispatch runs against the default branch, so its check run attaches to that branch's commit rather
+# than to a pull request's head. It reports the verdict to the run log, and is useful for that.
 
 on:
   workflow_dispatch:
