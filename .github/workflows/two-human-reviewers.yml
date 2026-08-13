@@ -44,6 +44,11 @@ name: Two human reviewers
 # renamed, and a stale name would silently let its pull requests through under-reviewed. Exempting a bot
 # is therefore an explicit act, and forgetting to update this file can only ever be too strict.
 #
+# `dependabot[bot]` is exempt. The gate exists because an agent writes the change a human would
+# otherwise have written and vetted, leaving one human short. A dependency bump has no missing author:
+# the change is a version number, and the code it pulls in was never going to be written here. The
+# repository's normal review rule is the control that fits it.
+#
 # It deliberately never checks out the PR's code, so running on `pull_request_review` (which carries a
 # writable token) cannot execute anything from the branch under review.
 
@@ -56,17 +61,16 @@ on:
         required: false
         default: ''
       required-approvals:
-        description: How many distinct humans must approve a bot-authored PR.
+        description: How many distinct humans must approve a bot-authored PR. Defaults to 2.
         type: number
         required: false
-        default: 2
       exempt-bots:
         description: >-
           Comma-separated GitHub account names of bots that may merge under the repository's normal
-          rules, e.g. "dependabot[bot]".
+          rules. Defaults to "dependabot[bot]"; passing this replaces that default rather than adding
+          to it.
         type: string
         required: false
-        default: ''
   # Dispatching runs against the default branch, so the check run it produces attaches to that branch's
   # commit rather than to a pull request's head, and no pull request is unblocked by it. It reports the
   # verdict to the run log, which makes it useful for checking this logic against a real pull request. A
@@ -99,8 +103,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number || inputs.pr }}
-          # `inputs` is empty when this runs on its own repository's PRs rather than being called.
-          EXEMPT_BOTS: ${{ inputs.exempt-bots || '' }}
+          # `inputs` is empty when this runs on its own repository's PRs rather than being called, so
+          # these fallbacks - not a `default:` on the input - are what actually set the values. Declaring
+          # both would put the same literal in two places, and a `default:` reached only on the called
+          # path is how the two would come to disagree.
+          EXEMPT_BOTS: ${{ inputs.exempt-bots || 'dependabot[bot]' }}
           REQUIRED_APPROVALS: ${{ inputs.required-approvals || 2 }}
         run: |
           set -euo pipefail
