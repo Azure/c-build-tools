@@ -11,18 +11,23 @@ name: Two human reviewers
 # the caller's, so it gates the calling repository's PR.
 #
 # A called workflow's own triggers are ignored - only the caller's events run it - so a caller MUST
-# declare `pull_request_review` as well as `pull_request`. Without it the gate evaluates once at open,
-# finds no approvals, and never re-runs when humans approve, leaving the required check stuck failing.
+# declare `pull_request_review` as well as `pull_request_target`. Without it the gate evaluates once at
+# open, finds no approvals, and never re-runs when humans approve, leaving the required check stuck.
 # `.github/workflow-templates/two-human-reviewers.caller.yml` is the template to copy.
 #
-# What this does and does not defend against: for `pull_request` events GitHub runs the definition from
-# the pull request's own head, so a pull request may edit this file and be judged by its edited copy.
-# Deleting it fails safe - the required check never reports and the pull request cannot merge - but
-# weakening it does not, so treat a diff that touches this file as security-relevant and review it as
-# such. Consuming repositories are not exposed that way: they call this definition at a fixed ref, so a
-# pull request in the calling repository cannot alter the logic, only its own caller stub. Requiring code
-# owner review on `.github/workflows/**` is what actually closes this, and belongs in branch protection
-# rather than here.
+# `pull_request_target` rather than `pull_request`, because the verdict is published as a commit status
+# and a pull request from a fork carries a read-only token on `pull_request`; it could never publish for
+# one, and that pull request would wait forever on a status that never arrives. `pull_request_target`
+# runs in the base repository's context with a token that can write.
+#
+# It never checks out the pull request's code - it reads the API and nothing else - which is what makes
+# `pull_request_target` safe here, and what makes running on `pull_request_review` safe too, since both
+# carry a writable token. Do not add a checkout to this workflow.
+#
+# Because both triggers take the definition from the base branch rather than from the pull request, a
+# pull request can no longer be judged by its own edited copy of this file. Deleting or weakening it now
+# takes effect only once merged. It is still security-relevant: review a diff that touches it as such,
+# and requiring code owner review on `.github/workflows/**` in branch protection is what enforces that.
 #
 # Why a job and not a branch rule: GitHub cannot condition an approval count on the PR author, and a
 # required check that never reports blocks a PR forever ("Expected - waiting for status to be
@@ -82,7 +87,7 @@ on:
         description: PR number to evaluate.
         type: string
         required: true
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
   pull_request_review:
     types: [submitted, dismissed]
