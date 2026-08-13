@@ -29,6 +29,17 @@ name: Two human reviewers
 # reported"). So this runs on every PR and passes immediately for human authors, and only bot-authored
 # PRs are actually gated.
 #
+# The unit being judged is the head commit, not the pull request that triggered the run. A check run
+# attaches to a commit, and branch protection reads the newest run of a given name on the pull request's
+# head commit - so two pull requests that share a head commit share this check, and whichever run
+# finishes last decides both. Copying a bot's branch and opening a second pull request from it is enough
+# to produce that, and judging only the triggering pull request would then let the copy's "author is
+# human, not gated" verdict land on the bot's pull request and clear it. Every open pull request on the
+# commit is therefore evaluated together, which makes the verdict a function of the commit alone and
+# leaves the order the runs finish in unable to change it. The cost is that a human's pull request
+# sharing a commit with a bot's is held to the bot's requirement; that is the safe direction, and the
+# approvals it collects count toward the shared commit.
+#
 # Gating on "the author is a bot" rather than on a list of named bots is deliberate: an app can be
 # renamed, and a stale name would silently let its pull requests through under-reviewed. Exempting a bot
 # is therefore an explicit act, and forgetting to update this file can only ever be too strict.
@@ -100,29 +111,48 @@ jobs:
           # Read the PR from the API rather than the event payload, so a manual dispatch - which carries
           # no pull_request payload - evaluates exactly what an event-triggered run would.
           pr_json=$(gh api "repos/$REPO/pulls/$PR")
-          author=$(jq -r '.user.login' <<< "$pr_json")
-          author_type=$(jq -r '.user.type' <<< "$pr_json")
           head_sha=$(jq -r '.head.sha' <<< "$pr_json")
 
-          if [ "$author_type" != "Bot" ]; then
-            echo "PR #$PR was opened by $author, so the repository's normal review rules apply."
+          # Every open pull request whose head is this commit, because they all share this check run and
+          # so must all get the same answer. The triggering pull request is folded in explicitly rather
+          # than trusted to appear, so lag in the commit-to-pull-request index cannot drop the one pull
+          # request known to be on this commit. Pull requests that merely contain the commit further back
+          # in their history are excluded - their own head commit carries their own check.
+          shared=$(
+            {
+              gh api --paginate "repos/$REPO/commits/$head_sha/pulls" --jq '.[]'
+              printf '\n%s' "$pr_json"
+            } | jq -s --arg head "$head_sha" '
+                map(select(.state == "open" and .head.sha == $head))
+                | unique_by(.number)'
+          )
+
+          # Nothing open on the commit means nothing can merge on it; judging the triggering pull request
+          # alone still reports a result rather than erroring on an empty set.
+          if [ "$(jq 'length' <<< "$shared")" -eq 0 ]; then
+            shared=$(jq -s '.' <<< "$pr_json")
+          fi
+
+          exempt=$(jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))' <<< "$EXEMPT_BOTS")
+          gated=$(jq -c --argjson exempt "$exempt" '
+            map(select(.user.type == "Bot"))
+            | map(select(.user.login as $login | $exempt | index($login) | not))' <<< "$shared")
+
+          shared_desc=$(jq -r 'map("#\(.number) by \(.user.login)") | join(", ")' <<< "$shared")
+
+          if [ "$(jq 'length' <<< "$gated")" -eq 0 ]; then
+            echo "No bot-authored pull request is open on commit ${head_sha:0:7} ($shared_desc), so the repository's normal review rules apply."
             exit 0
           fi
 
-          if [ -n "$EXEMPT_BOTS" ]; then
-            IFS=',' read -ra exempt <<< "$EXEMPT_BOTS"
-            for bot in "${exempt[@]}"; do
-              if [ "$(echo "$bot" | xargs)" = "$author" ]; then
-                echo "PR #$PR was opened by $author, which this repository exempts."
-                exit 0
-              fi
-            done
-          fi
+          gated_desc=$(jq -r 'map("#\(.number) by \(.user.login)") | join(", ")' <<< "$gated")
 
           # Reduce each reviewer to their most recent verdict *before* judging it, so a dismissal that
           # arrives as its own record supersedes the approval it dismissed instead of being filtered out
           # and leaving that approval standing. COMMENTED and PENDING reviews say nothing either way.
-          # Grouping by reviewer also means re-approving can never count as two people.
+          # Grouping by reviewer also means re-approving can never count as two people, and that a
+          # reviewer who approved one pull request on this commit and then rejected another counts once,
+          # as their latest verdict.
           #
           # Only approvals from reviewers who can push count. These repositories are public, so anyone
           # with a GitHub account can submit an approving review, and counting those would let two
@@ -132,40 +162,49 @@ jobs:
           # legitimately a reviewer. This mirrors how GitHub counts its own required approvals.
           #
           # An approval counts only for the commit it was given on: the bot pushes to its own PR, so an
-          # approval of an earlier commit must not carry over to code no human has looked at.
-          approvals=$(gh api graphql --paginate \
-            -F owner="${REPO%/*}" -F repo="${REPO#*/}" -F pr="$PR" \
-            -f query='
-              query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
-                repository(owner: $owner, name: $repo) {
-                  pullRequest(number: $pr) {
-                    reviews(first: 100, after: $endCursor) {
-                      pageInfo { hasNextPage endCursor }
-                      nodes {
-                        databaseId
-                        state
-                        authorCanPushToRepository
-                        author { login __typename }
-                        commit { oid }
+          # approval of an earlier commit must not carry over to code no human has looked at. Reviews are
+          # pooled across the pull requests sharing the commit because the question being answered is
+          # whether two humans have signed off on this code, not on a particular pull request.
+          reviews=$(mktemp)
+          for number in $(jq -r '.[].number' <<< "$shared"); do
+            gh api graphql --paginate \
+              -F owner="${REPO%/*}" -F repo="${REPO#*/}" -F pr="$number" \
+              -f query='
+                query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $pr) {
+                      reviews(first: 100, after: $endCursor) {
+                        pageInfo { hasNextPage endCursor }
+                        nodes {
+                          databaseId
+                          state
+                          authorCanPushToRepository
+                          author { login __typename }
+                          commit { oid }
+                        }
                       }
                     }
                   }
-                }
-              }' \
-            --jq '.data.repository.pullRequest.reviews.nodes[]' \
-            | jq -s --arg head "$head_sha" '
-              map(select(.author.__typename != "Bot"))
-              | map(select(.authorCanPushToRepository == true))
-              | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED"))
-              | group_by(.author.login)
-              | map(max_by(.databaseId))
-              | map(select(.state == "APPROVED" and .commit.oid == $head))
-              | length')
+                }' \
+              --jq '.data.repository.pullRequest.reviews.nodes[]' >> "$reviews"
+          done
+
+          approvers=$(jq -s --arg head "$head_sha" '
+            map(select(.author.__typename != "Bot"))
+            | map(select(.authorCanPushToRepository == true))
+            | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED"))
+            | group_by(.author.login)
+            | map(max_by(.databaseId))
+            | map(select(.state == "APPROVED" and .commit.oid == $head))
+            | map(.author.login)
+            | unique' "$reviews")
+          approvals=$(jq 'length' <<< "$approvers")
+          approver_list=$(jq -r 'join(", ")' <<< "$approvers")
 
           if [ "$approvals" -ge "$REQUIRED_APPROVALS" ]; then
-            echo "::notice::$approvals of $REQUIRED_APPROVALS human approvals - this bot-authored PR may merge."
+            echo "::notice::Commit ${head_sha:0:7} has $approvals of $REQUIRED_APPROVALS human approvals ($approver_list); bot-authored $gated_desc may merge."
             exit 0
           fi
 
-          echo "::error::This PR was opened by $author and needs $REQUIRED_APPROVALS approvals from distinct humans on the current commit; $approvals so far."
+          echo "::error::Commit ${head_sha:0:7} carries bot-authored $gated_desc and needs $REQUIRED_APPROVALS approvals from distinct humans on this commit; $approvals so far${approver_list:+ ($approver_list)}."
           exit 1
