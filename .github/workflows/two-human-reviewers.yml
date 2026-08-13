@@ -67,9 +67,11 @@ on:
         type: string
         required: false
         default: ''
-  # A repository that adds this workflow while pull requests are already open has no event to evaluate
-  # them with - those events don't fire retroactively - so each one would sit on a required check that
-  # never reports. Dispatching with the PR number produces that first result.
+  # Dispatching runs against the default branch, so the check run it produces attaches to that branch's
+  # commit rather than to a pull request's head, and no pull request is unblocked by it. It reports the
+  # verdict to the run log, which makes it useful for checking this logic against a real pull request. A
+  # pull request that was already open when the gate landed has no event to evaluate it with - those don't
+  # fire retroactively - and is unstuck by reopening it, or by any push to it.
   workflow_dispatch:
     inputs:
       pr:
