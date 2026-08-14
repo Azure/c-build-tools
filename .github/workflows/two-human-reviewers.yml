@@ -244,5 +244,9 @@ jobs:
           fi
 
           publish pending "Needs $REQUIRED_APPROVALS approvals from distinct humans on this commit; $approvals so far"
-          echo "::error::Commit ${head_sha:0:7} carries bot-authored $gated_desc and needs $REQUIRED_APPROVALS approvals from distinct humans on this commit; $approvals so far${approver_list:+ ($approver_list)}."
-          exit 1
+          # Not a failure. The gate's verdict is the status published above, which is what branch
+          # protection requires and which sits in `pending` until the approvals arrive. Failing the job
+          # too would put a red row on a pull request whose only problem is that it is waiting for a
+          # person. A publish that did not land still blocks the merge, because the required status is
+          # then missing rather than green.
+          echo "::notice::Commit ${head_sha:0:7} carries bot-authored $gated_desc and needs $REQUIRED_APPROVALS approvals from distinct humans on this commit; $approvals so far${approver_list:+ ($approver_list)}."
