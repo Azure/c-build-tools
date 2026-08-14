@@ -1,10 +1,14 @@
 name: Two human reviewers
+# BEGIN template-only - Deploy-GitHubReviewPolicy.ps1 strips this block when it installs the file, since
+# it describes the template rather than the workflow, and would be wrong in the copy that runs.
+#
 # Copy this into a consuming repository as `.github/workflows/two-human-reviewers.yml`.
 #
 # It is a template and deliberately lives outside `.github/workflows/` here, because anything in that
 # directory runs, and this repository already gates its own pull requests with the reusable workflow
 # directly.
 #
+# END template-only
 # The logic lives in c-build-tools so every repository shares one definition; see
 # `.github/workflows/two-human-reviewers.yml` there for why this is a workflow rather than a branch rule,
 # and for the `required-approvals` and `exempt-bots` inputs.
