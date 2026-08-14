@@ -90,6 +90,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  statuses: write
 
 jobs:
   two-human-reviewers:
@@ -109,6 +110,8 @@ jobs:
           # path is how the two would come to disagree.
           EXEMPT_BOTS: ${{ inputs.exempt-bots || 'dependabot[bot]' }}
           REQUIRED_APPROVALS: ${{ inputs.required-approvals || 2 }}
+          STATUS_CONTEXT: mrbot/two-human-reviewers
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
 
@@ -122,7 +125,25 @@ jobs:
           pr_json=$(gh api "repos/$REPO/pulls/$PR")
           head_sha=$(jq -r '.head.sha' <<< "$pr_json")
 
-          # Every open pull request whose head is this commit, because they all share this check run and
+          # The verdict is published as a commit status because a status can sit in `pending` and a job
+          # cannot: a job either passes or fails, so an unmet gate could only ever render as a failure -
+          # which reads as "the automation is broken" rather than "waiting for a second human". Branch
+          # protection treats a pending required status as blocking, which is exactly the intent.
+          #
+          # Publishing is best effort. It needs `statuses: write`, which a called workflow only has if its
+          # caller granted it, and a `pull_request` run on a fork's pull request holds a read-only token
+          # whatever the caller granted. Neither case may fail the run: the job's own exit code is what
+          # those repositories still gate on, and turning a missing permission into a red check would
+          # block them on the automation rather than on the review.
+          publish() {
+            if ! gh api --method POST "repos/$REPO/statuses/$head_sha" \
+                   -f state="$1" -f context="$STATUS_CONTEXT" -f description="$2" \
+                   -f target_url="$RUN_URL" >/dev/null 2>&1; then
+              echo "::warning::Could not publish the $STATUS_CONTEXT status. The run needs 'statuses: write', and a fork's pull request cannot be published to from a pull_request trigger."
+            fi
+          }
+
+          # Every open pull request whose head is this commit, because they all share this check and
           # so must all get the same answer. The triggering pull request is folded in explicitly rather
           # than trusted to appear, so lag in the commit-to-pull-request index cannot drop the one pull
           # request known to be on this commit. Pull requests that merely contain the commit further back
@@ -150,6 +171,7 @@ jobs:
           shared_desc=$(jq -r 'map("#\(.number) by \(.user.login)") | join(", ")' <<< "$shared")
 
           if [ "$(jq 'length' <<< "$gated")" -eq 0 ]; then
+            publish success "No bot-authored pull request on this commit"
             echo "No bot-authored pull request is open on commit ${head_sha:0:7} ($shared_desc), so the repository's normal review rules apply."
             exit 0
           fi
@@ -211,9 +233,11 @@ jobs:
           approver_list=$(jq -r 'join(", ")' <<< "$approvers")
 
           if [ "$approvals" -ge "$REQUIRED_APPROVALS" ]; then
+            publish success "$approvals of $REQUIRED_APPROVALS human approvals on this commit"
             echo "::notice::Commit ${head_sha:0:7} has $approvals of $REQUIRED_APPROVALS human approvals ($approver_list); bot-authored $gated_desc may merge."
             exit 0
           fi
 
+          publish pending "Needs $REQUIRED_APPROVALS approvals from distinct humans on this commit; $approvals so far"
           echo "::error::Commit ${head_sha:0:7} carries bot-authored $gated_desc and needs $REQUIRED_APPROVALS approvals from distinct humans on this commit; $approvals so far${approver_list:+ ($approver_list)}."
           exit 1
