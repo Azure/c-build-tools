@@ -84,15 +84,56 @@ parameters:
     type: number
     default: 1200
 
+  # Optional label appended to the job display name. BUILD_SUFFIX only feeds the job id, so two
+  # legs that share a flavor (same build_configuration / GBALLOC_LL_TYPE / ARCH_TYPE /
+  # FSANITIZE_TYPE / APP_VERIFIER / MAX_STAGE) otherwise render identically in the UI.
+  - name: job_label
+    type: string
+    default: ''
+
+  # When false, skip the VSTest step and the code coverage publish nested with it. Use this for
+  # legs built with -Drun_unittests:bool=OFF, where the *_ut_*.dll glob is legitimately empty --
+  # it is clearer than muting the empty-glob failure with failOnMinTestsNotRun.
+  - name: run_vstest
+    type: boolean
+    default: true
+
+  # Passed to ctest as -R, restricting the run to tests whose name matches this regex. Combine
+  # with fail_on_no_tests to assert that the tests a leg exists for are actually registered.
+  - name: ctest_include_tests
+    type: string
+    default: ''
+
+  # Controls ctest --no-tests=error. 'default' keeps the historical per-MAX_STAGE behaviour
+  # (error only for ALL, where nothing is filtered out). 'true'/'false' force it, which is what
+  # lets a leg using ctest_include_tests fail when its filter selects nothing.
+  - name: fail_on_no_tests
+    type: string
+    default: 'default'
+    values:
+      - 'default'
+      - 'true'
+      - 'false'
+
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
-  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}, MAX_STAGE=${{ parameters.MAX_STAGE }}'
+  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}, MAX_STAGE=${{ parameters.MAX_STAGE }}${{ parameters.job_label }}'
 
   variables:
     ${{ if eq(parameters.FSANITIZE_TYPE, 'ON') }}:
       use_vld_option: '-Duse_vld:bool=OFF'
     ${{ if eq(parameters.FSANITIZE_TYPE, 'OFF') }}:
       use_vld_option: '-Duse_vld:bool=ON'
+    # ctest flags for the watchdog path, which passes one raw argument string through to
+    # ProcessStartInfo.Arguments -- so an empty value here just collapses to extra whitespace.
+    ${{ if ne(parameters.ctest_include_tests, '') }}:
+      ctest_include_args: '-R "${{ parameters.ctest_include_tests }}"'
+    ${{ if eq(parameters.ctest_include_tests, '') }}:
+      ctest_include_args: ''
+    ${{ if or(eq(parameters.fail_on_no_tests, 'true'), and(eq(parameters.fail_on_no_tests, 'default'), eq(parameters.MAX_STAGE, 'ALL'))) }}:
+      ctest_no_tests_args: '--no-tests=error'
+    ${{ if not(or(eq(parameters.fail_on_no_tests, 'true'), and(eq(parameters.fail_on_no_tests, 'default'), eq(parameters.MAX_STAGE, 'ALL')))) }}:
+      ctest_no_tests_args: ''
 
   pool:
     name: ${{ parameters.pool_name }}
@@ -128,7 +169,7 @@ jobs:
       # [continues, with none of our code on any stack]
 
       # Use wrapper template for VSTest - handles ARM64 (VSTest@3) vs x64 (VSTest@2) transparently
-      - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
+      - ${{ if and(parameters.run_vstest, eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
         - template: tasks/vstest.yml
           parameters:
             architecture: ${{ parameters.ARCH_TYPE }}
@@ -170,7 +211,7 @@ jobs:
                 working_directory: '$(Build.BinariesDirectory)/c'
                 name_pattern: '${{ parameters.hang_watchdog_name_pattern }}'
                 dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
-                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml -E "_int($|_)|_perf($|_)|_e2e($|_)"'
+                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 $(ctest_no_tests_args) --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml $(ctest_include_args) -E "_int($|_)|_perf($|_)|_e2e($|_)"'
           - ${{ if eq(parameters.MAX_STAGE, 'INT_TESTS') }}:
             - template: run_with_hang_watchdog.yml
               parameters:
@@ -180,7 +221,7 @@ jobs:
                 working_directory: '$(Build.BinariesDirectory)/c'
                 name_pattern: '${{ parameters.hang_watchdog_name_pattern }}'
                 dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
-                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml -E "_perf($|_)|_e2e($|_)"'
+                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 $(ctest_no_tests_args) --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml $(ctest_include_args) -E "_perf($|_)|_e2e($|_)"'
           - ${{ if eq(parameters.MAX_STAGE, 'ALL') }}:
             - template: run_with_hang_watchdog.yml
               parameters:
@@ -190,7 +231,7 @@ jobs:
                 working_directory: '$(Build.BinariesDirectory)/c'
                 name_pattern: '${{ parameters.hang_watchdog_name_pattern }}'
                 dump_threshold_sec: ${{ parameters.hang_dump_threshold_sec }}
-                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 --no-tests=error --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+                arguments: '-C ${{ parameters.build_configuration }} --output-on-failure --interactive-debug-mode 1 $(ctest_no_tests_args) --output-junit ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml $(ctest_include_args)'
 
         - ${{ if not(parameters.enable_hang_watchdog) }}:
           - template: tasks/ctest.yml
@@ -199,12 +240,15 @@ jobs:
               workingDirectory: '$(Build.BinariesDirectory)/c'
               configuration: '${{ parameters.build_configuration }}'
               outputJunit: 'ctest_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+              includeTests: '${{ parameters.ctest_include_tests }}'
+              ${{ if or(eq(parameters.fail_on_no_tests, 'true'), and(eq(parameters.fail_on_no_tests, 'default'), eq(parameters.MAX_STAGE, 'ALL'))) }}:
+                noTestsError: true
+              ${{ if not(or(eq(parameters.fail_on_no_tests, 'true'), and(eq(parameters.fail_on_no_tests, 'default'), eq(parameters.MAX_STAGE, 'ALL')))) }}:
+                noTestsError: false
               ${{ if eq(parameters.MAX_STAGE, 'UNIT_TESTS') }}:
                 excludeTests: '_int($|_)|_perf($|_)|_e2e($|_)'
-                noTestsError: false
               ${{ if eq(parameters.MAX_STAGE, 'INT_TESTS') }}:
                 excludeTests: '_perf($|_)|_e2e($|_)'
-                noTestsError: false
 
       - ${{ if eq(parameters.run_test_suite_without_ctest, '') }}:
         - task: PublishTestResults@2
@@ -242,12 +286,19 @@ jobs:
               workingDirectory: '$(Build.BinariesDirectory)/c'
               configuration: '${{ parameters.build_configuration }}'
               outputJunit: 'ctest_appverifier_results_${{ parameters.build_configuration }}${{ parameters.BUILD_SUFFIX }}.xml'
+              includeTests: '${{ parameters.ctest_include_tests }}'
               # noTestsError is true only when no exclude reason is in play. Either
               # an appverifier_skip_tests_list or a MAX_STAGE category filter
               # (UNIT_TESTS or INT_TESTS) constitutes a deliberate exclude, so
               # matching zero tests is legitimate (e.g. macro-utils-c only has _int
               # tests). Only ALL with no skip list expects every listed test to run.
-              noTestsError: ${{ and(eq(parameters.appverifier_skip_tests_list, ''), eq(parameters.MAX_STAGE, 'ALL')) }}
+              # fail_on_no_tests overrides that default when the caller knows better.
+              ${{ if eq(parameters.fail_on_no_tests, 'default') }}:
+                noTestsError: ${{ and(eq(parameters.appverifier_skip_tests_list, ''), eq(parameters.MAX_STAGE, 'ALL')) }}
+              ${{ if eq(parameters.fail_on_no_tests, 'true') }}:
+                noTestsError: true
+              ${{ if eq(parameters.fail_on_no_tests, 'false') }}:
+                noTestsError: false
               # See the comment on the regular ctest invocation above for why
               # UNIT_TESTS skips _int/_perf/_e2e and INT_TESTS skips only
               # _perf/_e2e. AppVerifier helper itself configures appverif for
