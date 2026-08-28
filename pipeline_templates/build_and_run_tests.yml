@@ -84,9 +84,24 @@ parameters:
     type: number
     default: 1200
 
+  # Optional label appended to the job display name. BUILD_SUFFIX only feeds the job id, so two
+  # legs that share a flavor (same build_configuration / GBALLOC_LL_TYPE / ARCH_TYPE /
+  # FSANITIZE_TYPE / APP_VERIFIER / MAX_STAGE) otherwise render identically in the UI.
+  - name: job_label
+    type: string
+    default: ''
+
+  # When false, skip the VSTest step and the code coverage publish nested with it. Use this for
+  # legs built with -Drun_unittests:bool=OFF, where the *_ut_*.dll glob is legitimately empty --
+  # it is clearer than muting the empty-glob failure with failOnMinTestsNotRun, and it avoids
+  # launching a test runner that has nothing to run.
+  - name: run_vstest
+    type: boolean
+    default: true
+
 jobs:
 - job: build_and_run_tests_${{ parameters.BUILD_SUFFIX }}
-  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}, MAX_STAGE=${{ parameters.MAX_STAGE }}'
+  displayName: 'Build and run tests, build_configuration: ${{ parameters.build_configuration }}, ${{ parameters.GBALLOC_LL_TYPE}}, ARCH_TYPE=${{ parameters.ARCH_TYPE }}, FSANITIZE_TYPE: ${{ parameters.FSANITIZE_TYPE}}, APP_VERIFIER=${{ parameters.APP_VERIFIER }}, MAX_STAGE=${{ parameters.MAX_STAGE }}${{ parameters.job_label }}'
 
   variables:
     ${{ if eq(parameters.FSANITIZE_TYPE, 'ON') }}:
@@ -128,7 +143,7 @@ jobs:
       # [continues, with none of our code on any stack]
 
       # Use wrapper template for VSTest - handles ARM64 (VSTest@3) vs x64 (VSTest@2) transparently
-      - ${{ if and(eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
+      - ${{ if and(parameters.run_vstest, eq(parameters.FSANITIZE_TYPE, 'OFF'), eq(parameters.run_test_suite_without_ctest, '')) }}:
         - template: tasks/vstest.yml
           parameters:
             architecture: ${{ parameters.ARCH_TYPE }}
