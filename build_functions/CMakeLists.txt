@@ -347,6 +347,59 @@ function(build_as_csharp_net10_windows_project targetname)
     build_as_csharp_netcore_project_with_framework(${targetname} "net10.0-windows" "win-${CMAKE_VS_PLATFORM_NAME}")
 endfunction()
 
+# Warns (never fails) when no installed .NET SDK matches the version pinned by the consuming
+# repo's global.json. Without this, SDK-style C# projects fail late with a confusing
+# "The SDK 'Microsoft.NET.Sdk' specified could not be found." A warning rather than an error
+# because .NET Framework / classic-CSC projects build fine with no dotnet SDK installed, so
+# failing hard would spuriously block CI legs that never build SDK-style projects.
+# global_json_dir: directory holding global.json, typically ${CMAKE_SOURCE_DIR}.
+function(check_dotnet_sdk_from_global_json global_json_dir)
+    if(NOT EXISTS "${global_json_dir}/global.json")
+        return()
+    endif()
+
+    file(READ "${global_json_dir}/global.json" global_json_contents)
+    string(REGEX MATCH "\"version\"[ \t]*:[ \t]*\"([^\"]+)\"" version_match "${global_json_contents}")
+    if(version_match)
+        set(required_sdk "${CMAKE_MATCH_1}")
+    else()
+        set(required_sdk "an SDK version")
+    endif()
+
+    find_program(DOTNET_EXECUTABLE NAMES dotnet)
+    if(WIN32 AND NOT DOTNET_EXECUTABLE)
+        find_program(DOTNET_EXECUTABLE NAMES dotnet
+            PATHS "$ENV{ProgramFiles}/dotnet" "$ENV{ProgramW6432}/dotnet"
+            NO_DEFAULT_PATH)
+    endif()
+
+    if(DOTNET_EXECUTABLE)
+        # Running from global_json_dir makes the SDK resolver honor global.json, including
+        # rollForward, allowPrerelease, and feature-band rules.
+        execute_process(COMMAND "${DOTNET_EXECUTABLE}" --version
+            WORKING_DIRECTORY "${global_json_dir}"
+            RESULT_VARIABLE resolve_result OUTPUT_VARIABLE resolved_sdk
+            ERROR_VARIABLE resolve_error
+            OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_STRIP_TRAILING_WHITESPACE)
+        if(resolve_result EQUAL 0)
+            message(STATUS ".NET SDK ${resolved_sdk} resolves ${global_json_dir}/global.json (dotnet at ${DOTNET_EXECUTABLE})")
+            return()
+        endif()
+
+        # --list-sdks ignores global.json, so it is useful diagnostic context on failure.
+        execute_process(COMMAND "${DOTNET_EXECUTABLE}" --list-sdks
+            OUTPUT_VARIABLE installed_sdks
+            ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif()
+
+    message(WARNING
+        "No installed .NET SDK can resolve ${global_json_dir}/global.json (requires ${required_sdk}). "
+        "SDK-style C# projects will fail with \"The SDK 'Microsoft.NET.Sdk' specified could not be found.\"\n"
+        "Resolver output:\n${resolve_error}\n"
+        "Installed SDKs:\n${installed_sdks}\n"
+        "Install the pinned SDK or disable SDK-style C# projects for this build.")
+endfunction()
+
 # variable to store list of libs that must be checked for reals
 set(LIBS_TO_BE_REAL_CHECKED CACHE INTERNAL "LIBS_TO_BE_CHECKED")
 
