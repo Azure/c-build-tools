@@ -347,8 +347,8 @@ function(build_as_csharp_net10_windows_project targetname)
     build_as_csharp_netcore_project_with_framework(${targetname} "net10.0-windows" "win-${CMAKE_VS_PLATFORM_NAME}")
 endfunction()
 
-# Warns (never fails) when no installed .NET SDK matches the version pinned by the consuming
-# repo's global.json. Without this, SDK-style C# projects fail late with a confusing
+# Warns (never fails) when installed .NET SDKs cannot resolve the consuming repo's global.json.
+# Without this, SDK-style C# projects fail late with a confusing
 # "The SDK 'Microsoft.NET.Sdk' specified could not be found." A warning rather than an error
 # because .NET Framework / classic-CSC projects build fine with no dotnet SDK installed, so
 # failing hard would spuriously block CI legs that never build SDK-style projects.
@@ -382,7 +382,9 @@ function(check_dotnet_sdk_from_global_json global_json_dir)
             ERROR_VARIABLE resolve_error
             OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_STRIP_TRAILING_WHITESPACE)
         if(resolve_result EQUAL 0)
-            message(STATUS ".NET SDK ${resolved_sdk} resolves ${global_json_dir}/global.json (dotnet at ${DOTNET_EXECUTABLE})")
+            message(STATUS
+                ".NET SDK ${resolved_sdk} resolves ${global_json_dir}/global.json "
+                "(dotnet at ${DOTNET_EXECUTABLE})")
             return()
         endif()
 
