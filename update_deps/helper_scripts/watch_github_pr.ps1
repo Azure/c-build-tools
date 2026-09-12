@@ -59,7 +59,26 @@ function get-github-pr-display-data
     $checks_output = gh pr checks --json name,state,bucket,startedAt,completedAt,link 2>&1
     if($LASTEXITCODE -ne 0)
     {
-        # error getting checks
+        # gh pr checks fails on merged/closed PRs — check if PR was merged
+        $state_output = gh pr view --json state --jq '.state' 2>&1
+        if ($LASTEXITCODE -eq 0 -and $state_output -eq "MERGED")
+        {
+            $result = @{
+                PrUrl = $pr_url
+                Checks = @([PSCustomObject]@{
+                    Name = "PR merged"
+                    Status = [PrCheckStatus]::Succeeded
+                    StartTime = $null
+                    FinishTime = $null
+                    Url = ""
+                })
+                Counts = @{ Succeeded = 1; Failed = 0; Running = 0; Pending = 0; Cancelled = 0; Skipped = 0 }
+            }
+        }
+        else
+        {
+            # genuinely failed to get checks
+        }
     }
     else
     {
@@ -165,7 +184,27 @@ function watch-github-pr-checks
         $checks_output = gh pr checks --json name,state,bucket,startedAt,completedAt,link 2>&1
         if($LASTEXITCODE -ne 0)
         {
-            # error getting checks
+            # gh pr checks fails on merged/closed PRs — check if PR was merged
+            $state_output = gh pr view --json state --jq '.state' 2>&1
+            if ($LASTEXITCODE -eq 0 -and $state_output -eq "MERGED")
+            {
+                # PR is merged — return a synthetic "all passed" result
+                $result = @{
+                    PrUrl = $pr_url
+                    Checks = @([PSCustomObject]@{
+                        Name = "PR merged"
+                        Status = [PrCheckStatus]::Succeeded
+                        StartTime = $null
+                        FinishTime = $null
+                        Url = ""
+                    })
+                    Counts = @{ Succeeded = 1; Failed = 0; Running = 0; Pending = 0; Cancelled = 0; Skipped = 0 }
+                }
+            }
+            else
+            {
+                # genuinely failed to get checks
+            }
         }
         else
         {

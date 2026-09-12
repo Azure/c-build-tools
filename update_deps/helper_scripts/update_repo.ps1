@@ -228,6 +228,7 @@ function update-repo
         [string] $new_branch_name
     )
     Write-Host "`n`nUpdating repo $repo_name"
+    Write-Verbose "update-repo: repo=$repo_name, is_resume=$($global:is_resume), auto_fix=$($global:auto_fix)"
     set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS
     $global:current_repo = $repo_name
 
@@ -253,6 +254,7 @@ function update-repo
     {
         # Check PR disposition: merged, abandoned, or active
         $disposition = get-pr-disposition -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
+        Write-Verbose "PR disposition for $existing_pr_url : $disposition"
 
         if ($disposition -eq "merged")
         {
@@ -297,8 +299,11 @@ function update-repo
 
                 set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $existing_pr_url
                 monitor-pr -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
-                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
-                update-fixed-commit $repo_name
+                if (-not $global:propagation_cancelled)
+                {
+                    set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
+                    update-fixed-commit $repo_name
+                }
             }
             else
             {
@@ -332,6 +337,7 @@ function update-repo
             if ($global:auto_fix)
             {
                 $check_status = test-pr-checks-already-failed -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
+                Write-Verbose "Resume check-already-failed: AlreadyFailed=$($check_status.AlreadyFailed), Message='$($check_status.Message)'"
                 if ($check_status.AlreadyFailed)
                 {
                     Write-Host "PR checks already failed: $($check_status.Message)" -ForegroundColor Yellow
@@ -384,8 +390,11 @@ function update-repo
             }
             set-repo-status -repo_name $repo_name -status $script:STATUS_IN_PROGRESS -pr_url $existing_pr_url
             monitor-pr -pr_url $existing_pr_url -repo_name $repo_name -repo_type $repo_type
-            set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
-            update-fixed-commit $repo_name
+            if (-not $global:propagation_cancelled)
+            {
+                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $existing_pr_url
+                update-fixed-commit $repo_name
+            }
             }
         }
     }
@@ -409,14 +418,20 @@ function update-repo
             if ($repo_type -eq "github")
             {
                 $pr_url = update-repo-github $repo_name $new_branch_name $description
-                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-                update-fixed-commit $repo_name
+                if (-not $global:propagation_cancelled)
+                {
+                    set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+                    update-fixed-commit $repo_name
+                }
             }
             elseif ($repo_type -eq "azure")
             {
                 $pr_url = update-repo-azure $repo_name $new_branch_name $description
-                set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
-                update-fixed-commit $repo_name
+                if (-not $global:propagation_cancelled)
+                {
+                    set-repo-status -repo_name $repo_name -status $script:STATUS_UPDATED -pr_url $pr_url
+                    update-fixed-commit $repo_name
+                }
             }
             else
             {

@@ -608,6 +608,16 @@ function global:Test-ChecksComplete
         $failed_builds = $ci_checks | Where-Object {
             $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
         }
+        $all_failed = @($ci_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed })
+        if ($all_failed.Count -gt 0)
+        {
+            $all_failed_names = ($all_failed | ForEach-Object { "$($_.Name) [IsBlocking=$($_.IsBlocking)]" }) -join ", "
+            Write-Verbose "Test-ChecksComplete: failed checks: $all_failed_names"
+        }
+        else
+        {
+            # no failed checks
+        }
         if($failed_builds.Count -gt 0)
         {
             $failed_names = ($failed_builds | ForEach-Object { $_.Name }) -join ", "
@@ -726,6 +736,7 @@ function global:watch-pr-status
         if((Get-Date) -gt $timeout_time)
         {
             Write-Host "`nTimeout reached after $timeout minutes" -ForegroundColor Red
+            Write-Verbose "watch-pr-status timeout: started=$start_time, now=$(Get-Date), timeout_at=$timeout_time"
             $fn_result = @{ Success = $false; Message = "Timeout" }
         }
         else
@@ -794,6 +805,7 @@ function global:watch-pr-status
                 $completion_result = & $TestComplete $display_data
                 if($completion_result.Complete)
                 {
+                    Write-Verbose "PR checks complete: Success=$($completion_result.Success), Message='$($completion_result.Message)'"
                     Write-Host ""
                     $fn_result = $completion_result
                 }
