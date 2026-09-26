@@ -13,14 +13,7 @@
                               <Source>.*\\deps\\.*</Source>
                           </Exclude>
                       </Sources>
-                      <!-- The test binaries run here are native. Visual Studio 2022 collected native coverage out of
-                           the box, but Visual Studio 2026 (18.x) flipped the default of EnableDynamicNativeInstrumentation
-                           to False. The collector then falls back to STATIC native instrumentation, which fails on these
-                           binaries with "ErrorNoFixupData" (static instrumentation needs images linked with /PROFILE).
-                           Every native module is dropped, the run still succeeds, and the coverage .xml is emitted with
-                           zero <module> elements, so PublishCodeCoverageResults reports "Analyzing 0 classes" and warns
-                           "No coverage data generated to publish.". Re-enabling dynamic instrumentation restores the
-                           Visual Studio 2022 behaviour without requiring /PROFILE on every test binary. -->
+                      <!-- Visual Studio 2026 defaults this to False; static instrumentation then fails without /PROFILE, leaving native coverage empty. -->
                       <EnableDynamicNativeInstrumentation>True</EnableDynamicNativeInstrumentation>
                   </CodeCoverage>
               </Configuration>
