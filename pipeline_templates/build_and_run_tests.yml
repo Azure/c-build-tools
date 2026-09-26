@@ -157,6 +157,7 @@ jobs:
             # request it on x64. Mirrors codeCoverageEnabled above; passed via
             # otherConsoleOptions because tasks/vstest.yml currently appends
             # otherConsoleOptions verbatim and does not honor codeCoverageEnabled itself.
+            # tests_native.runsettings declares the collector disabled, so this /collect is what turns it on.
             ${{ if ne(parameters.ARCH_TYPE, 'ARM64') }}:
               otherConsoleOptions: '/collect:"Code Coverage;Format=Xml"'
             runSettingsFile: '${{ parameters.repo_root_override }}/pipeline_templates/scripts/tests_native.runsettings'
