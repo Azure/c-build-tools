@@ -39,7 +39,7 @@ parameters:
     default: true
   - name: pool_name
     type: string
-    default: "Azure-MessagingStore-Win-x64-Dadsv5-v19"
+    default: "Azure-MessagingStore-Win-x64-Dadsv6-v04"
   # MAX_STAGE is set per-architecture by build_all_flavors.yml (the only intended
   # caller). Policy:
   #   ARM64     -> arm64_max_stage (default UNIT_TESTS; caller-settable so repos
