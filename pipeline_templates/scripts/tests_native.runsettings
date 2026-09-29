@@ -13,6 +13,8 @@
                               <Source>.*\\deps\\.*</Source>
                           </Exclude>
                       </Sources>
+                      <!-- Visual Studio 2026 defaults this to False; static instrumentation then fails without /PROFILE, leaving native coverage empty. -->
+                      <EnableDynamicNativeInstrumentation>True</EnableDynamicNativeInstrumentation>
                   </CodeCoverage>
               </Configuration>
           </DataCollector>
