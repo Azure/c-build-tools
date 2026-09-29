@@ -19,7 +19,7 @@ parameters:
 
   - name: pool_name
     type: string
-    default: "Azure-MessagingStore-WinBuildPoolVS2022_1"
+    default: "Azure-MessagingStore-Win-x64-Dadsv6-v04"
 
   - name: setup_nuget
     type: boolean
