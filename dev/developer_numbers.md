@@ -4,8 +4,8 @@
 
 Developer numbers (dev id) are used with srs_extension from c-build-tools.
 
-- Dan Cristoloveanu - `1`
-- Andrei Porumb - `2`
+- Dan Cristoloveanu - `01`
+- Andrei Porumb - `02`
 - Matt Durak - `42`
 - Jelani Brandon - `11`
 - Riddhi Gupta - `24`
@@ -24,9 +24,9 @@ Developer numbers (dev id) are used with srs_extension from c-build-tools.
 
 # Inactive
 
-- Raj Vengalil - `4`
+- Raj Vengalil - `04`
 - Cyrus Jackson - `13`
-- Amar Sagare - `3`
+- Amar Sagare - `03`
 - Hari Damineni - `44`
-- Bingyi Yang - `7`
-- Nishikant Deshmukh - `5`
+- Bingyi Yang - `07`
+- Nishikant Deshmukh - `05`
