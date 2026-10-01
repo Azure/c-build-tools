@@ -2,6 +2,13 @@
 # hardware, OS, drive mapping (with NVMe details), and software versions.
 # Uses inline script so it works before checkout / submodule init.
 
+parameters:
+  # Query Azure IMDS (169.254.169.254) for VM and NIC details. IMDS is also skipped automatically
+  # while 1ES Network Isolation is active: it blocks IMDS and reports each attempt as a pipeline warning.
+  - name: query_imds
+    type: boolean
+    default: true
+
 steps:
   - task: PowerShell@2
     displayName: 'Machine Information'
@@ -263,14 +270,22 @@ steps:
         }
 
         $instance = $null
-        if (Test-Imds) {
+        $imdsSkipReason = $null
+        if ('${{ parameters.query_imds }}' -ne 'True') {
+            $imdsSkipReason = 'query_imds is false'
+        } elseif (-not [string]::IsNullOrEmpty(${env:1ESNI_CONFIG_PATH})) {
+            # 1ES Network Isolation sets 1ESNI_CONFIG_PATH while it is active.
+            $imdsSkipReason = '1ES Network Isolation is active and blocks IMDS'
+        } elseif (Test-Imds) {
             $instance = Get-ImdsJson 'http://169.254.169.254/metadata/instance?api-version=2023-07-01'
             if ($null -eq $instance) {
                 $instance = Get-ImdsJson 'http://169.254.169.254/metadata/instance?api-version=2021-02-01'
             }
         }
 
-        if ($null -eq $instance) {
+        if ($imdsSkipReason) {
+            Write-Host "  Skipped: $imdsSkipReason."
+        } elseif ($null -eq $instance) {
             Write-Host "  IMDS not reachable - not an Azure VM, blocked, or timed out. Skipping Azure metadata."
         } else {
             try {
@@ -303,7 +318,9 @@ steps:
 
         # --- Azure Network (IMDS) ---
         Write-Host "--- Azure Network (IMDS) ---"
-        if ($null -eq $instance) {
+        if ($imdsSkipReason) {
+            Write-Host "  Skipped: $imdsSkipReason."
+        } elseif ($null -eq $instance) {
             Write-Host "  IMDS not reachable - skipping."
         } else {
             try {
