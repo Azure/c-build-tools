@@ -21,7 +21,7 @@ All wrappers require the `discover_native_tools.yml` template to be called first
 - `$(msbuildPath)` - MSBuild.exe (architecture-specific)
 - `$(dumpbinPath)` - dumpbin.exe (architecture-specific)
 - `$(vstestPath)` - vstest.console.exe (architecture-specific)
-- `$(appverifPath)` - appverif.exe (empty string if not installed; consumed by `run_ctests_with_appverifier.yml` and `disable_appverifier.yml`)
+- `$(appverifPath)` - appverif.exe (mandatory; discovery fails the job if not found; consumed by `run_ctests_with_appverifier.yml` and `disable_appverifier.yml`)
 - `$(cmakeGenerator)` - CMake generator string (e.g., "Visual Studio 18 2026")
 - `$(cmakeArch)` - CMake architecture flag (x64, Win32, ARM64)
 - `$(targetPlatform)` - MSBuild platform (x64, Win32, ARM64)
