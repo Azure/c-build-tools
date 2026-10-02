@@ -271,7 +271,7 @@ steps:
 
         $instance = $null
         $imdsSkipReason = $null
-        if ('${{ parameters.query_imds }}' -ne 'True') {
+        if (-not $${{ parameters.query_imds }}) {
             $imdsSkipReason = 'query_imds is false'
         } elseif (-not [string]::IsNullOrEmpty(${env:1ESNI_CONFIG_PATH})) {
             # 1ES Network Isolation sets 1ESNI_CONFIG_PATH while it is active.
