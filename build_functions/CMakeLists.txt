@@ -347,6 +347,63 @@ function(build_as_csharp_net10_windows_project targetname)
     build_as_csharp_netcore_project_with_framework(${targetname} "net10.0-windows" "win-${CMAKE_VS_PLATFORM_NAME}")
 endfunction()
 
+# Configures a .NET Framework C# project.
+# signature: build_as_csharp_netfx_project(targetname framework_version snk_path)
+#   framework_version: DOTNET_TARGET_FRAMEWORK_VERSION, for example "v4.8.1"
+#   snk_path: strong name key used for delay signing
+# RuntimeIdentifier, PlatformTarget and repo specific warning settings are left to the caller.
+function(build_as_csharp_netfx_project targetname framework_version snk_path)
+    if(NOT EXISTS "${snk_path}")
+        message(FATAL_ERROR "build_as_csharp_netfx_project(${targetname}): snk_path ${snk_path} does not exist")
+    endif()
+    set_target_properties(${targetname} PROPERTIES
+        DOTNET_TARGET_FRAMEWORK_VERSION ${framework_version}
+        VS_GLOBAL_Configurations "Debug;Release;RelWithDebInfo;MinSizeRel"
+        VS_GLOBAL_AssemblyOriginatorKeyFile "${snk_path}"
+        VS_GLOBAL_SignAssembly true
+        VS_GLOBAL_DelaySign true
+        VS_GLOBAL_TreatWarningsAsErrors true
+        VS_GLOBAL_AutoGenerateBindingRedirects true)
+endfunction()
+
+# Configures a framework-dependent SDK-style C# project (no RuntimeIdentifier, not SelfContained),
+# so the output does not carry a copy of the .NET runtime and runs on the installed runtime.
+# signature: build_as_csharp_netcore_framework_dependent_project(targetname framework snk_path [TEST])
+#   framework: DOTNET_TARGET_FRAMEWORK, for example "net10.0" or "net8.0-windows"
+#   snk_path: strong name key used for delay signing
+#   TEST: marks the project as a test project and appends a Microsoft.NET.Test.Sdk package reference.
+#         The version comes from central package management (Directory.Packages.props).
+#         Callers must append to VS_PACKAGE_REFERENCES afterwards, not overwrite it.
+function(build_as_csharp_netcore_framework_dependent_project targetname framework snk_path)
+    set(is_test FALSE)
+    foreach(arg IN LISTS ARGN)
+        if(arg STREQUAL "TEST")
+            set(is_test TRUE)
+        else()
+            message(FATAL_ERROR "build_as_csharp_netcore_framework_dependent_project(${targetname}): unknown argument ${arg}")
+        endif()
+    endforeach()
+    if(NOT EXISTS "${snk_path}")
+        message(FATAL_ERROR "build_as_csharp_netcore_framework_dependent_project(${targetname}): snk_path ${snk_path} does not exist")
+    endif()
+
+    set_target_properties(${targetname} PROPERTIES
+        DOTNET_SDK "Microsoft.NET.Sdk"
+        DOTNET_TARGET_FRAMEWORK ${framework}
+        VS_GLOBAL_PlatformTarget ${CMAKE_VS_PLATFORM_NAME}
+        VS_GLOBAL_Platforms ${CMAKE_VS_PLATFORM_NAME}
+        VS_GLOBAL_Configurations "Debug;Release;RelWithDebInfo;MinSizeRel"
+        VS_GLOBAL_AssemblyOriginatorKeyFile "${snk_path}"
+        VS_GLOBAL_SignAssembly true
+        VS_GLOBAL_DelaySign true
+        VS_GLOBAL_TreatWarningsAsErrors true
+        VS_GLOBAL_AppendTargetFrameworkToOutputPath false)
+    if(is_test)
+        set_target_properties(${targetname} PROPERTIES VS_GLOBAL_IsTestProject true)
+        set_property(TARGET ${targetname} APPEND PROPERTY VS_PACKAGE_REFERENCES "Microsoft.NET.Test.Sdk_")
+    endif()
+endfunction()
+
 # Warns (never fails) when installed .NET SDKs cannot resolve the consuming repo's global.json.
 # Without this, SDK-style C# projects fail late with a confusing
 # "The SDK 'Microsoft.NET.Sdk' specified could not be found." A warning rather than an error
