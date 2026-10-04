@@ -25,6 +25,9 @@ parameters:
     type: boolean
     default: false
 
+  - name: repo_root
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
+
 jobs:
 - job: run_repo_validation
   displayName: 'Run repo validation and traceability'
@@ -43,6 +46,7 @@ jobs:
     parameters:
       ARCH_TYPE: 'x64'
       setup_nuget: ${{ parameters.setup_nuget }}
+      repo_root: ${{ parameters.repo_root }}
 
   # CMake generate with repo validation and traceability enabled
   - template: tasks/cmake.yml
