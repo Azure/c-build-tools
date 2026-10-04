@@ -35,10 +35,6 @@ jobs:
   steps:
   - template: get_machine_information.yml
 
-  - template: discover_native_tools.yml
-    parameters:
-      architecture: 'x64'
-
   # Shallow clone - only need the code at this commit, not full history
   - checkout: self
     # Retry on failure to handle transient network connection failures (curl 56 / early EOF).
@@ -50,6 +46,11 @@ jobs:
   # Shallow submodules - only need the pinned commit, not full history
   - script: git submodule update --init --depth 1 --jobs 20
     displayName: 'Shallow checkout submodules'
+
+  - template: discover_native_tools.yml
+    parameters:
+      architecture: 'x64'
+      repo_root: ${{ parameters.repo_root }}
 
   - task: DeleteFiles@1
     displayName: 'Clean build binaries directory'

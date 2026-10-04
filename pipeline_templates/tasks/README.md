@@ -15,7 +15,7 @@ These wrapper templates use `discover_native_tools.yml` to find the correct tool
 
 ## Prerequisites
 
-All wrappers require the `discover_native_tools.yml` template to be called first, which sets:
+All wrappers require the `discover_native_tools.yml` template to be called first, after the checkout that provides c-build-tools at its `repo_root` parameter (default `$(Build.SourcesDirectory)/deps/c-build-tools`; pass `$(Build.SourcesDirectory)` from within c-build-tools). It sets:
 - `$(cmakePath)` - cmake.exe from the VS installation
 - `$(ctestPath)` - ctest.exe from the VS installation
 - `$(msbuildPath)` - MSBuild.exe (architecture-specific)
@@ -75,6 +75,7 @@ steps:
   - template: discover_native_tools.yml
     parameters:
       architecture: 'ARM64'
+      repo_root: '$(Build.SourcesDirectory)'
 
   - template: tasks/cmake.yml
     parameters:
