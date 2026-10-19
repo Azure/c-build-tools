@@ -593,6 +593,11 @@ macro(use_vcpkg vcpkgPath)
     set(ENV{VCPKG_BINARY_SOURCES} "clear;nuget,https://msazure.pkgs.visualstudio.com/One/_packaging/azure-messagingstore-vcpkg-cache/nuget/v3/index.json,readwrite")
 
     if (EXISTS ${vcpkgPath}/scripts/buildsystems/vcpkg.cmake)
+        # Disable vcpkg metrics. With metrics enabled every vcpkg.exe invocation copies its own executable
+        # to %TEMP% on exit; in parallel builds that copy races with launching vcpkg.exe for the z-applocal
+        # post-build steps and fails them with a sharing violation (exit code 32). vcpkg.exe checks for
+        # this file next to itself on every run, so it also covers vcpkg.exe binaries bootstrapped earlier.
+        file(TOUCH "${vcpkgPath}/vcpkg.disable-metrics")
         set(VCPKG_OVERLAY_TRIPLETS "${build_c_tests_internal_dir}/../vcpkg_triplets/")
         # VCPKG_OVERLAY_PORTS must be set BEFORE including vcpkg.cmake: the toolchain captures it
         # into a FORCE cache variable at include time and uses it for the manifest-mode install.
