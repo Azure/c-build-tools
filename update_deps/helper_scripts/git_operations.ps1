@@ -1,4 +1,4 @@
-﻿# Copyright (c) Microsoft. All rights reserved.
+# Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 # Git operations functions for propagate_updates.ps1
@@ -320,10 +320,72 @@ function update-submodules-to-fixed-commits
     }
 }
 
+# Update GitHub Actions c-build-tools uses refs to match the submodule SHA.
+function update-c-build-tools-github-refs
+{
+    param(
+        [Parameter(Mandatory=$true)][string] $new_sha
+    )
+
+    $candidate_files = @()
+    if (Test-Path ".github/workflows")
+    {
+        $candidate_files += Get-ChildItem -Path ".github/workflows" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -eq ".yml" -or $_.Extension -eq ".yaml" }
+    }
+    else
+    {
+        # no GitHub workflow directory
+    }
+
+    $candidate_files += Get-ChildItem -Path "." -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq "action.yml" -or $_.Name -eq "action.yaml" }
+
+    $search_roots = Get-ChildItem -Path "." -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notin @("deps", "cmake", ".git") }
+    foreach ($search_root in $search_roots)
+    {
+        $candidate_files += Get-ChildItem -Path $search_root.FullName -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq "action.yml" -or $_.Name -eq "action.yaml" }
+    }
+
+    $pattern = '(?im)(^[ \t]*(?:-[ \t]*)?uses:[ \t]*["'']?Azure/c-build-tools/[^@\s"'']+@)([^#\s"'']+)'
+    $utf8_no_bom = New-Object System.Text.UTF8Encoding $false
+
+    foreach ($file in ($candidate_files | Sort-Object -Property FullName -Unique))
+    {
+        $content = [System.IO.File]::ReadAllText($file.FullName)
+        $updated_content = [regex]::Replace(
+            $content,
+            $pattern,
+            {
+                param($match)
+                if ($match.Groups[2].Value -eq $new_sha)
+                {
+                    $match.Value
+                }
+                else
+                {
+                    $match.Groups[1].Value + $new_sha
+                }
+            })
+
+        if ($updated_content -ne $content)
+        {
+            [System.IO.File]::WriteAllText($file.FullName, $updated_content, $utf8_no_bom)
+            Write-Host "  Updated c-build-tools GitHub Actions refs in $($file.FullName)" -ForegroundColor Green
+        }
+        else
+        {
+            # file did not contain an outdated c-build-tools uses ref
+        }
+    }
+}
+
 # Update c-build-tools YAML refs to match the current submodule SHA.
 # After update-submodules-to-fixed-commits has checked out the new c-build-tools commit,
-# this function updates inline ref: fields in build/*.yml files with "repository: c_build_tools"
-# blocks. This prevents validate_c_build_tools_ref from failing on propagation PRs.
+# this function updates inline ref: fields in build/*.yml files and GitHub Actions
+# uses refs. This prevents validate_c_build_tools_ref from failing on propagation PRs.
 function update-c-build-tools-yaml-refs
 {
     # Only repos with submodules have a .gitmodules file
@@ -450,23 +512,23 @@ function update-c-build-tools-yaml-refs
                             }
                         }
 
-                        # Update SHA refs that don't match the submodule
-                        if ($ref_line_index -ne -1 -and
-                            $ref_value -ne "refs/heads/master" -and
-                            $ref_value -match '^[0-9a-f]{40}$' -and
-                            $ref_value -ne $new_sha)
+                        # Update any ref that does not match the submodule.
+                        if ($ref_line_index -ne -1 -and $ref_value -ne $new_sha)
                         {
                             $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
-                            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-                            [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
-                            Write-Host "  Updated $($file.Name) ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+                            $utf8_no_bom = New-Object System.Text.UTF8Encoding $false
+                            [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8_no_bom)
+                            $old_ref_display = $ref_value.Substring(0, [Math]::Min(12, $ref_value.Length))
+                            Write-Host "  Updated $($file.Name) ref: $old_ref_display... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
                         }
                         else
                         {
-                            # ref already matches, is refs/heads/master, or not found
+                            # ref already matches or was not found
                         }
                     }
                 }
+
+                update-c-build-tools-github-refs -new_sha $new_sha
             }
         }
         else

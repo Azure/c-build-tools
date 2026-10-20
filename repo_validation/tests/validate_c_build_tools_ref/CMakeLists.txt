@@ -4,116 +4,155 @@
 #
 # c-build-tools Ref Validation Tests
 #
-# Tests the repo_validator_rs c_build_tools_ref check to ensure it correctly validates
-# that pipeline YAML files reference the correct c-build-tools commit SHA or master.
-#
-# Test SHA used across test data: aabbccdd00112233445566778899aabbccddeeff
+# Tests that Azure DevOps pipeline refs and GitHub Actions uses refs match the
+# repository's c-build-tools submodule SHA.
 #
 
 set(TEST_SHA "aabbccdd00112233445566778899aabbccddeeff")
 
-# Test 1: Verify tool passes when ref is refs/heads/master
-add_custom_target(test_validate_c_build_tools_ref_clean_master
-    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/valid_master_ref"
-        --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing c-build-tools ref validation with refs/heads/master (should pass)"
-    DEPENDS repo_validator_rs
-)
-
-# Test 2: Verify tool passes when ref matches the submodule SHA
 add_custom_target(test_validate_c_build_tools_ref_clean_sha
     COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/valid_sha_ref"
         --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing c-build-tools ref validation with matching SHA (should pass)"
+    COMMENT "Testing matching Azure DevOps c-build-tools SHA"
     DEPENDS repo_validator_rs
 )
 
-# Test 3: Verify tool passes (skips) when there is no c-build-tools submodule
-add_custom_target(test_validate_c_build_tools_ref_no_submodule
-    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/no_submodule"
+add_custom_target(test_validate_c_build_tools_ref_no_submodule_no_ref
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/no_submodule_no_ref"
         --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing c-build-tools ref validation with no submodule (should skip/pass)"
+    COMMENT "Testing repo without c-build-tools submodule or references"
     DEPENDS repo_validator_rs
 )
 
-# Test 4: Verify tool detects invalid SHA ref (exit code 1)
+add_custom_target(test_validate_c_build_tools_ref_clean_github
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/valid_github_refs"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing matching GitHub Actions c-build-tools refs"
+    DEPENDS repo_validator_rs
+)
+
+add_custom_target(test_validate_c_build_tools_ref_branch_detection
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/invalid_branch_ref"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing branch ref detection"
+    DEPENDS repo_validator_rs
+)
+
+add_custom_target(test_validate_c_build_tools_ref_missing_submodule_detection
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/missing_submodule"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing c-build-tools reference without submodule"
+    DEPENDS repo_validator_rs
+)
+
 add_custom_target(test_validate_c_build_tools_ref_detection
     COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/invalid_sha_ref"
         --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing c-build-tools ref detection of invalid SHA (should fail)"
+    COMMENT "Testing mismatched Azure DevOps SHA detection"
     DEPENDS repo_validator_rs
 )
 
-# Test 5: Verify fix functionality works (copy test files to temp directory first)
+add_custom_target(test_validate_c_build_tools_ref_github_detection
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/invalid_github_refs"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing invalid GitHub Actions ref detection"
+    DEPENDS repo_validator_rs
+)
+
 add_custom_target(test_validate_c_build_tools_ref_fix
-    # Create a temporary directory and copy test files
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/invalid_sha_ref"
         "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
-    # Run the tool with fix mode
     COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
         --check c_build_tools_ref --submodule-sha "${TEST_SHA}" --fix
-    # Verify the fix worked (tool should pass now)
     COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_fix_test"
         --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing c-build-tools ref fix functionality"
+    COMMENT "Testing Azure DevOps ref fix"
     DEPENDS repo_validator_rs
 )
 
-# Test 6: Verify tool handles multiple files correctly (mix of valid and invalid)
-# multiple_files/ has: devops_gated.yml (master=valid), devops_gated_docs.yml (correct SHA=valid),
-# devops_gated_passthrough.yml (wrong SHA=invalid) → should FAIL overall
+add_custom_target(test_validate_c_build_tools_ref_github_fix
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_github_fix_test"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_github_fix_test"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/invalid_github_refs"
+        "${CMAKE_CURRENT_BINARY_DIR}/temp_github_fix_test"
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_github_fix_test"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}" --fix
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_github_fix_test"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing GitHub Actions uses ref fixes"
+    DEPENDS repo_validator_rs
+)
+
 add_custom_target(test_validate_c_build_tools_ref_multiple_detection
     COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/multiple_files"
         --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing c-build-tools ref validation with multiple files (should fail on wrong SHA)"
+    COMMENT "Testing multiple mismatched c-build-tools refs"
     DEPENDS repo_validator_rs
 )
 
-# Test 7: Verify fix on multiple files only fixes the invalid one
 add_custom_target(test_validate_c_build_tools_ref_multiple_fix
-    # Create a temporary directory and copy test files
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_multi_fix_test"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_multi_fix_test"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/multiple_files"
         "${CMAKE_CURRENT_BINARY_DIR}/temp_multi_fix_test"
-    # Run the tool with fix mode
     COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_multi_fix_test"
         --check c_build_tools_ref --submodule-sha "${TEST_SHA}" --fix
-    # Verify the fix worked (tool should pass now)
     COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_multi_fix_test"
         --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Testing c-build-tools ref fix on multiple files"
+    COMMENT "Testing multiple c-build-tools ref fixes"
     DEPENDS repo_validator_rs
 )
 
-# Master target for all c-build-tools ref validation tests
+if(WIN32)
+    find_program(POWERSHELL_EXECUTABLE NAMES pwsh powershell REQUIRED)
+    add_custom_target(test_update_c_build_tools_github_refs
+        COMMAND "${POWERSHELL_EXECUTABLE}" -NoLogo -NoProfile -NonInteractive
+            -ExecutionPolicy Bypass -File
+            "${CMAKE_CURRENT_LIST_DIR}/../../../update_deps/tests/test_update_c_build_tools_github_refs.ps1"
+        COMMENT "Testing propagation updates GitHub Actions c-build-tools refs"
+    )
+endif()
+
 add_custom_target(test_validate_c_build_tools_ref
     COMMENT "Running all c-build-tools ref validation tests"
 )
 
-# Add dependencies - detection tests should fail (exit code 1), so not included as dependencies
 add_dependencies(test_validate_c_build_tools_ref
-    test_validate_c_build_tools_ref_clean_master
     test_validate_c_build_tools_ref_clean_sha
-    test_validate_c_build_tools_ref_no_submodule
+    test_validate_c_build_tools_ref_no_submodule_no_ref
+    test_validate_c_build_tools_ref_clean_github
     test_validate_c_build_tools_ref_fix
+    test_validate_c_build_tools_ref_github_fix
     test_validate_c_build_tools_ref_multiple_fix
 )
 
-# Master target for all expected-failure tests
+if(TARGET test_update_c_build_tools_github_refs)
+    add_dependencies(test_validate_c_build_tools_ref test_update_c_build_tools_github_refs)
+endif()
+
 add_custom_target(test_validate_c_build_tools_ref_failures
     COMMENT "Running all c_build_tools_ref failure detection tests"
 )
 add_dependencies(test_validate_c_build_tools_ref_failures
+    test_validate_c_build_tools_ref_branch_detection
+    test_validate_c_build_tools_ref_missing_submodule_detection
     test_validate_c_build_tools_ref_detection
+    test_validate_c_build_tools_ref_github_detection
     test_validate_c_build_tools_ref_multiple_detection
 )
