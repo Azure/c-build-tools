@@ -8,26 +8,6 @@ The repository validation framework provides a standardized way to run validatio
 
 ## Usage
 
-### c-build-tools GitHub Actions Ref Parity
-
-The `c_build_tools_ref` check requires every direct `Azure/c-build-tools/...@<ref>`
-in `.github/workflows/**/*.yml` or `*.yaml` and composite `action.yml`/`action.yaml`
-files to match the full gitlink SHA of `deps/c-build-tools`. The `.gitmodules`
-entry must identify that exact path and the Azure/c-build-tools GitHub repository.
-Branch names, tags, short SHAs, and mismatched full SHAs are violations.
-
-`--fix` rewrites mismatched refs while retaining quotes, comments, and line endings.
-References without a matching submodule are reported and cannot be auto-fixed.
-A repository with a submodule but no references, or with neither, passes.
-Azure DevOps `resources.repositories` refs, workflow templates, non-composite action
-metadata, comments, and literal/folded YAML scalar contents are not checked.
-
-Workflow/action structure is read with the Saphyr YAML 1.2 parser. Fixes replace
-only the literal ref within the parsed source span, without reserializing YAML;
-unrelated whitespace, quotes, comments, and line endings remain unchanged.
-If a ref cannot be safely located in source (for example an alias), it is reported
-for manual correction rather than rewritten heuristically.
-
 ### CMake Options
 
 Two CMake options control the repository validation behavior:
@@ -622,6 +602,16 @@ Test functions with violations: 2
 
 [VALIDATION FAILED]
 ```
+
+### c-build-tools Ref Validation
+
+**Check:** `c_build_tools_ref`
+
+**Purpose:** Ensures pinned c-build-tools refs match the `deps/c-build-tools` submodule:
+- Every `uses: Azure/c-build-tools/...@<ref>` line in `.github/workflows/` and in composite `action.yml`/`action.yaml` files (including hidden directories) must pin the full SHA of the `deps/c-build-tools` gitlink in `HEAD`. Branches, tags, and short or mismatched SHAs fail. When the submodule or gitlink is missing, each ref is reported with its file and line.
+- Azure DevOps `c_build_tools` repository resources must use `ref: refs/heads/master` or the submodule SHA.
+
+**Fix Mode:** Rewrites mismatched refs to the submodule SHA, keeping quotes and comments.
 
 ## Adding New Validations
 
