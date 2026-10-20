@@ -1,10 +1,7 @@
 
 # Build defaults
 
-`set_default_build_options()` selects C17 and requires at least C++17 for C++
-targets, including test targets. A caller-selected newer C++ standard is preserved.
-On MSVC, C++ builds suppress the C++17 C-header deprecation warning while shared
-C-facing dependency headers still include `<cstdbool>`.
+`set_default_build_options()` uses C17 and at least C++17; a newer caller-selected C++ standard is kept.
 
 # Contributing
 
@@ -19,3 +16,4 @@ provided by the bot. You will only need to do this once across all repos using o
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
