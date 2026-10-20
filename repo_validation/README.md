@@ -8,6 +8,20 @@ The repository validation framework provides a standardized way to run validatio
 
 ## Usage
 
+### c-build-tools GitHub Actions Ref Parity
+
+The `c_build_tools_ref` check requires every direct `Azure/c-build-tools/...@<ref>`
+in `.github/workflows/**/*.yml` or `*.yaml` and composite `action.yml`/`action.yaml`
+files to match the full gitlink SHA of `deps/c-build-tools`. The `.gitmodules`
+entry must identify that exact path and the Azure/c-build-tools GitHub repository.
+Branch names, tags, short SHAs, and mismatched full SHAs are violations.
+
+`--fix` rewrites mismatched refs while retaining quotes, comments, and line endings.
+References without a matching submodule are reported and cannot be auto-fixed.
+A repository with a submodule but no references, or with neither, passes.
+Azure DevOps `resources.repositories` refs, workflow templates, non-composite action
+metadata, comments, and literal/folded YAML scalar contents are not checked.
+
 ### CMake Options
 
 Two CMake options control the repository validation behavior:

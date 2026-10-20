@@ -13,16 +13,9 @@ pub struct CBuildToolsRef {
     fixed: i32,
 }
 
-#[derive(Clone, Copy)]
-enum RefKind {
-    PipelineRepository,
-    GithubUses,
-}
-
 struct RefOccurrence {
     line_index: usize,
     ref_value: String,
-    kind: RefKind,
 }
 
 struct YamlFile {
@@ -42,28 +35,44 @@ impl CBuildToolsRef {
     }
 }
 
-/// Parse .gitmodules to find the submodule path whose url contains "c-build-tools".
-/// Returns None if no match is found.
+fn is_cbt_url(url: &str) -> bool {
+    matches!(
+        url.trim()
+            .trim_matches('"')
+            .trim_end_matches('/')
+            .trim_end_matches(".git")
+            .to_ascii_lowercase()
+            .as_str(),
+        "https://github.com/azure/c-build-tools"
+            | "git@github.com:azure/c-build-tools"
+            | "ssh://git@github.com/azure/c-build-tools"
+    )
+}
+
+/// Both the canonical dependency path and the repository URL must match.
 fn find_cbt_submodule_path(gitmodules_content: &str) -> Option<String> {
     let mut current_path = String::new();
     let mut found_cbt = false;
 
-    for line in gitmodules_content.lines() {
-        if line.starts_with("[submodule ") {
+    for line in gitmodules_content.lines().chain(std::iter::once("[end]")) {
+        let line = line.trim();
+        if line.starts_with('[') {
+            if current_path == "deps/c-build-tools" && found_cbt {
+                return Some(current_path);
+            }
             current_path.clear();
             found_cbt = false;
         }
-        if let Some(rest) = line.trim().strip_prefix("path") {
+        if let Some(rest) = line.strip_prefix("path") {
             let rest = rest.trim_start();
             if let Some(val) = rest.strip_prefix('=') {
-                current_path = val.trim().to_string();
+                current_path = val.trim().trim_matches('"').to_string();
             }
         }
-        if line.contains("url") && line.contains("c-build-tools") {
-            found_cbt = true;
-        }
-        if found_cbt && !current_path.is_empty() {
-            return Some(current_path);
+        if let Some((key, value)) = line.split_once('=') {
+            if key.trim() == "url" {
+                found_cbt = is_cbt_url(value);
+            }
         }
     }
     None
@@ -90,10 +99,16 @@ fn get_expected_sha(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Output format: "160000 commit <sha>\t<path>"
-    for part in stdout.split_whitespace() {
-        if part.len() == 40 && part.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Ok(part.to_string());
+    // A normal file/tree at this path is not a submodule.
+    let parts: Vec<&str> = stdout.split_whitespace().collect();
+    if parts.len() == 4
+        && parts[0] == "160000"
+        && parts[1] == "commit"
+        && parts[3] == submodule_path
+    {
+        let sha = parts[2];
+        if sha.len() == 40 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(sha.to_string());
         }
     }
 
@@ -172,73 +187,66 @@ fn parse_yaml_scalar(raw: &str) -> String {
     }
 }
 
-/// Check if a trimmed YAML line is a repository declaration.
-fn is_repository_line(trimmed: &str) -> bool {
-    trimmed
-        .trim_start_matches('-')
-        .trim()
-        .starts_with("repository:")
-}
-
-/// Check if a trimmed YAML line is a c_build_tools repository declaration.
-fn is_cbt_repository_line(trimmed: &str) -> bool {
-    let s = trimmed.trim_start_matches('-').trim();
-    if let Some(rest) = s.strip_prefix("repository:") {
-        rest.trim() == "c_build_tools"
-    } else {
-        false
-    }
-}
-
-fn find_pipeline_refs(lines: &[String]) -> Vec<RefOccurrence> {
-    let mut refs = Vec::new();
-    let mut in_cbt_block = false;
-
-    for (i, line) in lines.iter().enumerate() {
-        let trimmed = line.trim();
-
-        if is_cbt_repository_line(trimmed) {
-            in_cbt_block = true;
+// Ignore script/documentation text inside literal and folded YAML scalars.
+fn yaml_mapping_lines(lines: &[String]) -> Vec<(usize, &str)> {
+    let mut block_indent = None;
+    let mut result = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if let Some(block) = block_indent {
+            if trimmed.is_empty() || indent > block {
+                continue;
+            }
+            block_indent = None;
+        }
+        if trimmed.starts_with('#') {
             continue;
         }
-
-        if in_cbt_block {
-            if is_repository_line(trimmed) {
-                in_cbt_block = false;
-                continue;
-            }
-            if !trimmed.is_empty() && !line.starts_with(' ') && !line.starts_with('\t') {
-                in_cbt_block = false;
-                continue;
-            }
-
-            if let Some(rest) = trimmed.strip_prefix("ref:") {
-                refs.push(RefOccurrence {
-                    line_index: i,
-                    ref_value: parse_yaml_scalar(rest),
-                    kind: RefKind::PipelineRepository,
-                });
-                in_cbt_block = false;
+        result.push((index, line.as_str()));
+        if let Some((_, value)) = trimmed.split_once(':') {
+            let value = value.trim_start();
+            if value.starts_with('|') || value.starts_with('>') {
+                block_indent = Some(indent);
             }
         }
     }
-
-    refs
+    result
 }
 
-fn is_github_actions_config(relative_path: &str) -> bool {
+fn is_github_actions_config(relative_path: &str, lines: &[String]) -> bool {
     let normalized = relative_path.replace('\\', "/").to_ascii_lowercase();
-    normalized.starts_with(".github/workflows/")
-        || normalized == "action.yml"
+    if normalized.starts_with(".github/workflows/") {
+        return true;
+    }
+    if normalized.starts_with(".github/workflow-templates/") {
+        return false;
+    }
+    let is_action = normalized == "action.yml"
         || normalized == "action.yaml"
         || normalized.ends_with("/action.yml")
-        || normalized.ends_with("/action.yaml")
+        || normalized.ends_with("/action.yaml");
+    if !is_action {
+        return false;
+    }
+    let mut in_runs = false;
+    for (_, line) in yaml_mapping_lines(lines) {
+        let trimmed = line.trim();
+        if !line.starts_with([' ', '\t']) && !trimmed.is_empty() {
+            in_runs = trimmed.split('#').next().unwrap_or("").trim() == "runs:";
+        } else if in_runs {
+            if let Some(value) = trimmed.strip_prefix("using:") {
+                return parse_yaml_scalar(value) == "composite";
+            }
+        }
+    }
+    false
 }
 
 fn find_github_uses_refs(lines: &[String]) -> Vec<RefOccurrence> {
     let mut refs = Vec::new();
 
-    for (i, line) in lines.iter().enumerate() {
+    for (i, line) in yaml_mapping_lines(lines) {
         let mut trimmed = line.trim_start();
         if let Some(rest) = trimmed.strip_prefix('-') {
             trimmed = rest.trim_start();
@@ -264,7 +272,6 @@ fn find_github_uses_refs(lines: &[String]) -> Vec<RefOccurrence> {
         refs.push(RefOccurrence {
             line_index: i,
             ref_value,
-            kind: RefKind::GithubUses,
         });
     }
 
@@ -272,11 +279,11 @@ fn find_github_uses_refs(lines: &[String]) -> Vec<RefOccurrence> {
 }
 
 fn find_cbt_refs(lines: &[String], relative_path: &str) -> Vec<RefOccurrence> {
-    let mut refs = find_pipeline_refs(lines);
-    if is_github_actions_config(relative_path) {
-        refs.extend(find_github_uses_refs(lines));
+    if is_github_actions_config(relative_path, lines) {
+        find_github_uses_refs(lines)
+    } else {
+        Vec::new()
     }
-    refs
 }
 
 fn replace_ref_in_line(
@@ -288,47 +295,17 @@ fn replace_ref_in_line(
         return None;
     }
 
-    let (start, end) = match occurrence.kind {
-        RefKind::PipelineRepository => {
-            let marker = line.find("ref:")?;
-            let after_marker = marker + "ref:".len();
-            let remaining = &line[after_marker..];
-            let whitespace_len = remaining.len() - remaining.trim_start().len();
-            let mut start = after_marker + whitespace_len;
-
-            if start < line.len() {
-                let first = line.as_bytes()[start];
-                if first == b'\'' || first == b'"' {
-                    start += 1;
-                }
-            }
-
-            if !line[start..].starts_with(&occurrence.ref_value) {
-                return None;
-            }
-            (start, start + occurrence.ref_value.len())
-        }
-        RefKind::GithubUses => {
-            let uses_position = line.find("uses:")?;
-            let needle = format!("@{}", occurrence.ref_value);
-            let relative = line[uses_position..].find(&needle)?;
-            let start = uses_position + relative + 1;
-            (start, start + occurrence.ref_value.len())
-        }
-    };
+    let uses_position = line.find("uses:")?;
+    let needle = format!("@{}", occurrence.ref_value);
+    let relative = line[uses_position..].find(&needle)?;
+    let start = uses_position + relative + 1;
+    let end = start + occurrence.ref_value.len();
 
     let mut updated = String::with_capacity(line.len() + expected_sha.len());
     updated.push_str(&line[..start]);
     updated.push_str(expected_sha);
     updated.push_str(&line[end..]);
     Some(updated)
-}
-
-fn ref_kind_label(kind: RefKind) -> &'static str {
-    match kind {
-        RefKind::PipelineRepository => "pipeline repository ref",
-        RefKind::GithubUses => "GitHub Actions uses ref",
-    }
 }
 
 fn mismatch_reason(ref_value: &str, expected_sha: &str) -> String {
@@ -355,7 +332,7 @@ impl Check for CBuildToolsRef {
     }
 
     fn description(&self) -> &str {
-        "Validates c-build-tools YAML refs match the submodule SHA"
+        "Validates GitHub Actions c-build-tools refs match deps/c-build-tools"
     }
 
     fn file_types(&self) -> u32 {
@@ -427,8 +404,8 @@ impl Check for CBuildToolsRef {
                             reference.line_index + 1
                         );
                         println!(
-                            "         {} exists, but no c-build-tools submodule was found",
-                            ref_kind_label(reference.kind)
+                            "         GitHub Actions uses ref '{}' exists, but no matching deps/c-build-tools submodule was found",
+                            reference.ref_value
                         );
                         self.violations += 1;
                     }
@@ -438,15 +415,31 @@ impl Check for CBuildToolsRef {
         };
         println!("  c-build-tools submodule path: {}", submodule_path);
 
-        let expected_sha =
-            match get_expected_sha(&config.repo_root, &submodule_path, &config.submodule_sha) {
-                Ok(sha) => sha,
-                Err(error) => {
-                    println!("  [ERROR] {}", error);
-                    self.violations = 1;
-                    return;
+        let expected_sha = match get_expected_sha(
+            &config.repo_root,
+            &submodule_path,
+            &config.submodule_sha,
+        ) {
+            Ok(sha) => sha,
+            Err(error) => {
+                println!("  [ERROR] {}", error);
+                for file in &files_with_refs {
+                    for reference in &file.refs {
+                        println!(
+                                "  [FAIL] {}:{}: GitHub Actions uses ref '{}' has no matching deps/c-build-tools gitlink",
+                                file.relative_path,
+                                reference.line_index + 1,
+                                reference.ref_value
+                            );
+                        self.violations += 1;
+                    }
                 }
-            };
+                if self.violations == 0 {
+                    self.violations = 1;
+                }
+                return;
+            }
+        };
         println!("  Expected submodule SHA: {}", expected_sha);
 
         for file in files_with_refs {
@@ -460,7 +453,7 @@ impl Check for CBuildToolsRef {
                         "  [OK]   {}:{} ({} matches submodule)",
                         file.relative_path,
                         reference.line_index + 1,
-                        ref_kind_label(reference.kind)
+                        "GitHub Actions uses ref"
                     );
                     continue;
                 }
@@ -472,7 +465,7 @@ impl Check for CBuildToolsRef {
                 );
                 println!(
                     "         {}: {}",
-                    ref_kind_label(reference.kind),
+                    "GitHub Actions uses ref",
                     mismatch_reason(&reference.ref_value, &expected_sha)
                 );
 
@@ -540,5 +533,93 @@ impl Check for CBuildToolsRef {
             println!("  References fixed: {}", self.fixed);
         }
         self.violations
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lines(text: &str) -> Vec<String> {
+        text.lines().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn submodule_requires_exact_path_and_url() {
+        for url in [
+            "https://github.com/Azure/c-build-tools",
+            "https://github.com/Azure/c-build-tools.git",
+            "git@github.com:Azure/c-build-tools.git",
+        ] {
+            let modules =
+                format!("[submodule \"tools\"]\n url = {url}\n path = deps/c-build-tools\n");
+            assert_eq!(
+                find_cbt_submodule_path(&modules).as_deref(),
+                Some("deps/c-build-tools")
+            );
+            assert!(
+                find_cbt_submodule_path(&modules.replace("deps/c-build-tools", "other/tools"))
+                    .is_none()
+            );
+        }
+        for url in [
+            "https://github.com/other/c-build-tools",
+            "https://example.com/Azure/c-build-tools",
+            "https://github.com/Azure/c-build-tools-extra",
+        ] {
+            let modules =
+                format!("[submodule \"tools\"]\n path = deps/c-build-tools\n url = {url}\n");
+            assert!(find_cbt_submodule_path(&modules).is_none());
+        }
+        assert!(find_cbt_submodule_path(
+            "[submodule \"one\"]\n url = https://github.com/Azure/c-build-tools\n[submodule \"two\"]\n path = deps/c-build-tools\n"
+        ).is_none());
+    }
+
+    #[test]
+    fn only_workflows_and_composite_actions_are_checked() {
+        let workflow = lines("jobs:\n  test:\n    uses: Azure/c-build-tools/actions/test@master\n");
+        for path in [
+            ".github/workflows/test.yml",
+            ".github/workflows/nested/test.yaml",
+        ] {
+            assert_eq!(find_cbt_refs(&workflow, path).len(), 1);
+        }
+        for path in [
+            "build/test.yml",
+            ".github/workflow-templates/test.yml",
+            "custom/action.yml",
+        ] {
+            assert!(find_cbt_refs(&workflow, path).is_empty());
+        }
+        let composite = lines("runs: # comment\n  using: 'composite' # comment\n  steps:\n    - uses: Azure/c-build-tools/actions/test@master");
+        assert_eq!(find_cbt_refs(&composite, "custom/action.yaml").len(), 1);
+        assert!(find_cbt_refs(&composite, ".github/workflow-templates/action.yml").is_empty());
+        let javascript = lines("runs:\n  using: node20\n  main: index.js\n    uses: Azure/c-build-tools/actions/test@master");
+        assert!(find_cbt_refs(&javascript, "action.yml").is_empty());
+    }
+
+    #[test]
+    fn fixes_all_refs_preserving_quotes_comments_and_other_uses() {
+        let input = lines("    - uses: \"Azure/c-build-tools/actions/test@master\" # keep\n    - uses: 'Azure/c-build-tools/actions/test@v1' # keep\n    - uses: Azure/c-build-tools/actions/test@deadbeef\n    - uses: Azure/c-build-tools/actions/test@0000000000000000000000000000000000000000\n    - uses: actions/checkout@v4\n    # uses: Azure/c-build-tools/actions/test@comment\n");
+        let refs = find_cbt_refs(&input, ".github/workflows/test.yml");
+        assert_eq!(refs.len(), 4);
+        let sha = "aabbccdd00112233445566778899aabbccddeeff";
+        for reference in &refs {
+            let fixed = replace_ref_in_line(&input[reference.line_index], reference, sha).unwrap();
+            assert_eq!(
+                fixed,
+                input[reference.line_index]
+                    .replace(&format!("@{}", reference.ref_value), &format!("@{sha}"))
+            );
+        }
+    }
+
+    #[test]
+    fn script_and_description_scalar_text_is_not_a_reference() {
+        let input = lines("description: |\n  uses: Azure/c-build-tools/actions/test@description\njobs:\n  test:\n    steps:\n      - run: |\n          uses: Azure/c-build-tools/actions/test@script\n      - uses: Azure/c-build-tools/actions/test@master\n");
+        let refs = find_cbt_refs(&input, ".github/workflows/test.yml");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].ref_value, "master");
     }
 }

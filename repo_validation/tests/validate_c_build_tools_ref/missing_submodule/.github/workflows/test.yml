@@ -1,0 +1,4 @@
+name: Missing dependency
+jobs:
+  test:
+    uses: Azure/c-build-tools/.github/workflows/test.yml@master
