@@ -118,8 +118,7 @@ fn get_expected_sha(
     ))
 }
 
-/// Recursively find YAML files, respecting exclusions. Hidden directories are skipped
-/// except for .github, which contains executable GitHub Actions configuration.
+/// Recursively find YAML files, including composite actions in hidden directories.
 fn find_yaml_files(
     dir: &Path,
     repo_root: &str,
@@ -161,7 +160,7 @@ fn find_yaml_files(
         };
 
         if ft.is_dir() {
-            if name_str.starts_with('.') && name_str.as_ref() != ".github" {
+            if name_str.as_ref() == ".git" {
                 continue;
             }
             if !is_path_excluded(&relative, exclude_folders) {
@@ -183,7 +182,19 @@ fn parse_yaml_scalar(raw: &str) -> String {
     } else if let Some(rest) = trimmed.strip_prefix('\'') {
         rest.split('\'').next().unwrap_or("").to_string()
     } else {
-        trimmed.split('#').next().unwrap_or("").trim().to_string()
+        let end = trimmed
+            .char_indices()
+            .find_map(|(index, ch)| {
+                (ch == '#'
+                    && (index == 0
+                        || trimmed[..index]
+                            .chars()
+                            .next_back()
+                            .is_some_and(char::is_whitespace)))
+                .then_some(index)
+            })
+            .unwrap_or(trimmed.len());
+        trimmed[..end].trim_end().to_string()
     }
 }
 
@@ -621,5 +632,22 @@ mod tests {
         let refs = find_cbt_refs(&input, ".github/workflows/test.yml");
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].ref_value, "master");
+    }
+
+    #[test]
+    fn hash_in_unquoted_ref_is_not_a_yaml_comment() {
+        let target = "Azure/c-build-tools/actions/test@refs/heads/feature#1";
+        assert_eq!(parse_yaml_scalar(&format!("{target} # comment")), target);
+        assert_eq!(parse_yaml_scalar(&format!("{target}\t# comment")), target);
+        assert_eq!(parse_yaml_scalar(&format!("'{target}' # comment")), target);
+        let input = lines(&format!("uses: {target} # comment"));
+        let refs = find_cbt_refs(&input, ".github/workflows/test.yml");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].ref_value, "refs/heads/feature#1");
+        let sha = "aabbccdd00112233445566778899aabbccddeeff";
+        assert_eq!(
+            replace_ref_in_line(&input[0], &refs[0], sha).unwrap(),
+            format!("uses: Azure/c-build-tools/actions/test@{sha} # comment")
+        );
     }
 }

@@ -368,7 +368,7 @@ function update-c-build-tools-github-refs
     $candidate_files = @()
     if (Test-Path ".github/workflows")
     {
-        $candidate_files += @(Get-ChildItem -Path ".github/workflows" -Recurse -File -ErrorAction Stop |
+        $candidate_files += @(Get-ChildItem -Path ".github/workflows" -Recurse -File -Force -ErrorAction Stop |
             Where-Object { $_.Extension -eq ".yml" -or $_.Extension -eq ".yaml" })
     }
     else
@@ -376,24 +376,24 @@ function update-c-build-tools-github-refs
         # no GitHub workflow directory
     }
 
-    $candidate_files += @(Get-ChildItem -Path "." -File -ErrorAction Stop |
+    $candidate_files += @(Get-ChildItem -Path "." -File -Force -ErrorAction Stop |
         Where-Object { $_.Name -eq "action.yml" -or $_.Name -eq "action.yaml" })
 
     $search_roots = @(Get-ChildItem -Path "." -Directory -Force -ErrorAction Stop |
-        Where-Object { $_.Name -notin @("deps", "cmake", ".git") -and (-not $_.Name.StartsWith(".") -or $_.Name -eq ".github") })
+        Where-Object { $_.Name -notin @("deps", "cmake", ".git") })
     foreach ($search_root in $search_roots)
     {
-        $candidate_files += @(Get-ChildItem -Path $search_root.FullName -Recurse -File -ErrorAction Stop |
+        $candidate_files += @(Get-ChildItem -Path $search_root.FullName -Recurse -File -Force -ErrorAction Stop |
             Where-Object { $_.Name -eq "action.yml" -or $_.Name -eq "action.yaml" })
     }
 
-    $pattern = '(?im)(^[ \t]*(?:-[ \t]*)?uses:[ \t]*["'']?Azure/c-build-tools/[^@\s"'']+@)([^#\s"'']+)'
+    $pattern = '(?im)(^[ \t]*(?:-[ \t]*)?uses:[ \t]*["'']?Azure/c-build-tools/[^@\s"'']+@)([^\s"'']+)'
     $utf8_no_bom = New-Object System.Text.UTF8Encoding $false
 
     foreach ($file in ($candidate_files | Sort-Object -Property FullName -Unique))
     {
         $content = [System.IO.File]::ReadAllText($file.FullName)
-        $relative = [System.IO.Path]::GetRelativePath($PWD.Path, $file.FullName).Replace('\', '/')
+        $relative = $file.FullName.Substring($PWD.Path.Length).TrimStart([char[]]@('\', '/')).Replace('\', '/')
         if ($relative.StartsWith(".github/workflow-templates/", [System.StringComparison]::OrdinalIgnoreCase))
         {
             continue

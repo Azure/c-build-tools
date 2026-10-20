@@ -34,6 +34,7 @@ try
     [void](New-Item -ItemType Directory -Path (Join-Path $test_root "deps\c-build-tools") -Force)
     [void](New-Item -ItemType Directory -Path (Join-Path $test_root ".github\workflow-templates") -Force)
     [void](New-Item -ItemType Directory -Path (Join-Path $test_root "javascript") -Force)
+    [void](New-Item -ItemType Directory -Path (Join-Path $test_root ".ci\actions\test") -Force)
 
     git -C $test_root init --quiet
     git -C $test_root config user.email "test@example.com"
@@ -87,6 +88,8 @@ jobs:
     uses: Azure/c-build-tools/.github/workflows/short.yml@deadbeef
   tag:
     uses: 'Azure/c-build-tools/.github/workflows/tag.yml@v1' # tag comment
+  hash:
+    uses: Azure/c-build-tools/.github/workflows/hash.yml@refs/heads/feature#1 # hash branch
   local:
     uses: ./local
 '@
@@ -116,6 +119,7 @@ runs:
     [System.IO.File]::WriteAllText((Join-Path $test_root "build\devops_gated.yml"), $pipeline, $utf8_no_bom)
     [System.IO.File]::WriteAllText((Join-Path $test_root ".github\workflows\test.yml"), $workflow, $utf8_no_bom)
     [System.IO.File]::WriteAllText((Join-Path $test_root "custom\action.yml"), $action, $utf8_no_bom)
+    [System.IO.File]::WriteAllText((Join-Path $test_root ".ci\actions\test\action.yml"), $action, $utf8_no_bom)
     [System.IO.File]::WriteAllText((Join-Path $test_root "javascript\action.yaml"), $javascript, $utf8_no_bom)
     [System.IO.File]::WriteAllText((Join-Path $test_root ".github\workflow-templates\example.yml"), $workflow, $utf8_no_bom)
     git -C $test_root add -- .gitmodules
@@ -144,9 +148,12 @@ runs:
         assert-contains $fixed_workflow "test.yml@$new_sha`" # preserve workflow comment"
         assert-contains $fixed_workflow "short.yml@$new_sha"
         assert-contains $fixed_workflow "tag.yml@$new_sha' # tag comment"
+        assert-contains $fixed_workflow "hash.yml@$new_sha # hash branch"
         $fixed_action = [System.IO.File]::ReadAllText((Join-Path $test_root "custom\action.yml"))
         assert-contains $fixed_action "test@$new_sha' # preserve action comment"
         assert-contains $fixed_action "test@script"
+        $fixed_hidden_action = [System.IO.File]::ReadAllText((Join-Path $test_root ".ci\actions\test\action.yml"))
+        assert-contains $fixed_hidden_action "test@$new_sha' # preserve action comment"
         & $ValidatorExe --repo-root $test_root --check c_build_tools_ref
         if ($LASTEXITCODE -ne 0) { throw "Expected matching refs to pass validation." }
         else { # clean
@@ -159,6 +166,7 @@ runs:
         # Reset the YAML to independently exercise propagation, not validator fixes.
         [System.IO.File]::WriteAllText((Join-Path $test_root ".github\workflows\test.yml"), $workflow, $utf8_no_bom)
         [System.IO.File]::WriteAllText((Join-Path $test_root "custom\action.yml"), $action, $utf8_no_bom)
+        [System.IO.File]::WriteAllText((Join-Path $test_root ".ci\actions\test\action.yml"), $action, $utf8_no_bom)
     }
     else
     {
@@ -189,6 +197,7 @@ runs:
     assert-contains $updated_workflow "Azure/c-build-tools/.github/workflows/test.yml@$new_sha`" # preserve workflow comment"
     assert-contains $updated_workflow "Azure/c-build-tools/.github/workflows/short.yml@$new_sha"
     assert-contains $updated_workflow "tag.yml@$new_sha' # tag comment"
+    assert-contains $updated_workflow "hash.yml@$new_sha # hash branch"
     assert-contains $updated_workflow "uses: ./local"
     assert-contains $updated_workflow 'uses: "Azure/c-build-tools/.github/workflows/test.yml@master" # preserve workflow comment'
     assert-contains $updated_action "Azure/c-build-tools/actions/test@$new_sha' # preserve action comment"
@@ -196,6 +205,8 @@ runs:
     assert-contains $updated_action "uses: actions/checkout@v4"
     assert-contains $updated_action "test@comment"
     assert-contains $updated_action "test@script"
+    $updated_hidden_action = [System.IO.File]::ReadAllText((Join-Path $test_root ".ci\actions\test\action.yml"))
+    assert-contains $updated_hidden_action "test@$new_sha' # preserve action comment"
     if ([System.IO.File]::ReadAllText((Join-Path $test_root "javascript\action.yaml")) -cne $javascript)
     { throw "Propagation changed non-composite action metadata." }
     else { # ignored
@@ -205,7 +216,7 @@ runs:
     else { # ignored
     }
 
-    git -C $test_root add -- deps/c-build-tools .github/workflows/test.yml custom/action.yml
+    git -C $test_root add -- deps/c-build-tools .github/workflows/test.yml custom/action.yml .ci/actions/test/action.yml
     git -C $test_root commit --quiet -m "propagate dependency and pins"
     if ($LASTEXITCODE -ne 0) { throw "Failed to commit propagated change." }
     else { # committed
@@ -228,6 +239,7 @@ runs:
         [System.IO.File]::WriteAllText($modules_path, $gitmodules, $utf8_no_bom)
         [System.IO.File]::WriteAllText((Join-Path $test_root ".github\workflows\test.yml"), "name: no references", $utf8_no_bom)
         [System.IO.File]::WriteAllText((Join-Path $test_root "custom\action.yml"), "name: no references", $utf8_no_bom)
+        [System.IO.File]::WriteAllText((Join-Path $test_root ".ci\actions\test\action.yml"), "name: no references", $utf8_no_bom)
         & $ValidatorExe --repo-root $test_root --check c_build_tools_ref
         if ($LASTEXITCODE -ne 0) { throw "Submodule-only repository must pass." }
         else { # no references

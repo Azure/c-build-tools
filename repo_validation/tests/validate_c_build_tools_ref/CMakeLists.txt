@@ -70,3 +70,16 @@ if(POWERSHELL_EXECUTABLE)
     )
     add_dependencies(test_validate_c_build_tools_ref test_update_c_build_tools_github_refs)
 endif()
+
+if(WIN32)
+    find_program(WINDOWS_POWERSHELL_EXECUTABLE NAMES powershell REQUIRED)
+    add_custom_target(test_update_c_build_tools_github_refs_windows_powershell
+        COMMAND "${WINDOWS_POWERSHELL_EXECUTABLE}" -NoLogo -NoProfile -NonInteractive
+            -ExecutionPolicy Bypass -Command
+            "& '${CMAKE_CURRENT_LIST_DIR}/../../../update_deps/tests/test_update_c_build_tools_github_refs.ps1' -ValidatorExe '${REPO_VALIDATOR_RS_EXE}'"
+        DEPENDS repo_validator_rs
+        COMMENT "Testing propagation compatibility with Windows PowerShell 5.1"
+        VERBATIM
+    )
+    add_dependencies(test_validate_c_build_tools_ref test_update_c_build_tools_github_refs_windows_powershell)
+endif()
