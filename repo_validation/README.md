@@ -22,6 +22,12 @@ A repository with a submodule but no references, or with neither, passes.
 Azure DevOps `resources.repositories` refs, workflow templates, non-composite action
 metadata, comments, and literal/folded YAML scalar contents are not checked.
 
+Workflow/action structure is read with the Saphyr YAML 1.2 parser. Fixes replace
+only the literal ref within the parsed source span, without reserializing YAML;
+unrelated whitespace, quotes, comments, and line endings remain unchanged.
+If a ref cannot be safely located in source (for example an alias), it is reported
+for manual correction rather than rewritten heuristically.
+
 ### CMake Options
 
 Two CMake options control the repository validation behavior:

@@ -11,7 +11,7 @@ add_custom_target(test_validate_c_build_tools_ref_failures
 )
 
 # Azure DevOps resource refs are intentionally outside this check's scope.
-foreach(FIXTURE valid_sha_ref invalid_sha_ref invalid_branch_ref multiple_files no_submodule_no_ref valid_github_refs)
+foreach(FIXTURE valid_sha_ref invalid_sha_ref valid_master_ref multiple_files no_submodule valid_github_refs)
     add_custom_target(test_validate_c_build_tools_ref_clean_${FIXTURE}
         COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/${FIXTURE}"
             --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
@@ -58,28 +58,15 @@ add_custom_target(test_validate_c_build_tools_ref_fix
 )
 add_dependencies(test_validate_c_build_tools_ref test_validate_c_build_tools_ref_fix)
 
-find_program(POWERSHELL_EXECUTABLE NAMES pwsh)
+find_program(POWERSHELL_EXECUTABLE NAMES pwsh powershell)
 if(POWERSHELL_EXECUTABLE)
-    add_custom_target(test_update_c_build_tools_github_refs
+    add_custom_target(test_validate_c_build_tools_ref_gitlink
         COMMAND "${POWERSHELL_EXECUTABLE}" -NoLogo -NoProfile -NonInteractive
             -ExecutionPolicy Bypass -Command
-            "& '${CMAKE_CURRENT_LIST_DIR}/../../../update_deps/tests/test_update_c_build_tools_github_refs.ps1' -ValidatorExe '${REPO_VALIDATOR_RS_EXE}'"
+            "& '${CMAKE_CURRENT_LIST_DIR}/test_gitlink_parity.ps1' -ValidatorExe '${REPO_VALIDATOR_RS_EXE}'"
         DEPENDS repo_validator_rs
-        COMMENT "Testing real gitlink validation and propagated GitHub Actions pins"
+        COMMENT "Testing real gitlink validation and format-preserving GitHub Actions fixes"
         VERBATIM
     )
-    add_dependencies(test_validate_c_build_tools_ref test_update_c_build_tools_github_refs)
-endif()
-
-if(WIN32)
-    find_program(WINDOWS_POWERSHELL_EXECUTABLE NAMES powershell REQUIRED)
-    add_custom_target(test_update_c_build_tools_github_refs_windows_powershell
-        COMMAND "${WINDOWS_POWERSHELL_EXECUTABLE}" -NoLogo -NoProfile -NonInteractive
-            -ExecutionPolicy Bypass -Command
-            "& '${CMAKE_CURRENT_LIST_DIR}/../../../update_deps/tests/test_update_c_build_tools_github_refs.ps1' -ValidatorExe '${REPO_VALIDATOR_RS_EXE}'"
-        DEPENDS repo_validator_rs
-        COMMENT "Testing propagation compatibility with Windows PowerShell 5.1"
-        VERBATIM
-    )
-    add_dependencies(test_validate_c_build_tools_ref test_update_c_build_tools_github_refs_windows_powershell)
+    add_dependencies(test_validate_c_build_tools_ref test_validate_c_build_tools_ref_gitlink)
 endif()

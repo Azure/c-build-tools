@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft. All rights reserved.
+﻿# Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 # Git operations functions for propagate_updates.ps1
@@ -320,151 +320,10 @@ function update-submodules-to-fixed-commits
     }
 }
 
-# Return YAML mapping lines without literal/folded scalar contents.
-function get-yaml-mapping-lines
-{
-    param([string] $content)
-
-    $block_indent = -1
-    foreach ($line_match in [regex]::Matches($content, '(?m)^.*$'))
-    {
-        $line = $line_match.Value.TrimEnd("`r")
-        $trimmed = $line.TrimStart()
-        $indent = $line.Length - $trimmed.Length
-        if ($block_indent -ge 0 -and ($trimmed.Length -eq 0 -or $indent -gt $block_indent))
-        {
-            continue
-        }
-        else
-        {
-            $block_indent = -1
-        }
-        if (-not $trimmed.StartsWith("#"))
-        {
-            [PSCustomObject]@{ Index = $line_match.Index; Text = $line }
-            if ($trimmed -match '^[^:]+:\s*[|>]')
-            {
-                $block_indent = $indent
-            }
-            else
-            {
-                # ordinary mapping
-            }
-        }
-        else
-        {
-            # YAML comment
-        }
-    }
-}
-
-# Update GitHub Actions c-build-tools uses refs to match the submodule SHA.
-function update-c-build-tools-github-refs
-{
-    param(
-        [Parameter(Mandatory=$true)][string] $new_sha
-    )
-
-    $candidate_files = @()
-    if (Test-Path ".github/workflows")
-    {
-        $candidate_files += @(Get-ChildItem -Path ".github/workflows" -Recurse -File -Force -ErrorAction Stop |
-            Where-Object { $_.Extension -eq ".yml" -or $_.Extension -eq ".yaml" })
-    }
-    else
-    {
-        # no GitHub workflow directory
-    }
-
-    $candidate_files += @(Get-ChildItem -Path "." -File -Force -ErrorAction Stop |
-        Where-Object { $_.Name -eq "action.yml" -or $_.Name -eq "action.yaml" })
-
-    $search_roots = @(Get-ChildItem -Path "." -Directory -Force -ErrorAction Stop |
-        Where-Object { $_.Name -notin @("deps", "cmake", ".git") })
-    foreach ($search_root in $search_roots)
-    {
-        $candidate_files += @(Get-ChildItem -Path $search_root.FullName -Recurse -File -Force -ErrorAction Stop |
-            Where-Object { $_.Name -eq "action.yml" -or $_.Name -eq "action.yaml" })
-    }
-
-    $pattern = '(?im)(^[ \t]*(?:-[ \t]*)?uses:[ \t]*["'']?Azure/c-build-tools/[^@\s"'']+@)([^\s"'']+)'
-    $utf8_no_bom = New-Object System.Text.UTF8Encoding $false
-
-    foreach ($file in ($candidate_files | Sort-Object -Property FullName -Unique))
-    {
-        $content = [System.IO.File]::ReadAllText($file.FullName)
-        $relative = $file.FullName.Substring($PWD.Path.Length).TrimStart([char[]]@('\', '/')).Replace('\', '/')
-        if ($relative.StartsWith(".github/workflow-templates/", [System.StringComparison]::OrdinalIgnoreCase))
-        {
-            continue
-        }
-        else
-        {
-            # templates are not executable
-        }
-        $mapping_lines = @(get-yaml-mapping-lines -content $content)
-        if (-not $relative.StartsWith(".github/workflows/", [System.StringComparison]::OrdinalIgnoreCase))
-        {
-            $in_runs = $false
-            $is_composite = $false
-            foreach ($mapping_line in $mapping_lines)
-            {
-                $line = $mapping_line.Text
-                if ($line -match '^\S')
-                {
-                    $in_runs = $line -match '^runs:\s*(#.*)?$'
-                }
-                elseif ($in_runs -and $line -match '^\s+using:\s*["'']?composite["'']?\s*(#.*)?$')
-                {
-                    $is_composite = $true
-                }
-                else
-                {
-                    # other metadata
-                }
-            }
-            if (-not $is_composite)
-            {
-                continue
-            }
-            else
-            {
-                # composite action
-            }
-        }
-        else
-        {
-            # workflow
-        }
-        $mapping_indices = @($mapping_lines | ForEach-Object { $_.Index })
-        $updated_content = [regex]::Replace(
-            $content,
-            $pattern,
-            {
-                param($match)
-                if ($match.Groups[2].Value -ceq $new_sha -or $match.Index -notin $mapping_indices)
-                {
-                    $match.Value
-                }
-                else
-                {
-                    $match.Groups[1].Value + $new_sha
-                }
-            })
-
-        if ($updated_content -ne $content)
-        {
-            [System.IO.File]::WriteAllText($file.FullName, $updated_content, $utf8_no_bom)
-            Write-Host "  Updated c-build-tools GitHub Actions refs in $($file.FullName)" -ForegroundColor Green
-        }
-        else
-        {
-            # file did not contain an outdated c-build-tools uses ref
-        }
-    }
-}
-
-# Update GitHub uses refs after the new dependency commit has been checked out.
+# Update c-build-tools YAML refs to match the current submodule SHA.
+# After update-submodules-to-fixed-commits has checked out the new c-build-tools commit,
+# this function updates inline ref: fields in build/*.yml files with "repository: c_build_tools"
+# blocks. This prevents validate_c_build_tools_ref from failing on propagation PRs.
 function update-c-build-tools-yaml-refs
 {
     # Only repos with submodules have a .gitmodules file
@@ -479,60 +338,43 @@ function update-c-build-tools-yaml-refs
         $current_path = ""
         $found_c_build_tools = $false
 
-        foreach ($line in (@(Get-Content ".gitmodules") + '[end]'))
+        foreach ($line in (Get-Content ".gitmodules"))
         {
             # Check for submodule section header
-            if ($line -match '^\s*\[')
+            if ($line -match '^\[submodule\s+"([^"]+)"\]')
             {
-                if ($found_c_build_tools -and $current_path -ceq "deps/c-build-tools")
-                {
-                    $submodule_path = $current_path
-                    break
-                }
-                else
-                {
-                    # inspect the next section
-                }
                 $current_path = ""
                 $found_c_build_tools = $false
             }
             # Extract the submodule path
             if ($line -match '^\s*path\s*=\s*(.+)$')
             {
-                $current_path = $Matches[1].Trim().Trim('"')
+                $current_path = $Matches[1].Trim()
             }
             # Check if this submodule's URL points to c-build-tools
-            if ($line -match '^\s*url\s*=\s*"?((https://github\.com/|git@github\.com:|ssh://git@github\.com/)Azure/c-build-tools(?:\.git)?/?)"?\s*$')
+            if ($line -match '^\s*url\s*=\s*.*c-build-tools')
             {
                 $found_c_build_tools = $true
+            }
+            # If we found the c-build-tools URL and have its path, we're done
+            if ($found_c_build_tools -and $current_path -ne "")
+            {
+                $submodule_path = $current_path
+                break
+            }
+            else
+            {
+                # haven't found c-build-tools submodule yet, continue parsing
             }
         }
 
         if ($submodule_path -ne "")
         {
-            $gitlink = git ls-files --stage -- $submodule_path
-            if ($LASTEXITCODE -ne 0 -or $gitlink -notmatch '^160000 [0-9a-f]{40} 0\s+deps/c-build-tools$')
-            {
-                throw "deps/c-build-tools is configured but is not a tracked submodule gitlink."
-            }
-            else
-            {
-                # dependency gitlink exists
-            }
             # Get the c-build-tools submodule SHA from the working tree (not HEAD, since
             # update-submodules-to-fixed-commits has already checked out the new commit)
             $new_sha = ""
             if (Test-Path $submodule_path)
             {
-                $toplevel = git -C $submodule_path rev-parse --show-toplevel
-                if ($LASTEXITCODE -ne 0 -or [System.IO.Path]::GetFullPath($toplevel) -ne (Join-Path $PWD.Path "deps\c-build-tools"))
-                {
-                    throw "Cannot resolve initialized deps/c-build-tools submodule."
-                }
-                else
-                {
-                    # avoid resolving the parent repository HEAD for an empty submodule
-                }
                 $new_sha = (git -C $submodule_path rev-parse HEAD 2>$null)
                 if ($LASTEXITCODE -ne 0)
                 {
@@ -550,13 +392,81 @@ function update-c-build-tools-yaml-refs
 
             if ($new_sha -eq "")
             {
-                throw "Could not get deps/c-build-tools submodule SHA."
+                Write-Host "  Warning: Could not get c-build-tools submodule SHA" -ForegroundColor Yellow
             }
             else
             {
                 Write-Host "  c-build-tools submodule SHA: $($new_sha.Substring(0, 12))..."
 
-                update-c-build-tools-github-refs -new_sha $new_sha
+                # Find pipeline YAML files in build/ that reference c_build_tools
+                $yml_files = Get-ChildItem -Path "build" -Filter "*.yml" -ErrorAction SilentlyContinue
+                foreach ($file in $yml_files)
+                {
+                    # Skip files that don't reference c_build_tools
+                    $content = Get-Content -Path $file.FullName -Raw -ErrorAction SilentlyContinue
+                    if (-not $content -or $content -notmatch 'repository:\s*c_build_tools')
+                    {
+                        # file does not reference c_build_tools, skip
+                    }
+                    else
+                    {
+                        # Parse lines to find the ref: value inside the c_build_tools repository block
+                        $lines = Get-Content -Path $file.FullName
+                        $in_c_build_tools_block = $false
+                        $ref_line_index = -1
+                        $ref_value = ""
+
+                        for ($i = 0; $i -lt $lines.Count; $i++)
+                        {
+                            $line = $lines[$i]
+
+                            # Detect start of c_build_tools repository block
+                            if ($line -match '^\s*-?\s*repository:\s*c_build_tools\s*$')
+                            {
+                                $in_c_build_tools_block = $true
+                            }
+                            elseif ($in_c_build_tools_block)
+                            {
+                                # Exit block on next repository definition or non-indented line
+                                if ($line -match '^\s*-\s*repository:' -or ($line -match '^\S' -and $line -notmatch '^\s*$'))
+                                {
+                                    $in_c_build_tools_block = $false
+                                }
+                                elseif ($line -match '^\s*ref:\s*(.+)$')
+                                {
+                                    # Found the ref: line in the c_build_tools block
+                                    $ref_value = $Matches[1].Trim()
+                                    $ref_line_index = $i
+                                    $in_c_build_tools_block = $false
+                                }
+                                else
+                                {
+                                    # other line inside the block (type, name, endpoint), skip
+                                }
+                            }
+                            else
+                            {
+                                # not in c_build_tools block, skip line
+                            }
+                        }
+
+                        # Update SHA refs that don't match the submodule
+                        if ($ref_line_index -ne -1 -and
+                            $ref_value -ne "refs/heads/master" -and
+                            $ref_value -match '^[0-9a-f]{40}$' -and
+                            $ref_value -ne $new_sha)
+                        {
+                            $lines[$ref_line_index] = $lines[$ref_line_index] -replace 'ref:\s*.+$', "ref: $new_sha"
+                            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                            [System.IO.File]::WriteAllLines($file.FullName, $lines, $utf8NoBom)
+                            Write-Host "  Updated $($file.Name) ref: $($ref_value.Substring(0, 12))... -> $($new_sha.Substring(0, 12))..." -ForegroundColor Green
+                        }
+                        else
+                        {
+                            # ref already matches, is refs/heads/master, or not found
+                        }
+                    }
+                }
             }
         }
         else
