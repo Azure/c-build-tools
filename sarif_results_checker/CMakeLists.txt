@@ -16,7 +16,7 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
         "CommandLineParser_2.9.1"
         "Sarif.Sdk_4.4.0"
         "Newtonsoft.Json_13.0.3"
-        "System.Collections.Immutable_1.5.0"
+        "System.Collections.Immutable_9.0.7"
 )
 
 set_property(TARGET Azure.Messaging.SarifResultsChecker

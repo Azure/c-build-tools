@@ -15,13 +15,13 @@ These wrapper templates use `discover_native_tools.yml` to find the correct tool
 
 ## Prerequisites
 
-All wrappers require the `discover_native_tools.yml` template to be called first, which sets:
+All wrappers require the `discover_native_tools.yml` template to be called first, after the checkout that provides c-build-tools at its `repo_root` parameter (default `$(Build.SourcesDirectory)/deps/c-build-tools`; pass `$(Build.SourcesDirectory)` from within c-build-tools). It sets:
 - `$(cmakePath)` - cmake.exe from the VS installation
 - `$(ctestPath)` - ctest.exe from the VS installation
 - `$(msbuildPath)` - MSBuild.exe (architecture-specific)
 - `$(dumpbinPath)` - dumpbin.exe (architecture-specific)
 - `$(vstestPath)` - vstest.console.exe (architecture-specific)
-- `$(appverifPath)` - appverif.exe (empty string if not installed; consumed by `run_ctests_with_appverifier.yml` and `disable_appverifier.yml`)
+- `$(appverifPath)` - appverif.exe (mandatory; discovery fails the job if not found; consumed by `run_ctests_with_appverifier.yml` and `disable_appverifier.yml`)
 - `$(cmakeGenerator)` - CMake generator string (e.g., "Visual Studio 18 2026")
 - `$(cmakeArch)` - CMake architecture flag (x64, Win32, ARM64)
 - `$(targetPlatform)` - MSBuild platform (x64, Win32, ARM64)
@@ -75,6 +75,7 @@ steps:
   - template: discover_native_tools.yml
     parameters:
       architecture: 'ARM64'
+      repo_root: '$(Build.SourcesDirectory)'
 
   - template: tasks/cmake.yml
     parameters:

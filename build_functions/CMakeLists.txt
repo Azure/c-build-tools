@@ -333,6 +333,132 @@ function(build_as_csharp_net8_windows_project targetname)
     build_as_csharp_netcore_project_with_framework(${targetname} "net8.0-windows" "win-${CMAKE_VS_PLATFORM_NAME}")
 endfunction()
 
+# The following helper will enable C# .NET10 for projects
+# Assumes MSSharedLibSN1024.snk is available at the project root
+# Note: csharp_sdk_fix must be used in the project
+function(build_as_csharp_net10_project targetname)
+    build_as_csharp_netcore_project_with_framework(${targetname} "net10.0" "win-${CMAKE_VS_PLATFORM_NAME}")
+endfunction()
+
+# The following helper will enable C# .NET10 for Windows only projects
+# Assumes MSSharedLibSN1024.snk is available at the project root
+# Note: csharp_sdk_fix must be used in the project
+function(build_as_csharp_net10_windows_project targetname)
+    build_as_csharp_netcore_project_with_framework(${targetname} "net10.0-windows" "win-${CMAKE_VS_PLATFORM_NAME}")
+endfunction()
+
+# Configures a .NET Framework C# project.
+# signature: build_as_csharp_netfx_project(targetname framework_version snk_path)
+#   framework_version: DOTNET_TARGET_FRAMEWORK_VERSION, for example "v4.8.1"
+#   snk_path: strong name key used for delay signing
+# RuntimeIdentifier, PlatformTarget and repo specific warning settings are left to the caller.
+function(build_as_csharp_netfx_project targetname framework_version snk_path)
+    if(NOT EXISTS "${snk_path}")
+        message(FATAL_ERROR "build_as_csharp_netfx_project(${targetname}): snk_path ${snk_path} does not exist")
+    endif()
+    set_target_properties(${targetname} PROPERTIES
+        DOTNET_TARGET_FRAMEWORK_VERSION ${framework_version}
+        VS_GLOBAL_Configurations "Debug;Release;RelWithDebInfo;MinSizeRel"
+        VS_GLOBAL_AssemblyOriginatorKeyFile "${snk_path}"
+        VS_GLOBAL_SignAssembly true
+        VS_GLOBAL_DelaySign true
+        VS_GLOBAL_TreatWarningsAsErrors true
+        VS_GLOBAL_AutoGenerateBindingRedirects true)
+endfunction()
+
+# Configures a framework-dependent SDK-style C# project (no RuntimeIdentifier, not SelfContained),
+# so the output does not carry a copy of the .NET runtime and runs on the installed runtime.
+# signature: build_as_csharp_netcore_framework_dependent_project(targetname framework snk_path [TEST])
+#   framework: DOTNET_TARGET_FRAMEWORK, for example "net10.0" or "net8.0-windows"
+#   snk_path: strong name key used for delay signing
+#   TEST: marks the project as a test project and appends a Microsoft.NET.Test.Sdk package reference.
+#         The version comes from central package management (Directory.Packages.props).
+#         Callers must append to VS_PACKAGE_REFERENCES afterwards, not overwrite it.
+function(build_as_csharp_netcore_framework_dependent_project targetname framework snk_path)
+    set(is_test FALSE)
+    foreach(arg IN LISTS ARGN)
+        if(arg STREQUAL "TEST")
+            set(is_test TRUE)
+        else()
+            message(FATAL_ERROR "build_as_csharp_netcore_framework_dependent_project(${targetname}): unknown argument ${arg}")
+        endif()
+    endforeach()
+    if(NOT EXISTS "${snk_path}")
+        message(FATAL_ERROR "build_as_csharp_netcore_framework_dependent_project(${targetname}): snk_path ${snk_path} does not exist")
+    endif()
+
+    set_target_properties(${targetname} PROPERTIES
+        DOTNET_SDK "Microsoft.NET.Sdk"
+        DOTNET_TARGET_FRAMEWORK ${framework}
+        VS_GLOBAL_PlatformTarget ${CMAKE_VS_PLATFORM_NAME}
+        VS_GLOBAL_Platforms ${CMAKE_VS_PLATFORM_NAME}
+        VS_GLOBAL_Configurations "Debug;Release;RelWithDebInfo;MinSizeRel"
+        VS_GLOBAL_AssemblyOriginatorKeyFile "${snk_path}"
+        VS_GLOBAL_SignAssembly true
+        VS_GLOBAL_DelaySign true
+        VS_GLOBAL_TreatWarningsAsErrors true
+        VS_GLOBAL_AppendTargetFrameworkToOutputPath false)
+    if(is_test)
+        set_target_properties(${targetname} PROPERTIES VS_GLOBAL_IsTestProject true)
+        set_property(TARGET ${targetname} APPEND PROPERTY VS_PACKAGE_REFERENCES "Microsoft.NET.Test.Sdk_")
+    endif()
+endfunction()
+
+# Warns (never fails) when installed .NET SDKs cannot resolve the consuming repo's global.json.
+# Without this, SDK-style C# projects fail late with a confusing
+# "The SDK 'Microsoft.NET.Sdk' specified could not be found." A warning rather than an error
+# because .NET Framework / classic-CSC projects build fine with no dotnet SDK installed, so
+# failing hard would spuriously block CI legs that never build SDK-style projects.
+# global_json_dir: directory holding global.json, typically ${CMAKE_SOURCE_DIR}.
+function(check_dotnet_sdk_from_global_json global_json_dir)
+    if(NOT EXISTS "${global_json_dir}/global.json")
+        return()
+    endif()
+
+    file(READ "${global_json_dir}/global.json" global_json_contents)
+    string(REGEX MATCH "\"version\"[ \t]*:[ \t]*\"([^\"]+)\"" version_match "${global_json_contents}")
+    if(version_match)
+        set(required_sdk "${CMAKE_MATCH_1}")
+    else()
+        set(required_sdk "an SDK version")
+    endif()
+
+    find_program(DOTNET_EXECUTABLE NAMES dotnet)
+    if(WIN32 AND NOT DOTNET_EXECUTABLE)
+        find_program(DOTNET_EXECUTABLE NAMES dotnet
+            PATHS "$ENV{ProgramFiles}/dotnet" "$ENV{ProgramW6432}/dotnet"
+            NO_DEFAULT_PATH)
+    endif()
+
+    if(DOTNET_EXECUTABLE)
+        # Running from global_json_dir makes the SDK resolver honor global.json, including
+        # rollForward, allowPrerelease, and feature-band rules.
+        execute_process(COMMAND "${DOTNET_EXECUTABLE}" --version
+            WORKING_DIRECTORY "${global_json_dir}"
+            RESULT_VARIABLE resolve_result OUTPUT_VARIABLE resolved_sdk
+            ERROR_VARIABLE resolve_error
+            OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_STRIP_TRAILING_WHITESPACE)
+        if(resolve_result EQUAL 0)
+            message(STATUS
+                ".NET SDK ${resolved_sdk} resolves ${global_json_dir}/global.json "
+                "(dotnet at ${DOTNET_EXECUTABLE})")
+            return()
+        endif()
+
+        # --list-sdks ignores global.json, so it is useful diagnostic context on failure.
+        execute_process(COMMAND "${DOTNET_EXECUTABLE}" --list-sdks
+            OUTPUT_VARIABLE installed_sdks
+            ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif()
+
+    message(WARNING
+        "No installed .NET SDK can resolve ${global_json_dir}/global.json (requires ${required_sdk}). "
+        "SDK-style C# projects will fail with \"The SDK 'Microsoft.NET.Sdk' specified could not be found.\"\n"
+        "Resolver output:\n${resolve_error}\n"
+        "Installed SDKs:\n${installed_sdks}\n"
+        "Install the pinned SDK or disable SDK-style C# projects for this build.")
+endfunction()
+
 # variable to store list of libs that must be checked for reals
 set(LIBS_TO_BE_REAL_CHECKED CACHE INTERNAL "LIBS_TO_BE_CHECKED")
 
@@ -467,6 +593,11 @@ macro(use_vcpkg vcpkgPath)
     set(ENV{VCPKG_BINARY_SOURCES} "clear;nuget,https://msazure.pkgs.visualstudio.com/One/_packaging/azure-messagingstore-vcpkg-cache/nuget/v3/index.json,readwrite")
 
     if (EXISTS ${vcpkgPath}/scripts/buildsystems/vcpkg.cmake)
+        # Disable vcpkg metrics. With metrics enabled every vcpkg.exe invocation copies its own executable
+        # to %TEMP% on exit; in parallel builds that copy races with launching vcpkg.exe for the z-applocal
+        # post-build steps and fails them with a sharing violation (exit code 32). vcpkg.exe checks for
+        # this file next to itself on every run, so it also covers vcpkg.exe binaries bootstrapped earlier.
+        file(TOUCH "${vcpkgPath}/vcpkg.disable-metrics")
         set(VCPKG_OVERLAY_TRIPLETS "${build_c_tests_internal_dir}/../vcpkg_triplets/")
         # VCPKG_OVERLAY_PORTS must be set BEFORE including vcpkg.cmake: the toolchain captures it
         # into a FORCE cache variable at include time and uses it for the manifest-mode install.
