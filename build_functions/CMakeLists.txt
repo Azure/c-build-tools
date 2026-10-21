@@ -121,9 +121,6 @@ macro(set_default_build_options)
         #use _CRT_SECURE_NO_WARNINGS by default
         add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
-        # C-facing dependency headers still include <cstdbool>, which MSVC deprecates in C++17.
-        add_compile_definitions($<$<COMPILE_LANGUAGE:CXX>:_SILENCE_CXX17_C_HEADER_DEPRECATION_WARNING>)
-
         #add a compile option to use link time code generation (or not)
         if(${use_ltcg})
 
