@@ -1,31 +1,36 @@
 # Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 #
-# Preflight self-test run before any propagation work. Fails early, with actionable guidance,
-# if the GitHub token is missing/invalid or if Azure DevOps cannot be reached and used as the
-# build account. Requires logging.ps1 to be sourced first.
-
-$script:AdoOrgUrl = 'https://dev.azure.com/msazure'
-$script:AdoProject = 'One'
+# Self-tests that fail early, with actionable guidance, before any propagation work: the -Pipeline
+# credentials and GitHub token, and Azure DevOps access (also checked after interactive sign-in).
 
 function Fail-Preflight
 {
     param([string] $Message)
     Write-Log ERROR '================ PREFLIGHT FAILED ================'
-    foreach ($line in ($Message -split "`n")) { Write-Log ERROR $line }
+    foreach ($line in ($Message -split "`n")) { Write-Log ERROR $line.TrimEnd() }
     Write-Log ERROR '================================================='
+    restore-original-directory
     exit 1
 }
 
-# Validate that a usable GitHub token is present and actually works against the GitHub API.
-function Test-GitHubAuth
+# -Pipeline reads both tokens from the environment; check them before any network call.
+function Test-PipelineCredentials
 {
-    Write-Log INFO 'Validating GitHub token...'
+    $problems = @()
+    if ([string]::IsNullOrWhiteSpace($env:SYSTEM_ACCESSTOKEN))
+    {
+        $problems += "SYSTEM_ACCESSTOKEN is not set. Map it into the step env: SYSTEM_ACCESSTOKEN: `$(System.AccessToken)"
+    }
+    else
+    {
+        # Azure DevOps token present
+    }
     if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN))
     {
-        Fail-Preflight @'
-No GitHub token was provided (env GH_TOKEN / pipeline variable 'ghToken' is empty).
-The propagation needs a GitHub token so its gh calls work.
+        $problems += @'
+GH_TOKEN is not set (pipeline variable 'ghToken' is empty). The propagation needs a GitHub token so
+its gh calls and pushes to github.com work.
 How to get one:
   - Run: gh auth token            (prints your current gh session token), or
   - Create a PAT at https://github.com/settings/tokens with 'repo' scope.
@@ -34,7 +39,24 @@ How to use it:
     paste the token when you queue the run, then re-run.
 '@
     }
+    else
+    {
+        # GitHub token present
+    }
+    if ($problems.Count -gt 0)
+    {
+        Fail-Preflight ($problems -join "`n")
+    }
+    else
+    {
+        # both tokens present
+    }
+}
 
+# Validate that the GitHub token actually works against the GitHub API.
+function Test-GitHubAuth
+{
+    Write-Log INFO 'Validating GitHub token...'
     $result = Invoke-Logged -File 'gh' -Arguments @('api', 'user', '--jq', '.login') -MaxAttempts 3 -AllowFail
     $login = ($result.Output | Out-String).Trim()
     if ($result.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($login))
@@ -45,7 +67,10 @@ Get a working token with 'gh auth token', or create a 'repo'-scoped PAT at
 https://github.com/settings/tokens, then set the pipeline 'ghToken' variable and re-run.
 "@
     }
-    Write-Log INFO "GitHub token OK (authenticated as '$login')."
+    else
+    {
+        Write-Log INFO "GitHub token OK (authenticated as '$login')."
+    }
 }
 
 # Validate the GitHub token can actually WRITE the upstream GitHub repos the propagation will open
@@ -66,12 +91,20 @@ function Test-GitHubRepoAccess
         {
             $slugs += $matches[1]
         }
+        else
+        {
+            # not a github.com repo
+        }
     }
-    $slugs = $slugs | Select-Object -Unique
+    $slugs = @($slugs | Select-Object -Unique)
     if ($slugs.Count -eq 0)
     {
         Write-Log INFO 'No github.com repos in the dependency graph; nothing to check.'
         return
+    }
+    else
+    {
+        # check every GitHub repo
     }
 
     $no_access = @()   # SSO not authorized / repo unreachable (403/404)
@@ -107,6 +140,10 @@ function Test-GitHubRepoAccess
             $msg += 'Fix: at https://github.com/settings/tokens, click "Configure SSO" next to the token'
             $msg += 'and Authorize it for the Azure organization (SAML SSO is enforced), then re-run.'
         }
+        else
+        {
+            # every repo reachable
+        }
         if ($no_write.Count -gt 0)
         {
             $msg += ''
@@ -115,60 +152,94 @@ function Test-GitHubRepoAccess
             $msg += "Fix: use a token with 'repo' (write) scope and ensure your account has write access"
             $msg += 'to these repos, then re-run.'
         }
+        else
+        {
+            # every reachable repo writable
+        }
         Fail-Preflight ($msg -join "`n")
     }
-
-    Write-Log INFO "GitHub write access OK for all $($slugs.Count) upstream repo(s)."
+    else
+    {
+        Write-Log INFO "GitHub write access OK for all $($slugs.Count) upstream repo(s)."
+    }
 }
 
-# Validate Azure DevOps is reachable with the build account token and that target ADO repos
-# can actually be read (i.e. the build service has access).
+# How to fix Azure DevOps access for the current mode.
+function get-ado-access-guidance
+{
+    if (test-pipeline-mode)
+    {
+        return "Ensure the pipeline's build service identity can read the repository and contribute to its pull requests."
+    }
+    else
+    {
+        return "Sign in with 'az login' using an account that can access the repository, or pass -azure_token with a PAT that has Code (Read & Write) and Work Items (Read & Write) permissions."
+    }
+}
+
+# Validate that Azure DevOps is reachable with the current credentials and that every Azure DevOps
+# root repository can be read.
 function Test-AdoAccess
 {
     param([string[]] $root_list)
 
-    Write-Log INFO 'Validating Azure DevOps access as the build account...'
-    $token = $env:SYSTEM_ACCESSTOKEN
-    if ([string]::IsNullOrWhiteSpace($token))
+    $ado_roots = @($root_list | Where-Object { get-azure-org-project-from-url $_ })
+    if ($ado_roots.Count -eq 0)
     {
-        Fail-Preflight "SYSTEM_ACCESSTOKEN is not set. The pipeline must map 'SYSTEM_ACCESSTOKEN: `$(System.AccessToken)' into the step env."
+        Write-Log INFO 'No Azure DevOps root repos; skipping the Azure DevOps access check.'
+        return
     }
-    Write-Log INFO "GET $script:AdoOrgUrl/_apis/connectionData"
-    try
+    else
     {
-        $cd = invoke-ado-rest -Method GET -Url "$script:AdoOrgUrl/_apis/connectionData?api-version=7.1-preview"
+        Write-Log INFO 'Validating Azure DevOps access...'
     }
-    catch
-    {
-        Fail-Preflight "Could not reach Azure DevOps ($script:AdoOrgUrl). connectionData failed: $($_.Exception.Message)"
-    }
-    $who = $cd.authenticatedUser.providerDisplayName
-    if ([string]::IsNullOrWhiteSpace($who))
-    {
-        Fail-Preflight 'Azure DevOps connectionData returned no authenticated user; the build token is not valid.'
-    }
-    Write-Log INFO "Azure DevOps reachable; authenticated as '$who' (id $($cd.authenticatedUser.id))."
 
-    foreach ($url in $root_list)
+    $checked_orgs = @{}
+    foreach ($url in $ado_roots)
     {
-        if ($url -match 'visualstudio\.com|dev\.azure\.com')
+        $info = get-azure-org-project-from-url $url
+        $org = $info.Organization
+        if (-not $checked_orgs.ContainsKey($org))
         {
-            $name = ($url -split '/_git/')[-1]
-            Write-Log INFO "Checking build-account read access to ADO repo '$name'..."
+            $cd = $null
             try
             {
-                $null = invoke-ado-rest -Method GET -Url "$script:AdoOrgUrl/$script:AdoProject/_apis/git/repositories/$name/pullrequests?searchCriteria.status=active&`$top=1&api-version=7.1"
-                Write-Log INFO "  OK: $name"
+                $cd = invoke-ado-rest -Method GET -Url "$org/_apis/connectionData?api-version=7.1-preview"
             }
             catch
             {
-                Fail-Preflight "Build account cannot read ADO repo '$name': $($_.Exception.Message). Ensure One Build Service (msazure) has access to it."
+                Fail-Preflight "Could not reach Azure DevOps ($org): $(get-ado-error-message $_)`n$(get-ado-access-guidance)"
             }
+            $who = $cd.authenticatedUser.providerDisplayName
+            if ([string]::IsNullOrWhiteSpace($who))
+            {
+                Fail-Preflight "Azure DevOps ($org) did not report an authenticated user.`n$(get-ado-access-guidance)"
+            }
+            else
+            {
+                Write-Log INFO "Azure DevOps ($org) reachable; authenticated as '$who'."
+            }
+            $checked_orgs[$org] = $true
+        }
+        else
+        {
+            # organization already checked
+        }
+
+        $name = get-name-from-url $url
+        try
+        {
+            $null = invoke-ado-rest -Method GET -Url "$org/$($info.Project)/_apis/git/repositories/$name/pullrequests?searchCriteria.status=active&`$top=1&api-version=7.1"
+            Write-Log INFO "  OK: $name"
+        }
+        catch
+        {
+            Fail-Preflight "Cannot read Azure DevOps repo '$name': $(get-ado-error-message $_)`n$(get-ado-access-guidance)"
         }
     }
 }
 
-# Run all preflight checks. Call before any propagation work.
+# Run the -Pipeline network self-tests. Call before any propagation work.
 function Invoke-Preflight
 {
     param([string[]] $root_list)

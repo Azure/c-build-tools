@@ -64,6 +64,12 @@ enable_testing()
 add_subdirectory(build_functions)
 add_subdirectory(repo_validation)
 
+# Dependency propagation script tests: only when c-build-tools is the top-level project, so repos
+# that consume it as a submodule do not run them.
+if(WIN32 AND ${run_unittests} AND ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}"))
+    add_subdirectory(update_deps/tests)
+endif()
+
 include (CheckIncludeFiles)
 
 CHECK_INCLUDE_FILES(stdint.h HAVE_STDINT_H)

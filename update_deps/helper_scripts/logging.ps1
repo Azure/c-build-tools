@@ -1,15 +1,36 @@
 # Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 #
-# Structured, verbose logging for the dependency propagation pipeline. Timestamps every line,
-# maps levels to Azure DevOps log commands, and redacts known secrets from all output.
+# Logging, secret redaction, and time-bounded native command helpers shared by both modes.
+# Pipeline mode writes timestamped lines mapped to Azure DevOps log commands; interactive mode
+# writes plain colored messages.
 
-# Secret values to scrub from any logged text (read from known secret env vars at load time).
+# True when propagate_updates.ps1 runs with -Pipeline.
+function test-pipeline-mode
+{
+    return ($script:propagation_mode -eq 'pipeline')
+}
+
+# Secret values to scrub from any logged text.
 $script:RedactValues = @()
+
+# Register a secret so that it is scrubbed from all logged text.
+function add-redaction-value
+{
+    param([string] $Value)
+    if ($Value -and $Value.Length -ge 6 -and ($script:RedactValues -notcontains $Value))
+    {
+        $script:RedactValues += $Value
+    }
+    else
+    {
+        # empty, too short to redact safely, or already registered
+    }
+}
+
 foreach ($name in @('SYSTEM_ACCESSTOKEN', 'GH_TOKEN', 'AZURE_DEVOPS_EXT_PAT', 'ghToken'))
 {
-    $v = [Environment]::GetEnvironmentVariable($name)
-    if ($v -and $v.Length -ge 6) { $script:RedactValues += $v }
+    add-redaction-value ([Environment]::GetEnvironmentVariable($name))
 }
 
 # Replace any known secret value or common token shape with a placeholder.
@@ -22,26 +43,39 @@ function Protect-Secret
         if ($s) { $Text = $Text.Replace($s, '***REDACTED***') }
     }
     $Text = [regex]::Replace($Text, 'gh[pousr]_[A-Za-z0-9]{20,}', '***REDACTED***')
-    $Text = [regex]::Replace($Text, '(?i)(authorization:\s*bearer\s+)\S+', '$1***REDACTED***')
+    $Text = [regex]::Replace($Text, '(?i)(authorization:\s*(bearer|basic)\s+)\S+', '$1***REDACTED***')
     return $Text
 }
 
-# Write a timestamped, redacted log line. Levels: INFO, WARN, ERROR, DEBUG, STEP.
+# Write a redacted log line. Levels: INFO, WARN, ERROR, DEBUG, STEP.
 function Write-Log
 {
     param(
         [ValidateSet('INFO', 'WARN', 'ERROR', 'DEBUG', 'STEP')][string] $Level = 'INFO',
         [Parameter(ValueFromRemainingArguments = $true)][object[]] $Message
     )
-    $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $text = Protect-Secret (($Message | ForEach-Object { "$_" }) -join ' ')
-    $line = "[$ts] [$Level] $text"
-    switch ($Level)
+    if (test-pipeline-mode)
     {
-        'ERROR' { Write-Host "##[error]$line" }
-        'WARN'  { Write-Host "##[warning]$line" }
-        'STEP'  { Write-Host "##[section]$line" }
-        default { Write-Host $line }
+        $line = "[{0}] [{1}] {2}" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'), $Level, $text
+        switch ($Level)
+        {
+            'ERROR' { Write-Host "##[error]$line" }
+            'WARN'  { Write-Host "##[warning]$line" }
+            'STEP'  { Write-Host "##[section]$line" }
+            default { Write-Host $line }
+        }
+    }
+    else
+    {
+        switch ($Level)
+        {
+            'ERROR' { Write-Host $text -ForegroundColor Red }
+            'WARN'  { Write-Host $text -ForegroundColor Yellow }
+            'STEP'  { Write-Host "`n$text" -ForegroundColor Cyan }
+            'DEBUG' { Write-Host $text -ForegroundColor DarkGray }
+            default { Write-Host $text }
+        }
     }
 }
 
@@ -130,8 +164,17 @@ function Invoke-NativeWithTimeout
             # hung connection alive and the output pipes open. The cleanup itself is time-bounded too.
             try
             {
-                $killer = Start-Process -FilePath 'taskkill.exe' -ArgumentList "/PID $($proc.Id) /T /F" -NoNewWindow -PassThru
+                $kill_info = New-Object System.Diagnostics.ProcessStartInfo
+                $kill_info.FileName = 'taskkill.exe'
+                $kill_info.Arguments = "/PID $($proc.Id) /T /F"
+                $kill_info.UseShellExecute = $false
+                $kill_info.CreateNoWindow = $true
+                # taskkill prints one short line per process; redirecting keeps it out of the log.
+                $kill_info.RedirectStandardOutput = $true
+                $kill_info.RedirectStandardError = $true
+                $killer = [System.Diagnostics.Process]::Start($kill_info)
                 [void]$killer.WaitForExit(10000)
+                $killer.Dispose()
             }
             catch { }
             try { $proc.Kill() } catch { }

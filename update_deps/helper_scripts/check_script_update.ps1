@@ -25,8 +25,7 @@ function check-for-script-updates
         Push-Location $repo_root
 
         # Fetch latest from origin (quiet)
-        git fetch origin master --quiet 2>$null
-        if ($LASTEXITCODE -ne 0)
+        if ((invoke-git-command -git_args @('fetch', 'origin', 'master', '--quiet') -timeout_sec 120) -ne 0)
         {
             Write-Host "Could not fetch from origin (this is not an error, continuing...)" -ForegroundColor Yellow
             Pop-Location
