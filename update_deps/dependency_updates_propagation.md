@@ -9,7 +9,9 @@ This toolset builds dependency graphs and propagates updates from the lowest lev
 ```
 update_deps/
 ├── propagate_updates.ps1      # Main orchestration script
+├── propagate_updates_pipeline.ps1 # Noninteractive pipeline implementation
 ├── ignores.json               # Repos to exclude from updates
+├── pipeline_helper_scripts/   # Pipeline-safe REST/git/PR helpers
 ├── helper_scripts/
 │   ├── build_graph.ps1        # Builds dependency graph via BFS
 │   ├── status_tracking.ps1    # Progress display functions
@@ -37,6 +39,9 @@ Given a root repo, this script builds the dependency graph and propagates update
 
 # Force a full graph rebuild (ignores known_graph.json)
 .\propagate_updates.ps1 -azure_work_item {work_item_id} -ForceBuildGraph -root_list {root1}, {root2}, ...
+
+# Noninteractive Azure DevOps pipeline mode
+.\propagate_updates.ps1 -Pipeline -azure_work_item {work_item_id} -NoCloseFailedPr -root_list {root1}, {root2}, ...
 ```
 
 ### Arguments
@@ -49,6 +54,94 @@ Given a root repo, this script builds the dependency graph and propagates update
 | `-poll_interval` | No | Seconds between status polls during PR watch (default: 15) |
 | `-ForceBuildGraph` | No | Force a full graph rebuild even if the known graph matches |
 | `-NoCloseFailedPr` | No | Keep the PR open if it fails (default: close/abandon failed PRs) |
+| `-Resume` | No | Resume the most recent interactive propagation run |
+| `-AutoFix` | No | Use Copilot CLI to attempt interactive build-failure fixes |
+| `-Pipeline` | No | Run the noninteractive pipeline implementation described below |
+
+## Noninteractive pipeline mode
+
+`-Pipeline` keeps the default interactive implementation intact and dispatches to a pipeline-safe
+implementation designed for Azure DevOps agents. Pipeline mode:
+
+- never launches WAM, credential-manager, Azure CLI, GitHub CLI, or git prompts;
+- uses `SYSTEM_ACCESSTOKEN` directly for Azure DevOps REST and git authentication;
+- uses `GH_TOKEN` for GitHub API, PR, merge, and git authentication;
+- validates both identities and target repository access before creating any PR;
+- redacts known tokens from logs and bounds/retries network operations;
+- discovers the dependency graph live instead of using `known_graph.json`;
+- uses a per-run git mirror cache to avoid repeatedly downloading shared dependencies;
+- opens independent dependency chains greedily and polls all open PRs together;
+- supports `-azure_work_item`, `-root_list`, `-poll_interval`, and `-NoCloseFailedPr`.
+
+Pipeline mode intentionally does not support the interactive-only `-azure_token`, `-Resume`,
+`-AutoFix`, or `-ForceBuildGraph` arguments. Default invocations without `-Pipeline` continue to
+support WAM/PAT authentication, known-graph reuse, resume, auto-fix, existing-PR recovery, and the
+interactive PR watchers.
+
+### Environment contract
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SYSTEM_ACCESSTOKEN` | Yes | Map from `$(System.AccessToken)`. The build identity needs repository read/write, PR contribution, and work-item linking permissions in each Azure DevOps target |
+| `GH_TOKEN` | Yes | GitHub token with write access to every GitHub repository in the discovered graph; for the Azure organization it must also be SAML SSO-authorized |
+| `AGENT_TEMPDIRECTORY` | No | Used for the isolated git configuration and a downloaded pinned GitHub CLI when available |
+
+The script sets `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`, and
+`GH_PROMPT_DISABLED=1` itself. It passes the Azure DevOps bearer token to git through inherited
+`GIT_CONFIG_*` environment entries, so the token is not written to a git config file.
+
+### Azure DevOps YAML example
+
+```yaml
+- task: PowerShell@2
+  displayName: Propagate dependency updates
+  timeoutInMinutes: 0
+  inputs:
+    targetType: inline
+    script: |
+      $script = Join-Path $env:BUILD_SOURCESDIRECTORY 'deps\c-build-tools\update_deps\propagate_updates.ps1'
+      & $script `
+          -Pipeline `
+          -azure_work_item '${{ parameters.workItemId }}' `
+          -root_list 'https://msazure.visualstudio.com/One/_git/RootRepo' `
+          -NoCloseFailedPr
+      exit $LASTEXITCODE
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    GH_TOKEN: $(ghToken)
+```
+
+The job and task timeout must allow for human-gated PRs to merge. On self-hosted agents,
+`timeoutInMinutes: 0` is appropriate when the propagation is expected to wait for approvals.
+
+### Migration from a vendored pipeline copy
+
+Replace a repository-local invocation such as:
+
+```powershell
+$script = Join-Path $env:BUILD_SOURCESDIRECTORY 'scripts\update_deps\propagate_updates.ps1'
+& $script -azure_work_item $workItemId -root_list $roots -NoCloseFailedPr
+```
+
+with the c-build-tools entry point:
+
+```powershell
+$script = Join-Path $env:BUILD_SOURCESDIRECTORY 'deps\c-build-tools\update_deps\propagate_updates.ps1'
+& $script -Pipeline -azure_work_item $workItemId -root_list $roots -NoCloseFailedPr
+```
+
+For branch validation, point the pipeline's c-build-tools checkout/submodule to the PR branch
+being tested; the invocation and environment contract remain the same.
+
+### Local static tests
+
+The pipeline-mode test validates PowerShell parsing, top-level parameter dispatch, secret
+redaction, timeout enforcement, Azure DevOps git-auth matching, gate summaries, and greedy
+dependency readiness without creating branches or PRs:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -Command "cd '<c-build-tools-root>'; .\update_deps\tests\test_pipeline_mode.ps1"
+```
 
 ## build_graph.ps1
 

@@ -11,6 +11,10 @@ Propagates dependency updates for git repositories.
 Given a root repo, this script builds the dependency graph and propagates updates from the
 lowest level up to the root repo by making PRs to each repo in bottom-up level-order.
 
+Use -Pipeline to run the noninteractive Azure DevOps pipeline implementation. Pipeline mode
+discovers the graph live, uses SYSTEM_ACCESSTOKEN for Azure DevOps REST and git authentication,
+uses GH_TOKEN for GitHub, and greedily advances independent dependency chains.
+
 By default, if a PR fails (e.g., checks fail), it is automatically closed/abandoned before
 exiting. Use -NoCloseFailedPr to leave failed PRs open instead.
 
@@ -44,6 +48,12 @@ Azure via 'az repos pr update --status abandoned').
 and continues from the repo that failed. Repos that were already updated or skipped are not
 re-processed.
 
+.PARAMETER Pipeline
+
+(Optional) Run in noninteractive pipeline mode. This mode requires SYSTEM_ACCESSTOKEN and
+GH_TOKEN environment variables. It does not support -azure_token, -Resume, -AutoFix, or
+-ForceBuildGraph.
+
 .INPUTS
 
 ignore.json: list of repositories that must be ignored for updates.
@@ -64,6 +74,11 @@ PS> .\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345
 
 PS> .\propagate_updates.ps1 -Resume
 # Resumes the most recent failed propagation run from the last failed repo
+
+.EXAMPLE
+
+PS> .\propagate_updates.ps1 -Pipeline -azure_work_item 12345 -root_list root1, root2
+# Runs noninteractively using SYSTEM_ACCESSTOKEN and GH_TOKEN
 #>
 
 
@@ -75,8 +90,41 @@ param(
     [switch]$ForceBuildGraph, # force graph rebuild even if known graph matches
     [switch]$Resume, # resume a previously failed propagation run
     [switch]$AutoFix, # use Copilot CLI to auto-fix build failures
+    [switch]$Pipeline, # run the noninteractive pipeline-safe implementation
     [Parameter(Mandatory=$false)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
 )
+
+if ($Pipeline.IsPresent)
+{
+    $unsupported_parameters = @()
+    if (-not [string]::IsNullOrWhiteSpace($azure_token)) { $unsupported_parameters += "-azure_token" }
+    if ($ForceBuildGraph.IsPresent) { $unsupported_parameters += "-ForceBuildGraph" }
+    if ($Resume.IsPresent) { $unsupported_parameters += "-Resume" }
+    if ($AutoFix.IsPresent) { $unsupported_parameters += "-AutoFix" }
+
+    if ($unsupported_parameters.Count -gt 0)
+    {
+        Write-Error "Pipeline mode does not support: $($unsupported_parameters -join ', ')."
+        exit 1
+    }
+
+    $pipeline_arguments = @{
+        azure_work_item = $azure_work_item
+        poll_interval = $poll_interval
+        root_list = $root_list
+    }
+    if ($NoCloseFailedPr.IsPresent)
+    {
+        $pipeline_arguments.NoCloseFailedPr = $true
+    }
+
+    & "$PSScriptRoot\propagate_updates_pipeline.ps1" @pipeline_arguments
+    if ($?)
+    {
+        exit 0
+    }
+    exit 1
+}
 
 
 # Source helper scripts
