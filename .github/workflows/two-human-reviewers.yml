@@ -1,71 +1,8 @@
 name: Two human reviewers
-# Bot-authored pull requests need approvals from two distinct humans (see `required-approvals`).
-#
-# A human-authored PR already has two people in the loop: the author who wrote and vetted the change,
-# and the approver. When the agent opens the PR that first human is missing, so a single approval would
-# be the only human judgement applied to it. This restores the second.
-#
-# This is the shared definition. Other repositories call it from a thin caller workflow, so the logic
-# is maintained once; it also triggers directly on this repository's own PRs, which is why it declares
-# `pull_request` alongside `workflow_call`. When called, `github.repository` and the event payload are
-# the caller's, so it gates the calling repository's PR.
-#
-# A called workflow's own triggers are ignored - only the caller's events run it - so a caller MUST
-# declare `pull_request_review` as well as `pull_request`. Without it the gate evaluates once at open,
-# finds no approvals, and never re-runs when humans approve, leaving the required check stuck.
-# `.github/workflow-templates/two-human-reviewers.caller.yml` is the template to copy.
-#
-# `pull_request` rather than `pull_request_target`, which GitHub blocks by default in public repositories
-# from November 2, 2026:
-# https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target#default-policy-for-pull_request_target
-#
-# The verdict is published as a commit status, which needs a token that can write. On `pull_request` and
-# `pull_request_review`, a run for a pull request from a branch in the same repository gets one, so those
-# publish as they always have, `pending` included. Dependabot's runs start read-only, but GitHub honours
-# the `permissions` below for them, so its pull requests publish too. A run for a fork's pull request is
-# read-only whatever `permissions` asks for, so its status cannot be published and the pull request stays
-# blocked. That fails safe - a missing required status never lets a merge through. A maintainer unblocks
-# it by running this workflow manually with its number (see `workflow_dispatch` below), and runs it again
-# after each push and, for a bot's pull request, whenever its reviews change. Fork pull requests are rare
-# in the repositories this gates, so that manual step is the accepted cost.
-#
-# It never checks out the pull request's code - it reads the API and nothing else. Keep it that way: the
-# manual run that publishes for a fork's pull request holds a token that can write, as does a run from any
-# caller still on `pull_request_target`, and anything checked out from the fork could run with it.
-#
-# `pull_request` takes this file from the pull request's merge commit, as `pull_request_review` always
-# has, so a pull request from a branch in this repository that edits it is judged by its edited copy.
-# Deleting it fails safe - the required status never arrives and the pull request cannot merge - but
-# weakening it does not, and nor does adding another workflow that publishes the status. Review a diff
-# that touches `.github/workflows/` as security-relevant; requiring code owner review on
-# `.github/workflows/**` in branch protection is what enforces that. A consuming repository's pull
-# request cannot alter the logic here, but editing its own caller stub is just as decisive, and the same
-# rule is what covers it there.
-#
-# Why a job and not a branch rule: GitHub cannot condition an approval count on the PR author, and a
-# required check that never reports blocks a PR forever ("Expected - waiting for status to be
-# reported"). So this runs on every PR and passes immediately for human authors, and only bot-authored
-# PRs are actually gated.
-#
-# The unit being judged is the head commit, not the pull request that triggered the run. A check run
-# attaches to a commit, and branch protection reads the newest run of a given name on the pull request's
-# head commit - so two pull requests that share a head commit share this check, and whichever run
-# finishes last decides both. Copying a bot's branch and opening a second pull request from it is enough
-# to produce that, and judging only the triggering pull request would then let the copy's "author is
-# human, not gated" verdict land on the bot's pull request and clear it. Every open pull request on the
-# commit is therefore evaluated together, which makes the verdict a function of the commit alone and
-# leaves the order the runs finish in unable to change it. The cost is that a human's pull request
-# sharing a commit with a bot's is held to the bot's requirement; that is the safe direction, and the
-# approvals it collects count toward the shared commit.
-#
-# Gating on "the author is a bot" rather than on a list of named bots is deliberate: an app can be
-# renamed, and a stale name would silently let its pull requests through under-reviewed. Exempting a bot
-# is therefore an explicit act, and forgetting to update this file can only ever be too strict.
-#
-# `dependabot[bot]` is exempt. The gate exists because an agent writes the change a human would
-# otherwise have written and vetted, leaving one human short. A dependency bump has no missing author:
-# the change is a version number, and the code it pulls in was never going to be written here. The
-# repository's normal review rule is the control that fits it.
+# Bot-authored PRs need approvals on the head commit from two distinct humans with push access; the
+# `mrbot/two-human-reviewers` status reports the verdict. Fork PRs get a read-only token, so they need a
+# manual run (`pull_request_target` is blocked by default). Never check out PR code, and require code
+# owner review on `.github/workflows/**`.
 
 on:
   workflow_call:
@@ -86,15 +23,9 @@ on:
           to it.
         type: string
         required: false
-  # Dispatching runs the default branch's copy of this workflow, with a token that can write. Its own
-  # check run attaches to that branch's commit, but the status it publishes - the verdict branch
-  # protection requires - goes to the pull request's head commit, because the run looks that commit up
-  # from the API. That is how a maintainer unblocks a fork's pull request, whose own runs cannot publish:
-  # start a new run with "Run workflow", since re-running one of the fork's runs keeps its read-only
-  # token. The verdict holds for the head as it stands, so repeat it after each push and, for a bot's pull
-  # request, whenever its reviews change. A pull request that was already open when the gate landed has no
-  # event to evaluate it with - those don't fire retroactively - and is unstuck by dispatching this for
-  # it, by reopening it, or by any push to it; a fork's pull request only by dispatching.
+  # A manual run uses the default branch's copy with a token that can write, and publishes the status to
+  # the PR's head commit. Use "Run workflow", since re-running a fork PR's run keeps its read-only token,
+  # and repeat it after each push or review.
   workflow_dispatch:
     inputs:
       pr:
@@ -150,16 +81,14 @@ jobs:
           # protection treats a pending required status as blocking, which is exactly the intent.
           #
           # Publishing is best effort. It needs `statuses: write`, which a called workflow only has if its
-          # caller granted it, and a `pull_request` or `pull_request_review` run on a fork's pull request
-          # holds a read-only token whatever the caller granted. Neither case fails the run, because
-          # branch protection reads the status rather than this job: the status stays missing, or at
-          # whatever an earlier run published for this commit, until a run that can write publishes it,
-          # and the warning says how to get one.
+          # caller granted it, and a `pull_request` run on a fork's pull request holds a read-only token
+          # whatever the caller granted. Neither case fails the run: branch protection reads the status,
+          # which stays unchanged until a run that can write publishes it.
           publish() {
             if ! gh api --method POST "repos/$REPO/statuses/$head_sha" \
                    -f state="$1" -f context="$STATUS_CONTEXT" -f description="$2" \
                    -f target_url="$RUN_URL" >/dev/null 2>&1; then
-              echo "::warning::Could not publish the $STATUS_CONTEXT status: the run needs 'statuses: write', which pull_request and pull_request_review runs on a fork's pull request never get. A maintainer can publish it by starting this workflow with Run workflow (not Re-run) and pr=$PR, again after each push and, for a bot's pull request, whenever its reviews change."
+              echo "::warning::Could not publish the $STATUS_CONTEXT status: the run needs 'statuses: write', which pull_request and pull_request_review runs on a fork's pull request never get. A maintainer can publish it with Run workflow (not Re-run) and pr=$PR, after each push or review."
             fi
           }
 

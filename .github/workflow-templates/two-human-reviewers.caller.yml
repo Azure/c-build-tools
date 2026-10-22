@@ -9,37 +9,10 @@ name: Two human reviewers
 # directly.
 #
 # END template-only
-# The logic lives in c-build-tools so every repository shares one definition; see
-# `.github/workflows/two-human-reviewers.yml` there for why this is a workflow rather than a branch rule,
-# and for the `required-approvals` and `exempt-bots` inputs.
-#
-# Keep BOTH triggers below. A called workflow's own triggers are ignored, so these are what re-run the
-# gate; drop `pull_request_review` and it evaluates once at open, finds no approvals, and never re-runs
-# when someone approves - leaving the required status pending until an unrelated push happens to
-# re-trigger it.
-#
-# `pull_request` rather than `pull_request_target`, which GitHub blocks by default in public repositories
-# from November 2, 2026. The gate publishes its verdict as a commit status, which needs a token that can
-# write. A pull request from a branch in this repository gets one, and so does Dependabot's, since GitHub
-# honours the `permissions` below for its runs. A fork's pull request never does, so its status cannot be
-# published and it stays blocked until a maintainer runs this workflow manually with its number (see
-# below) - again after each push and, for a bot's pull request, whenever its reviews change.
-#
-# Both triggers take this file from the pull request, so a pull request from a branch in this repository
-# can edit how it is gated. Require code owner review on `.github/workflows/**` in branch protection, so
-# that such an edit is reviewed as the security change it is.
-#
-# The gate never checks out the pull request's code - it reads the API and nothing else. Do not add a
-# checkout here, and do not add one to the called workflow: the manual run that publishes for a fork's
-# pull request holds a token that can write, and anything checked out from the fork could run with it.
-#
-# Do not add a required status check for this until the file is on the default branch, or every open pull
-# request will wait forever on a check that cannot run. Pull requests that were already open when it landed
-# get no event either, and are unstuck by reopening them, by any push to them, or by dispatching this with
-# their number; a fork's pull request only by dispatching. Start a dispatch with "Run workflow", since
-# re-running one of a fork's runs keeps its read-only token. It runs the default branch's copy with a
-# token that can write; its own check run attaches to that branch's commit, but the status it publishes
-# goes to the pull request's head commit.
+# Calls the shared gate in c-build-tools. Keep `pull_request_review`, or approvals never re-run it. A
+# fork's PR gets a read-only token (`pull_request_target` is blocked by default), so a maintainer
+# publishes its status by running this workflow manually with its number, again after each push or
+# review. Never add a checkout.
 
 on:
   workflow_dispatch:
