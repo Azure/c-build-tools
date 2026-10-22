@@ -90,10 +90,21 @@ macro(set_default_build_options)
     #compile the code as C17
     set(CMAKE_C_STANDARD 17)
 
-    if (NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 17)
-        set(CMAKE_CXX_STANDARD 17)
+    if (NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 23)
+        set(CMAKE_CXX_STANDARD 23)
     endif()
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+    # CMake maps C++23 to /std:c++latest on MSVC, which also enables experimental features; use the C++23-only switch.
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.52)
+            set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "-std:c++23")
+            set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "-std:c++23")
+        elseif (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.43)
+            set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "-std:c++23preview")
+            set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "-std:c++23preview")
+        endif()
+    endif()
 
     # Make sure we have a runtime output directory always set
     if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG)
