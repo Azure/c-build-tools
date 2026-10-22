@@ -48,7 +48,8 @@ update_deps/
 │   └── success_animation.ps1
 └── tests/
     ├── CMakeLists.txt             # Registers the tests with CTest
-    └── test_propagate_updates.ps1 # Tests for both modes; no branches or PRs are created
+    ├── test_propagate_updates.ps1 # Tests for both modes; no branches or PRs are created
+    └── e2e/                       # End-to-end -Pipeline and interactive scenarios, also run against the scripts they replaced
 ```
 
 ## propagate_updates.ps1
@@ -215,6 +216,80 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\update_deps\tests\test_propagate
 
 With `-Drun_unittests=ON`, CMake registers them as the `update_deps_propagation_test` (Windows
 PowerShell) and `update_deps_propagation_pwsh_test` (PowerShell 7, when installed) CTest tests.
+
+### End-to-end tests
+
+`tests/e2e/test_e2e.ps1` runs the propagation end to end in a fake environment on the local machine:
+- local bare git repositories, reached through their real Azure DevOps and GitHub URLs;
+- a fake Azure DevOps service, behind both the REST API and the `az` command;
+- a fake `gh` CLI.
+
+Each scenario also passes, with the same checks, against the scripts the merged version replaced,
+so a failure means behavior changed:
+- pipeline scenarios run `-Pipeline` the way the Azure-MessagingStore pipeline does, and also pass
+  against the Azure-MessagingStore ("EBS") copy that `-Pipeline` came from;
+- interactive scenarios run `propagate_updates.ps1` the way a developer does, in a console signed in
+  to `gh` and the Azure CLI, and also pass against the c-build-tools version before the merge.
+
+The pipeline scenarios cover:
+- a full propagation over a graph of six repositories, checking that:
+  - pull requests open in dependency order, and slow ones don't block unrelated repositories;
+  - every pull request is linked to the work item, approved, and set to auto-complete (or auto-merge);
+  - Azure DevOps descriptions stay within the limit, and commit messages and pull requests list
+    upstream changes;
+  - c-build-tools `ref:`s and fixed commits are pinned, and a submodule already ahead of master isn't
+    downgraded;
+  - ignored repositories are left alone;
+  - the run recovers from throttling, server errors and timeouts.
+- failing GitHub checks, and a rejected Azure DevOps pull request with `-NoCloseFailedPr`;
+- a GitHub token without push access, a missing work item, a missing `SYSTEM_ACCESSTOKEN` or
+  `GH_TOKEN`, and a graph that is already up to date.
+
+The interactive scenarios cover:
+- a full propagation with a WAM sign-in, whose access tokens expire mid-run, checking that:
+  - pull requests open one at a time in dependency order, and each is watched until it merges;
+  - Azure DevOps pull requests are linked, approved and set to auto-complete as the developer;
+  - each pull request gets a notification, and the run never asks for input;
+  - the run saves its state, leaves the developer's git config alone, and ends in the same
+    repository state as a pipeline run;
+  - a stale `known_graph.json` leads to graph discovery and a c-build-tools pull request with the
+    discovered graph.
+- a run with `-azure_token` and a matching known graph;
+- failing GitHub checks, then `-Resume` with the printed command, which opens a new pull request for
+  the failed repository;
+- a failed Azure DevOps build with `-NoCloseFailedPr`, then `-Resume`, which watches the same pull
+  request until it merges;
+- a missing work item.
+
+The developer is signed in to `gh` with a stored login (no `GH_TOKEN`) and to the Azure CLI. The
+fake `Invoke-RestMethod`, `Invoke-WebRequest` and `Start-Sleep` declare the parameters of the
+PowerShell edition they run in, so edition-specific code takes the same path it would for real.
+
+Interactive scenarios run with Windows PowerShell 5.1 and, when installed, PowerShell 7. Before the
+merge, two Windows PowerShell 5.1 bugs broke the failure and resume paths: the watchers miscounted
+a single check (a lone running check counted as finished, and a lone failed build was watched
+forever), and `-Resume` read an empty `az repos pr list` result as a pull request. The resume
+scenarios therefore check the version before the merge with PowerShell 7 only. Ctrl+C handling and
+`-AutoFix` are not covered.
+
+No traffic leaves the machine. The credentials themselves are not exercised
+(`test_propagate_updates.ps1` covers them).
+
+```powershell
+# The merged version (CTest runs these as update_deps_pipeline_e2e_test and
+# update_deps_interactive_e2e_test for Debug)
+powershell -NoProfile -ExecutionPolicy Bypass -File .\update_deps\tests\e2e\test_e2e.ps1 -Kind pipeline
+powershell -NoProfile -ExecutionPolicy Bypass -File .\update_deps\tests\e2e\test_e2e.ps1 -Kind interactive
+
+# The replaced scripts first, then the merged version. The c-build-tools version before the merge
+# is extracted from this repository's history; the EBS copy from an Azure-MessagingStore clone.
+git -C <Azure-MessagingStore clone> archive --format=zip -o $env:TEMP\ebs.zip 03122f16a9117680d1a0f9512457dcc6e9b690e3 scripts/update_deps
+Expand-Archive $env:TEMP\ebs.zip $env:TEMP\ebs
+powershell -NoProfile -ExecutionPolicy Bypass -File .\update_deps\tests\e2e\test_e2e.ps1 -Implementation both -EbsRoot $env:TEMP\ebs\scripts\update_deps
+```
+
+The checks describe the replaced scripts' behavior. After changing a check, run
+`-Implementation both` to confirm that they still pass it.
 
 ## build_graph.ps1
 
