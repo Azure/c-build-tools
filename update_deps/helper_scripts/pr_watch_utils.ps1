@@ -543,13 +543,13 @@ function global:get-check-status-counts
     )
     $result = $null
 
-    $succeeded_count = ($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Succeeded }).Count
-    $failed_count = ($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed }).Count
-    $running_count = ($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Running }).Count
-    $pending_count = ($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Pending }).Count
-    $skipped_count = ($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Skipped }).Count
-    $cancelled_count = ($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Cancelled }).Count
-    $unknown_count = ($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Unknown }).Count
+    $succeeded_count = @($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Succeeded }).Count
+    $failed_count = @($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Failed }).Count
+    $running_count = @($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Running }).Count
+    $pending_count = @($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Pending }).Count
+    $skipped_count = @($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Skipped }).Count
+    $cancelled_count = @($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Cancelled }).Count
+    $unknown_count = @($checks | Where-Object { $_.Status -eq [PrCheckStatus]::Unknown }).Count
 
     $result = @{
         Succeeded = $succeeded_count
@@ -588,7 +588,8 @@ function global:Test-ChecksComplete
     {
         # Filter out license/CLA checks and manual approval checks (e.g., Proof Of Presence)
         # — these don't indicate CI build status
-        $ci_checks = $checks | Where-Object { $_.Name -notmatch "license|cla|proof.of.presence" }
+        # @() keeps .Count reliable on Windows PowerShell 5.1, where a lone object has no Count.
+        $ci_checks = @($checks | Where-Object { $_.Name -notmatch "license|cla|proof.of.presence" })
 
         if (-not $ci_checks -or $ci_checks.Count -eq 0)
         {
@@ -598,16 +599,16 @@ function global:Test-ChecksComplete
         else
         {
             # Filter to blocking checks (if IsBlocking exists, use it; otherwise all are blocking)
-            $blocking_checks = $ci_checks | Where-Object {
+            $blocking_checks = @($ci_checks | Where-Object {
                 $_.IsBlocking -eq $true -or $_.IsBlocking -eq $null
-            }
+            })
 
         # Check if any BUILD check has failed — no need to wait for others.
         # Check all Build checks regardless of IsBlocking — a failed build is
         # always actionable, even if the policy is marked non-blocking.
-        $failed_builds = $ci_checks | Where-Object {
+        $failed_builds = @($ci_checks | Where-Object {
             $_.Status -eq [PrCheckStatus]::Failed -and $_.Name -match "^Build"
-        }
+        })
         if($failed_builds.Count -gt 0)
         {
             $failed_names = ($failed_builds | ForEach-Object { $_.Name }) -join ", "
@@ -616,9 +617,9 @@ function global:Test-ChecksComplete
         else
         {
             # Check if any blocking check is still in progress
-            $in_progress = $blocking_checks | Where-Object {
+            $in_progress = @($blocking_checks | Where-Object {
                 $_.Status -eq [PrCheckStatus]::Running -or $_.Status -eq [PrCheckStatus]::Pending
-            }
+            })
 
             if($in_progress.Count -gt 0)
             {
@@ -628,8 +629,8 @@ function global:Test-ChecksComplete
             else
             {
                 # All checks have reached terminal state with no failures
-                $cancelled = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Cancelled }
-                $succeeded = $blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Succeeded }
+                $cancelled = @($blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Cancelled })
+                $succeeded = @($blocking_checks | Where-Object { $_.Status -eq [PrCheckStatus]::Succeeded })
 
                 if($cancelled.Count -gt 0 -and $succeeded.Count -eq 0)
                 {
@@ -688,6 +689,40 @@ function global:show-status-summary
     $stats = "{0} cancelled, {1} failing, {2} successful, {3} skipped, and {4} pending checks`n" -f `
         $counts.Cancelled, $counts.Failed, $counts.Succeeded, $counts.Skipped, $counts.InProgress
     Write-Host $stats -ForegroundColor Gray
+}
+
+
+#
+# Display one watch iteration: the summary and check table, or $empty_message when no checks exist
+#
+function global:show-pr-watch-status
+{
+    param(
+        [hashtable] $displayData,
+        [int] $poll_interval = 30,
+        [string] $empty_message = "No checks found"
+    )
+
+    $checks = $displayData.Checks
+    if(-not $checks -or $checks.Count -eq 0)
+    {
+        Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit." -ForegroundColor Gray
+        if($displayData.PrUrl)
+        {
+            Write-Host "PR: $($displayData.PrUrl)" -ForegroundColor Cyan
+        }
+        else
+        {
+            # no PR URL
+        }
+        Write-Host ""
+        Write-Host $empty_message -ForegroundColor Yellow
+    }
+    else
+    {
+        show-status-summary -counts $displayData.Counts -pr_url $displayData.PrUrl -poll_interval $poll_interval
+        show-pr-check-table -checks $checks
+    }
 }
 
 

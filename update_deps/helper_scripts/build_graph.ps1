@@ -4,82 +4,46 @@
 <#
 .SYNOPSIS
 
-Given a comma-separeted list of URLs to repositories, prints the order in which its submodules should be updated to file order.json
+Discovers the submodule dependency graph of the root repositories and the order in which they
+must be updated.
 
 .DESCRIPTION
 
-Performs bottom-up level-order traversal of the dependency graph and prints the order to file order.json
+build-dependency-graph returns @{ repo_order; repo_urls; repo_edges }:
+  - repo_order lists every repo after everything it depends on (bottom-up level order: the deepest
+    dependencies first, then alphabetically within a level). A dependency cycle fails the run.
+  - repo_urls maps each repo name to its clone URL.
+  - repo_edges maps each repo to its direct dependencies within the graph.
 
-.PARAMETER root_list
-
-Comma-separated list of URLs for repositories upto which updates must be propagated
-
-.INPUTS
-
-None.
-
-.OUTPUTS
-
-Prints order in which repositories must be updated to file order.json
+Interactive runs reuse known_graph.json when the roots' submodules still match it. Otherwise the graph
+is discovered live (BFS over shallow clones), saved to known_graph.json, and a c-build-tools PR with
+the update is opened. -Pipeline runs pass -NoKnownGraph: the graph is always discovered live and
+known_graph.json is never read or written.
 
 .EXAMPLE
 
-PS> .\build_graph.ps1 -root_list 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-GeoReplication', 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-ElasticLog'
-PS> Get-Content -Path order.json
-[
-    "c-build-tools",
-    "macro-utils-c",
-    "c-logging",
-    "ctest",
-    "c-testrunnerswitcher",
-    "umock-c",
-    "c-pal",
-    "c-util",
-    "com-wrapper",
-    "sf-c-util",
-    "clds",
-    "zrpc",
-    "Azure-Messaging-Metrics",
-    "Azure-MessagingStore",
-    "Azure-Messaging-GeoReplication",
-    "Azure-Messaging-ElasticLog"
-]
+PS> $graph = build-dependency-graph -root_list 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-GeoReplication', 'https://msazure.visualstudio.com/DefaultCollection/One/_git/Azure-Messaging-ElasticLog'
+PS> $graph.repo_order
+c-build-tools
+macro-utils-c
+c-logging
+ctest
+c-testrunnerswitcher
+umock-c
+c-pal
+c-util
+com-wrapper
+sf-c-util
+clds
+zrpc
+Azure-Messaging-Metrics
+Azure-MessagingStore
+Azure-Messaging-GeoReplication
+Azure-Messaging-ElasticLog
 #>
 
-param(
-    [Parameter(Mandatory=$true)][string[]] $root_list, # comma-separated list of URLs for repositories upto which updates must be propagated
-    [switch]$ForceBuildGraph # force graph rebuild even if known graph matches
-)
 
-
-# parse repo URL to extract repo name
-# Expected URL format: */<repo_name>[.*]
-# Example: https://github.com/Azure/c-build-tools or https://github.com/Azure/c-build-tools.git
-# Exits on failure
-function get-name-from-url
-{
-    param (
-        [string] $url
-    )
-    $result = $null
-
-    if (!$url.Contains("http"))
-    {
-        Write-Error "Invalid URL: $url"
-        exit -1
-    }
-    else
-    {
-        $split_by_slash = $url.Split('/')
-        $split_by_dot = $split_by_slash[-1].Split('.') # $split_by_slash[-1] contains [repo_name].git
-        $result = $split_by_dot[0] # $split_by_dot[0] contains [repo_name]
-    }
-
-    return $result
-}
-
-
-# get list of submodule URLs from a given repo URL
+# get list of submodule URLs from a given repo URL (the repo must be cloned in the current directory)
 function get-submodules
 {
     param (
@@ -135,54 +99,44 @@ function get-submodules
         }
     }
 
-    return $result
+    return ,$result
 }
 
 
-# Known graph: pre-computed dependency edges and URLs.
-# If the actual edges from .gitmodules match the known graph, skip the full BFS discovery.
-# Always fetch the latest version from the c-build-tools repo to avoid stale local copies.
-$path_to_known_graph = Join-Path $PSScriptRoot "..\known_graph.json"
-$known_graph = $null
-$use_known_graph = $false
-$save_new_graph = $false
+# Fetch the latest known_graph.json from c-build-tools master and check that the roots' submodules
+# still match it. Returns the known graph, or $null if it is unavailable or stale.
+function get-validated-known-graph
+{
+    param(
+        [string[]] $root_list,
+        $repos_to_ignore
+    )
+    $path_to_known_graph = Join-Path $PSScriptRoot "..\known_graph.json"
 
-Write-Host "Fetching latest known_graph.json from c-build-tools..." -ForegroundColor Gray
-try
-{
-    $raw_url = "https://raw.githubusercontent.com/Azure/c-build-tools/master/update_deps/known_graph.json"
-    $remote_json = Invoke-RestMethod -Uri $raw_url -ErrorAction Stop
-    $known_graph = $remote_json
-    # Save locally so the auto-update PR can diff against it
-    $remote_json | ConvertTo-Json -Depth 3 | Set-Content -Path $path_to_known_graph -Encoding UTF8
-    Write-Host "Using known_graph.json from remote (master)" -ForegroundColor Green
-}
-catch
-{
-    Write-Host "Could not fetch remote known_graph.json: $_" -ForegroundColor Yellow
-    Write-Host "Will discover dependency graph from scratch" -ForegroundColor Yellow
-}
-
-# get list of repos to ignore while building graph from ignores.json
-$path_to_ignores = Join-Path $PSScriptRoot "..\ignores.json"
-$repos_to_ignore = (Get-Content -Path $path_to_ignores) | ConvertFrom-Json
-
-# Check if the known graph covers all requested roots and validate edges
-if ($ForceBuildGraph)
-{
-    Write-Host "Force rebuild requested, skipping known graph" -ForegroundColor Yellow
-}
-elseif ($known_graph)
-{
-    $root_names = $root_list | ForEach-Object { get-name-from-url -url $_ }
-    $all_roots_known = $true
-    foreach ($name in $root_names)
+    # Always fetch the latest version from the c-build-tools repo to avoid stale local copies.
+    Write-Host "Fetching latest known_graph.json from c-build-tools..." -ForegroundColor Gray
+    try
     {
+        $raw_url = "https://raw.githubusercontent.com/Azure/c-build-tools/master/update_deps/known_graph.json"
+        $known_graph = Invoke-RestMethod -Uri $raw_url -TimeoutSec 60 -ErrorAction Stop
+        # Save locally so the auto-update PR can diff against it
+        $known_graph | ConvertTo-Json -Depth 3 | Set-Content -Path $path_to_known_graph -Encoding UTF8
+        Write-Host "Using known_graph.json from remote (master)" -ForegroundColor Green
+    }
+    catch
+    {
+        Write-Host "Could not fetch remote known_graph.json: $_" -ForegroundColor Yellow
+        Write-Host "Will discover dependency graph from scratch" -ForegroundColor Yellow
+        return $null
+    }
+
+    foreach ($root in $root_list)
+    {
+        $name = get-name-from-url -url $root
         if (-not $known_graph.edges.PSObject.Properties[$name])
         {
             Write-Host "Root '$name' not in known graph, will discover from scratch" -ForegroundColor Yellow
-            $all_roots_known = $false
-            break
+            return $null
         }
         else
         {
@@ -190,77 +144,56 @@ elseif ($known_graph)
         }
     }
 
-    if ($all_roots_known)
+    # Validate edges: clone only the root repos (shallow) and check their .gitmodules
+    Write-Host "Validating known graph against root repos..." -ForegroundColor Cyan
+    foreach ($root in $root_list)
     {
-        # Validate edges: clone only the root repos (shallow) and check their .gitmodules
-        Write-Host "Validating known graph against root repos..." -ForegroundColor Cyan
-        $edges_match = $true
-        foreach ($root in $root_list)
+        $repo_name = get-name-from-url -url $root
+        if (-not (Test-Path -Path $repo_name))
         {
-            $repo_name = get-name-from-url -url $root
-            # clone if not already present
-            if (-not (Test-Path -Path $repo_name))
-            {
-                Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
-                git clone --depth 1 $root
-                Write-Host ""
-            }
-            else
-            {
-                # already cloned
-            }
-            # get actual submodules
-            $submodules = get-submodules $root
-            $actual_children = @()
-            foreach ($sub in $submodules)
-            {
-                $sub_name = get-name-from-url -url $sub
-                if ($sub_name -in $repos_to_ignore) { continue }
-                $actual_children += $sub_name
-            }
-            # compare with known edges
-            $known_children = @($known_graph.edges.$repo_name)
-            $actual_sorted = $actual_children | Sort-Object
-            $known_sorted = $known_children | Sort-Object
-            if (($actual_sorted -join ",") -ne ($known_sorted -join ","))
-            {
-                Write-Host "Edge mismatch for '$repo_name': known graph is stale, will recompute" -ForegroundColor Yellow
-                $edges_match = $false
-                break
-            }
-            else
-            {
-                # edges match for this root
-            }
-        }
-
-        if ($edges_match)
-        {
-            Write-Host "Known graph validated, using hardcoded dependency order" -ForegroundColor Green
-            $use_known_graph = $true
+            Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
+            clone-repo-with-retry -repo_url $root -target_dir $repo_name -depth 1
+            Write-Host ""
         }
         else
         {
-            # fall through to full discovery
+            # already cloned
+        }
+        $actual_children = @()
+        foreach ($sub in (get-submodules $root))
+        {
+            $sub_name = get-name-from-url -url $sub
+            if ($sub_name -in $repos_to_ignore) { continue }
+            $actual_children += $sub_name
+        }
+        $actual_sorted = $actual_children | Sort-Object
+        $known_sorted = @($known_graph.edges.$repo_name) | Sort-Object
+        if (($actual_sorted -join ",") -ne ($known_sorted -join ","))
+        {
+            Write-Host "Edge mismatch for '$repo_name': known graph is stale, will recompute" -ForegroundColor Yellow
+            return $null
+        }
+        else
+        {
+            # edges match for this root
         }
     }
-    else
-    {
-        # fall through to full discovery
-    }
-}
-else
-{
-    # no known graph, fall through to full discovery
+
+    Write-Host "Known graph validated, using hardcoded dependency order" -ForegroundColor Green
+    return $known_graph
 }
 
-if ($use_known_graph)
+
+# Build repo edges and URLs from the known graph, keeping only repos reachable from the roots.
+function get-graph-from-known-graph
 {
-    # Build repo_edges and repo_urls from known graph, filtering to only repos reachable from roots
+    param(
+        [string[]] $root_list,
+        $known_graph
+    )
     $repo_edges = New-Object -TypeName "System.Collections.Generic.Dictionary[string, System.Collections.ArrayList]"
     $repo_urls = New-Object -TypeName "System.Collections.Generic.Dictionary[string, string]"
 
-    # BFS to find all reachable repos from roots using known edges
     $reachable = New-Object -TypeName "System.Collections.Generic.HashSet[string]"
     $bfs_queue = New-Object -TypeName "System.Collections.Queue"
     foreach ($root in $root_list)
@@ -300,10 +233,19 @@ if ($use_known_graph)
         }
         $repo_edges[$name] = $children
     }
+
+    return @{ repo_edges = $repo_edges; repo_urls = $repo_urls }
 }
-else
+
+
+# Discover the dependency graph live: BFS with a visited set, cloning each repo once (shallow, only
+# the .gitmodules file is needed) and collecting dependency edges.
+function discover-dependency-graph
 {
-    # Full discovery: BFS with visited set, clone each repo once and collect dependency edges
+    param(
+        [string[]] $root_list,
+        $repos_to_ignore
+    )
     $repo_edges = New-Object -TypeName "System.Collections.Generic.Dictionary[string, System.Collections.ArrayList]"
     $repo_urls = New-Object -TypeName "System.Collections.Generic.Dictionary[string, string]"
     $visited = New-Object -TypeName "System.Collections.Generic.HashSet[string]"
@@ -348,7 +290,7 @@ else
             # Hide progress bar during clone to avoid output conflicts
             Write-Progress -Activity "Building dependency graph" -Completed
             Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
-            git clone --depth 1 $repo_url
+            clone-repo-with-retry -repo_url $repo_url -target_dir $repo_name -depth 1
             Write-Host ""
         }
         else
@@ -357,9 +299,8 @@ else
         }
 
         # get submodules and record edges
-        $submodules = get-submodules $repo_url
         $children = New-Object -TypeName "System.Collections.ArrayList"
-        foreach ($submodule in $submodules)
+        foreach ($submodule in (get-submodules $repo_url))
         {
             $sub_name = get-name-from-url -url $submodule
             # ignore submodule if it is in $repos_to_ignore
@@ -397,73 +338,105 @@ else
     # Clear progress bar
     Write-Progress -Activity "Building dependency graph" -Completed
 
-    # Save discovered graph as new known_graph.json for future runs
-    # (deferred until after Phase 2 so edges can be sorted by update order)
-    $save_new_graph = $true
+    return @{ repo_edges = $repo_edges; repo_urls = $repo_urls }
 }
 
-# Phase 2: Compute levels (longest path from roots) using cached edges - no I/O
-# dictionary to store mapping from repo name to level in dependency graph
-# root repo is level 0 and leaf repo is maximum level
-$repo_levels = New-Object -TypeName "System.Collections.Generic.Dictionary[string, int]"
-$level_queue = New-Object -TypeName "System.Collections.Queue"
 
-# seed roots at level 0
-foreach ($root in $root_list)
+# Order the repos so each one comes after everything it depends on (no I/O). A repo's level is the
+# longest path to it from a root (roots are level 0); repos are listed by descending level, then
+# alphabetically. A level can only reach the number of repos through a dependency cycle, which
+# could never be propagated, so that fails the run.
+function get-repo-update-order
 {
-    $name = get-name-from-url -url $root
-    $repo_levels[$name] = 0
-    $level_queue.Enqueue($name)
-}
-
-while ($level_queue.Count -ne 0)
-{
-    $repo_name = $level_queue.Dequeue()
-    $repo_level = $repo_levels[$repo_name]
-
-    if ($repo_edges.ContainsKey($repo_name))
+    param(
+        [string[]] $root_list,
+        $repo_edges
+    )
+    $all_names = New-Object -TypeName "System.Collections.Generic.HashSet[string]"
+    foreach ($name in $repo_edges.Keys)
     {
-        foreach ($child_name in $repo_edges[$repo_name])
+        [void]$all_names.Add($name)
+        foreach ($child in $repo_edges[$name])
         {
-            # $current_level is the longest path from root to child seen so far
-            $current_level = 0
-            [void]$repo_levels.TryGetValue($child_name, [ref]$current_level)
-            # update level if path via current repo is longer
-            if (($repo_level + 1) -gt $current_level)
-            {
-                $repo_levels[$child_name] = $repo_level + 1
-                $level_queue.Enqueue($child_name)
-            }
-            else
-            {
-                # existing level is sufficient
-            }
+            [void]$all_names.Add($child)
         }
     }
-    else
+
+    $repo_levels = New-Object -TypeName "System.Collections.Generic.Dictionary[string, int]"
+    $level_queue = New-Object -TypeName "System.Collections.Queue"
+
+    # seed roots at level 0
+    foreach ($root in $root_list)
     {
-        # leaf repo, no children
+        $name = get-name-from-url -url $root
+        [void]$all_names.Add($name)
+        $repo_levels[$name] = 0
+        $level_queue.Enqueue($name)
     }
+
+    while ($level_queue.Count -ne 0)
+    {
+        $repo_name = $level_queue.Dequeue()
+        $repo_level = $repo_levels[$repo_name]
+
+        if ($repo_edges.ContainsKey($repo_name))
+        {
+            foreach ($child_name in $repo_edges[$repo_name])
+            {
+                # $current_level is the longest path from root to child seen so far
+                $current_level = 0
+                [void]$repo_levels.TryGetValue($child_name, [ref]$current_level)
+                # update level if path via current repo is longer
+                if (($repo_level + 1) -gt $current_level)
+                {
+                    if (($repo_level + 1) -ge $all_names.Count)
+                    {
+                        fail-with-status "Dependency cycle detected: $child_name depends on itself through its submodules."
+                    }
+                    else
+                    {
+                        $repo_levels[$child_name] = $repo_level + 1
+                        $level_queue.Enqueue($child_name)
+                    }
+                }
+                else
+                {
+                    # existing level is sufficient
+                }
+            }
+        }
+        else
+        {
+            # leaf repo, no children
+        }
+    }
+
+    # convert dictionary to list of (repo_name, level)
+    $repo_levels_list = [Linq.Enumerable]::ToList($repo_levels)
+    # sort list by descending order of level, then alphabetically for same-level repos
+    $repo_levels_list.Sort({
+        $level_cmp = $args[1].Value.CompareTo($args[0].Value)
+        if ($level_cmp -ne 0) { return $level_cmp }
+        return [string]::Compare($args[0].Key, $args[1].Key, [System.StringComparison]::OrdinalIgnoreCase)
+    })
+    # create list to hold repos in order to be updated
+    $repo_order = New-Object -TypeName "System.Collections.ArrayList"
+    $repo_levels_list.ForEach({ [void]$repo_order.Add($args[0].Key) })
+    return ,$repo_order
 }
 
-# clear progress bar
-Write-Progress -Activity "Building dependency graph" -Completed
-# convert dictionary to list of (repo_name, level)
-$repo_levels_list = [Linq.Enumerable]::ToList($repo_levels)
-# sort list by descending order of level, then alphabetically for same-level repos
-$repo_levels_list.Sort({
-    $level_cmp = $args[1].Value.CompareTo($args[0].Value)
-    if ($level_cmp -ne 0) { return $level_cmp }
-    return [string]::Compare($args[0].Key, $args[1].Key, [System.StringComparison]::OrdinalIgnoreCase)
-})
-# create list to hold repos in order to be updated
-$repo_order = New-Object -TypeName "System.Collections.ArrayList"
-# collect repo names in repo_order
-$repo_levels_list.ForEach({$repo_order.Add($args[0].Key)})
 
-# Save discovered graph as new known_graph.json (with edges sorted by update order)
-if ($save_new_graph)
+# Save a newly discovered graph as known_graph.json (edges sorted by update order) and open a
+# c-build-tools PR with it. Best effort: failures only warn.
+function save-known-graph
 {
+    param(
+        $repo_order,
+        $repo_edges,
+        $repo_urls
+    )
+    $path_to_known_graph = Join-Path $PSScriptRoot "..\known_graph.json"
+
     # Build index from repo name to position in update order for sorting edges
     $order_index = @{}
     for ($i = 0; $i -lt $repo_order.Count; $i++)
@@ -536,7 +509,10 @@ if ($save_new_graph)
 
             Set-Location $update_dir
             Write-Host "Cloning c-build-tools to create known_graph.json PR..." -ForegroundColor Cyan
-            git clone --depth 1 $cbt_url
+            if ((invoke-git-command -git_args @('clone', '--depth', '1', $cbt_url)) -ne 0)
+            {
+                throw "git clone of $cbt_url failed"
+            }
             Set-Location "c-build-tools"
 
             # Copy the updated known_graph.json into the fresh clone
@@ -549,15 +525,18 @@ if ($save_new_graph)
                 git checkout -b $branch_name
                 git add "update_deps\known_graph.json"
                 git commit -m "[autogenerated] update known_graph.json with discovered dependency graph"
-                git push -u origin $branch_name
-                $null = gh pr create --title "[autogenerated] update known_graph.json" --body "Dependency graph edges changed. This PR updates known_graph.json with the newly discovered graph." --base master
-                if ($LASTEXITCODE -eq 0)
+                if ((invoke-git-command -git_args @('push', '-u', 'origin', $branch_name)) -ne 0)
+                {
+                    throw "git push of $branch_name failed"
+                }
+                $create = Invoke-NativeWithTimeout -File gh -Arguments @('pr', 'create', '--title', '[autogenerated] update known_graph.json', '--body', 'Dependency graph edges changed. This PR updates known_graph.json with the newly discovered graph.', '--base', 'master')
+                if ($create.ExitCode -eq 0)
                 {
                     Write-Host "PR created to update known_graph.json in c-build-tools" -ForegroundColor Green
                 }
                 else
                 {
-                    Write-Host "Warning: Failed to create PR for known_graph.json update" -ForegroundColor Yellow
+                    Write-Host "Warning: Failed to create PR for known_graph.json update: $($create.StdErr)" -ForegroundColor Yellow
                 }
             }
             else
@@ -579,7 +558,56 @@ if ($save_new_graph)
         Write-Host "Warning: c-build-tools URL not found, cannot create PR" -ForegroundColor Yellow
     }
 }
-else
+
+
+# Discover the dependency graph of the root repositories and the order in which to update them.
+# Returns @{ repo_order; repo_urls; repo_edges }.
+function build-dependency-graph
 {
-    # known graph was used, no update needed
+    param(
+        [string[]] $root_list,
+        [switch] $ForceBuildGraph, # ignore known_graph.json and rediscover (then save and PR it)
+        [switch] $NoKnownGraph # never read or write known_graph.json (-Pipeline)
+    )
+    $repos_to_ignore = get-repos-to-ignore
+
+    $known_graph = $null
+    if ($NoKnownGraph)
+    {
+        # always discover the graph live
+    }
+    elseif ($ForceBuildGraph)
+    {
+        Write-Host "Force rebuild requested, skipping known graph" -ForegroundColor Yellow
+    }
+    else
+    {
+        $known_graph = get-validated-known-graph -root_list $root_list -repos_to_ignore $repos_to_ignore
+    }
+
+    if ($known_graph)
+    {
+        $graph = get-graph-from-known-graph -root_list $root_list -known_graph $known_graph
+    }
+    else
+    {
+        $graph = discover-dependency-graph -root_list $root_list -repos_to_ignore $repos_to_ignore
+    }
+
+    $repo_order = get-repo-update-order -root_list $root_list -repo_edges $graph.repo_edges
+
+    if (-not $known_graph -and -not $NoKnownGraph)
+    {
+        save-known-graph -repo_order $repo_order -repo_edges $graph.repo_edges -repo_urls $graph.repo_urls | Out-Host
+    }
+    else
+    {
+        # known graph used, or known_graph.json disabled
+    }
+
+    return @{
+        repo_order = $repo_order
+        repo_urls = $graph.repo_urls
+        repo_edges = $graph.repo_edges
+    }
 }

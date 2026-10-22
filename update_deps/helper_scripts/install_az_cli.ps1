@@ -4,30 +4,32 @@
 <#
 .SYNOPSIS
 
-Installs and configures Azure CLI with the Azure DevOps extension.
+Prepares Azure DevOps authentication for interactive runs.
 
 .DESCRIPTION
 
-This script ensures Azure CLI is installed and properly configured for Azure DevOps access.
-It handles installation via winget, extension setup, and authentication via WAM or PAT token.
+Azure DevOps operations use the REST API. With a Personal Access Token (-azure_token, or the
+AZURE_DEVOPS_EXT_PAT environment variable) no Azure CLI is needed. Otherwise the Azure CLI is
+installed via winget if missing and signed in with WAM (Web Account Manager); REST access tokens
+are then obtained with 'az account get-access-token'.
 
 .PARAMETER pat_token
 
-(Optional) Personal Access Token for Azure DevOps authentication. If not provided, WAM
-authentication will be used. PAT must have Code (Read & Write) and Work Items (Read) permissions.
+(Optional) Personal Access Token for Azure DevOps authentication. PAT must have Code (Read & Write)
+and Work Items (Read & Write) permissions.
 
 .EXAMPLE
 
 PS> . .\install_az_cli.ps1
-PS> check-az-cli-exists
+PS> initialize-interactive-azure-auth
 
 .EXAMPLE
 
 PS> . .\install_az_cli.ps1
-PS> check-az-cli-exists -pat_token "your-pat-token"
+PS> initialize-interactive-azure-auth -pat_token "your-pat-token"
 #>
 
-# Helper function to ensure winget is available
+# Helper function to ensure winget is available (also used by install_gh_cli.ps1)
 # Exits on failure
 function ensure-winget-available
 {
@@ -44,13 +46,38 @@ function ensure-winget-available
     }
 }
 
-# verify Azure CLI is installed and authenticate (WAM or PAT)
+# Choose the Azure DevOps credential for an interactive run: a PAT if one is given, otherwise a
+# WAM sign-in through the Azure CLI (installed if missing).
 # Exits on failure
-function check-az-cli-exists
+function initialize-interactive-azure-auth
 {
     param(
         [string] $pat_token
     )
+
+    if ($pat_token)
+    {
+        $script:ado_pat = $pat_token
+    }
+    elseif ($env:AZURE_DEVOPS_EXT_PAT)
+    {
+        $script:ado_pat = $env:AZURE_DEVOPS_EXT_PAT
+    }
+    else
+    {
+        $script:ado_pat = $null
+    }
+
+    if ($script:ado_pat)
+    {
+        add-redaction-value $script:ado_pat
+        Write-Host "Using a Personal Access Token for Azure DevOps" -ForegroundColor Green
+        return
+    }
+    else
+    {
+        # no PAT; sign in with WAM through the Azure CLI
+    }
 
     $az = Get-Command az -ErrorAction SilentlyContinue
     if (!$az)
@@ -79,113 +106,30 @@ function check-az-cli-exists
         # az already available
     }
 
-    # Check if azure-devops extension is installed
-    $extensions = az extension list --query "[?name=='azure-devops'].name" -o tsv 2>&1
-    $azExitCode = $LASTEXITCODE
+    Write-Host "Attempting WAM (Web Account Manager) authentication..."
 
-    if (!$extensions -or $azExitCode -ne 0)
+    # Enable WAM broker on Windows
+    az config set core.enable_broker_on_windows=true 2>$null
+
+    # Check if already logged in via WAM
+    $account = az account show -o json 2>$null
+    if ($LASTEXITCODE -ne 0 -or !$account)
     {
-        Write-Host "Installing azure-devops extension..."
-        $installOutput = az extension add --name azure-devops 2>&1
+        Write-Host "Not logged in. Initiating WAM login..."
+        az login
         if ($LASTEXITCODE -ne 0)
         {
-            $installError = $installOutput | Out-String
-            Write-Error "Failed to install azure-devops extension: $installError"
-            Write-Error "See: https://learn.microsoft.com/en-us/azure/devops/cli/"
+            Write-Error "WAM login failed. Please provide a PAT token using -azure_token parameter."
             exit -1
         }
         else
         {
-            Write-Host "Azure DevOps extension installed successfully" -ForegroundColor Green
+            Write-Host "WAM login successful" -ForegroundColor Green
         }
     }
     else
     {
-        # extension already installed
-    }
-
-    # Test if extension is working properly
-    $extensionTest = az devops -h 2>&1
-    if ($LASTEXITCODE -ne 0)
-    {
-        Write-Error "Azure DevOps extension appears corrupted. Please reinstall manually:"
-        Write-Error "  az extension remove --name azure-devops"
-        Write-Error "  az extension add --name azure-devops"
-        exit -1
-    }
-    else
-    {
-        Write-Host "Azure DevOps extension verified" -ForegroundColor Green
-    }
-
-    # If PAT token provided, use it
-    if ($pat_token)
-    {
-        Write-Host "Logging in to Azure DevOps using PAT token..."
-        $pat_token | az devops login
-        if ($LASTEXITCODE -ne 0)
-        {
-            Write-Error "Failed to login to Azure DevOps. Check your PAT token."
-            exit -1
-        }
-        else
-        {
-            Write-Host "PAT login successful" -ForegroundColor Green
-        }
-    }
-    else
-    {
-        # Try WAM authentication (Windows only)
-        Write-Host "Attempting WAM (Web Account Manager) authentication..."
-
-        # Enable WAM broker on Windows
-        az config set core.enable_broker_on_windows=true 2>$null
-
-        # Check if already logged in via WAM
-        $account = az account show -o json 2>$null
-        if ($LASTEXITCODE -ne 0 -or !$account)
-        {
-            Write-Host "Not logged in. Initiating WAM login..."
-            az login
-            if ($LASTEXITCODE -ne 0)
-            {
-                Write-Error "WAM login failed. Please provide a PAT token using -azure_token parameter."
-                exit -1
-            }
-            else
-            {
-                Write-Host "WAM login successful" -ForegroundColor Green
-            }
-        }
-        else
-        {
-            $accountInfo = $account | ConvertFrom-Json
-            Write-Host "Authenticated via WAM as: $($accountInfo.user.name)" -ForegroundColor Green
-        }
-    }
-
-    # Configure Azure DevOps CLI defaults (organization and project)
-    # Without this, 'az repos' and 'az devops' commands require --organization and --project on every call
-    $devops_config = az devops configure --list 2>$null | Out-String
-    $needs_org = $devops_config -notmatch "organization\s*=\s*https://msazure\.visualstudio\.com"
-    $needs_project = $devops_config -notmatch "project\s*=\s*One"
-    if ($needs_org -or $needs_project)
-    {
-        Write-Host "Configuring Azure DevOps CLI defaults..."
-        az devops configure --defaults organization=https://msazure.visualstudio.com/ project=One
-        if ($LASTEXITCODE -eq 0)
-        {
-            Write-Host "Azure DevOps defaults configured (org=msazure, project=One)" -ForegroundColor Green
-        }
-        else
-        {
-            Write-Error "Failed to configure Azure DevOps defaults. Run manually:"
-            Write-Error "  az devops configure --defaults organization=https://msazure.visualstudio.com/ project=One"
-            exit -1
-        }
-    }
-    else
-    {
-        Write-Host "Azure DevOps CLI defaults already configured" -ForegroundColor Green
+        $accountInfo = $account | ConvertFrom-Json
+        Write-Host "Authenticated via WAM as: $($accountInfo.user.name)" -ForegroundColor Green
     }
 }

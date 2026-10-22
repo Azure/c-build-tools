@@ -7,6 +7,7 @@
 $global:repo_status = @{}
 $global:repo_order_list = @()
 $global:current_repo = ""  # Track current repo for error handling in nested functions
+$script:failure_in_progress = $false  # set while fail-with-status reports a failure
 
 # Status constants
 $script:STATUS_PENDING = "pending"
@@ -30,6 +31,7 @@ function initialize-repo-status
             Status = $script:STATUS_PENDING
             Message = ""
             PrUrl = ""
+            Details = ""
         }
     }
 }
@@ -62,6 +64,128 @@ function set-repo-status
     }
 }
 
+# Record what a repo's open PR is currently waiting on; shown under its row in the status table.
+function set-repo-details
+{
+    param(
+        [string] $repo_name,
+        [string] $details
+    )
+    if($global:repo_status.ContainsKey($repo_name))
+    {
+        $global:repo_status[$repo_name].Details = $details
+    }
+    else
+    {
+        # unknown repo, ignore
+    }
+}
+
+# Join gate names for display: unique, at most $max_names of them, each cut to a readable length.
+function format-gate-names
+{
+    param(
+        [object[]] $gates,
+        [int] $max_names = 4,
+        [int] $max_name_length = 60
+    )
+    $names = @($gates | ForEach-Object { $_.Name } | Select-Object -Unique)
+    $shown = @($names | Select-Object -First $max_names | ForEach-Object {
+        if ($_.Length -gt $max_name_length) { $_.Substring(0, $max_name_length - 3) + "..." } else { $_ }
+    })
+    $result = $shown -join ", "
+    if ($names.Count -gt $shown.Count)
+    {
+        $result += ", +{0} more" -f ($names.Count - $shown.Count)
+    }
+    else
+    {
+        # every name shown
+    }
+    return $result
+}
+
+# Describe what an open PR is waiting on. $gates lists its blocking checks as @{ Name; State },
+# State being 'done', 'running', 'not-started', 'awaiting-action' or 'failed'. $notes are other
+# facts that keep the PR from merging (e.g. merge conflicts). Gates awaiting action or failed are
+# named since they usually need a human.
+function format-gate-summary
+{
+    param(
+        [object[]] $gates = @(),
+        [string[]] $notes = @()
+    )
+    $gates = @($gates | Where-Object { $_ })
+    $done = @($gates | Where-Object { $_.State -eq 'done' }).Count
+
+    if ($gates.Count -eq 0)
+    {
+        $result = "no gates reported yet"
+    }
+    elseif ($done -eq $gates.Count)
+    {
+        $result = "all {0} gates done; waiting for the merge" -f $gates.Count
+    }
+    else
+    {
+        $parts = @()
+        $categories = @(
+            @{ State = 'running'; Label = 'running'; Named = $false },
+            @{ State = 'not-started'; Label = 'not started'; Named = $false },
+            @{ State = 'awaiting-action'; Label = 'awaiting action'; Named = $true },
+            @{ State = 'failed'; Label = 'failed'; Named = $true }
+        )
+        foreach ($category in $categories)
+        {
+            $matching = @($gates | Where-Object { $_.State -eq $category.State })
+            if ($matching.Count -gt 0)
+            {
+                $part = "{0} {1}" -f $matching.Count, $category.Label
+                if ($category.Named)
+                {
+                    $part += " [{0}]" -f (format-gate-names -gates $matching)
+                }
+                else
+                {
+                    # counts only
+                }
+                $parts += $part
+            }
+            else
+            {
+                # nothing in this category
+            }
+        }
+        $result = "waiting on {0} of {1} gates: {2}; {3} done" -f ($gates.Count - $done), $gates.Count, ($parts -join ", "), $done
+    }
+
+    foreach ($note in @($notes | Where-Object { $_ }))
+    {
+        $result += "; $note"
+    }
+    return $result
+}
+
+# Count repos per status.
+function get-repo-status-counts
+{
+    $result = @{ Total = 0; Updated = 0; Skipped = 0; InProgress = 0; Pending = 0; Failed = 0 }
+    foreach($repo in $global:repo_order_list)
+    {
+        $result['Total'] += 1
+        switch($global:repo_status[$repo].Status)
+        {
+            $script:STATUS_UPDATED { $result['Updated'] += 1 }
+            $script:STATUS_SKIPPED { $result['Skipped'] += 1 }
+            $script:STATUS_IN_PROGRESS { $result['InProgress'] += 1 }
+            $script:STATUS_PENDING { $result['Pending'] += 1 }
+            $script:STATUS_FAILED { $result['Failed'] += 1 }
+            default { }
+        }
+    }
+    return $result
+}
+
 # Close/abandon a PR for the given repo.
 # Dispatches to platform-specific close functions in azure_repo_ops.ps1 / github_repo_ops.ps1.
 function close-pr
@@ -71,11 +195,10 @@ function close-pr
         [string] $pr_url
     )
 
+    # Ensure we're in the work directory so repo-relative functions work
+    Push-Location $global:work_dir
     try
     {
-        # Ensure we're in the work directory so repo-relative functions work
-        Push-Location $global:work_dir
-
         $repo_type = get-repo-type $repo_name
         if ($repo_type -eq "github")
         {
@@ -89,12 +212,14 @@ function close-pr
         {
             Write-Host "Warning: Unknown repo type for $repo_name, cannot close PR" -ForegroundColor Yellow
         }
-
-        Pop-Location
     }
     catch
     {
         Write-Host "Warning: Error closing PR: $_" -ForegroundColor Yellow
+    }
+    finally
+    {
+        Pop-Location
     }
 }
 
@@ -105,6 +230,17 @@ function fail-with-status
     param(
         [string] $message
     )
+    if ($script:failure_in_progress)
+    {
+        # A failure while reporting an earlier one (e.g. while closing the failed PR) must not start
+        # the cleanup again, which could recurse. Throw so the cleanup step reports it and the
+        # earlier failure finishes.
+        throw "fail-with-status while handling an earlier failure: $message"
+    }
+    else
+    {
+        $script:failure_in_progress = $true
+    }
     if ($global:current_repo -and $global:repo_status.ContainsKey($global:current_repo))
     {
         set-repo-status -repo_name $global:current_repo -status $script:STATUS_FAILED -message $message
@@ -133,8 +269,8 @@ function fail-with-status
     }
     [void](show-propagation-status -Final)
 
-    # Save state so resume can pick up PrUrls and status from this failed run
-    if ($global:_state_branch_name -and $global:_state_repo_order -and $global:work_dir)
+    # Save state so -Resume can pick up PrUrls and status from this failed run
+    if (-not (test-pipeline-mode) -and $global:_state_branch_name -and $global:_state_repo_order -and $global:work_dir)
     {
         save-propagation-state `
             -branch_name $global:_state_branch_name `
@@ -145,26 +281,33 @@ function fail-with-status
     }
     else
     {
-        # state globals not yet initialized, nothing to save
+        # pipeline runs are not resumable, or state globals are not initialized yet
     }
 
-    # Restore original directory so the user is not stranded in work_dir/<repo>
+    # Restore original directory so we are not stranded in work_dir/<repo>
     restore-original-directory
 
-    Write-Error $message
-    Write-Host "`nTo resume from where it stopped, run:" -ForegroundColor Cyan
-    if ($global:resume_command)
+    Write-Log ERROR $message
+    if (-not (test-pipeline-mode))
     {
-        Write-Host "  $global:resume_command" -ForegroundColor White
+        Write-Host "`nTo resume from where it stopped, run:" -ForegroundColor Cyan
+        if ($global:resume_command)
+        {
+            Write-Host "  $global:resume_command" -ForegroundColor White
+        }
+        else
+        {
+            Write-Host "  propagate_updates.ps1 -Resume" -ForegroundColor White
+        }
     }
     else
     {
-        Write-Host "  propagate_updates.ps1 -Resume" -ForegroundColor White
+        # pipeline runs are not resumable
     }
     exit -1
 }
 
-# Get status display info (symbol, color, text)
+# Get status display info (symbol, color, text). Pipeline logs use ASCII symbols.
 function get-repo-status-display
 {
     param(
@@ -177,7 +320,7 @@ function get-repo-status-display
         $script:STATUS_UPDATED
         {
             $result = @{
-                Symbol = [char]0x2713  # checkmark
+                Symbol = if (test-pipeline-mode) { "+" } else { [char]0x2713 }  # checkmark
                 Color = "Green"
                 Text = "UPDATED"
             }
@@ -209,7 +352,7 @@ function get-repo-status-display
         $script:STATUS_FAILED
         {
             $result = @{
-                Symbol = [char]0x2717  # X mark
+                Symbol = if (test-pipeline-mode) { "x" } else { [char]0x2717 }  # X mark
                 Color = "Red"
                 Text = "FAILED"
             }
@@ -263,9 +406,11 @@ function show-propagation-status
                 Color = $display.Color
                 Message = $info.Message
                 PrUrl = $info.PrUrl
+                Details = $info.Details
             }
             $index++
         }
+        $counts = get-repo-status-counts
 
         # Print header
         if($Final)
@@ -278,7 +423,9 @@ function show-propagation-status
         else
         {
             Write-Host ""
-            Write-Host "--- Propagation Status ---" -ForegroundColor Cyan
+            Write-Host ("--- Propagation Status ({0}) ---" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) -ForegroundColor Cyan
+            Write-Host ("Repos: {0} of {1} done ({2} updated, {3} skipped), {4} in progress, {5} not started, {6} failed" -f `
+                ($counts.Updated + $counts.Skipped), $counts.Total, $counts.Updated, $counts.Skipped, $counts.InProgress, $counts.Pending, $counts.Failed) -ForegroundColor Cyan
         }
 
         # Print table header
@@ -289,49 +436,46 @@ function show-propagation-status
         foreach($row in $rows)
         {
             $index_str = "{0}." -f $row.Index
-            $status_display = $row.StatusText
-            if($row.Message)
-            {
-                $status_display = "{0} ({1})" -f $row.StatusText, $row.Message
-            }
-            else
-            {
-                # no message to append
-            }
 
             # Build the line with fixed-width columns
             $symbol = $row.Symbol
             $line = "{0}  {1,-$index_width} {2,-$repo_width} {3,-$status_width} {4}" -f $symbol, $index_str, $row.Repo, $row.StatusText, $row.PrUrl
 
             Write-Host $line -ForegroundColor $row.Color
+
+            # Under an open, failed or not yet started repo's row, what it last reported or is waiting
+            # for (indented to the REPOSITORY column)
+            if(($row.Status -in @($script:STATUS_IN_PROGRESS, $script:STATUS_FAILED, $script:STATUS_PENDING)) -and $row.Details)
+            {
+                Write-Host ("{0}{1}" -f (" " * (4 + $index_width)), (Protect-Secret $row.Details)) -ForegroundColor $row.Color
+            }
+            else
+            {
+                # no details to show
+            }
         }
 
         if($Final)
         {
             Write-Host "========================================" -ForegroundColor Cyan
 
-            # Summary counts
-            $updated = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_UPDATED }).Count
-            $skipped = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_SKIPPED }).Count
-            $failed = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_FAILED }).Count
-            $pending = ($global:repo_order_list | Where-Object { $global:repo_status[$_].Status -eq $script:STATUS_PENDING }).Count
-
             Write-Host ""
             Write-Host "Summary: " -NoNewline
-            Write-Host "$updated updated" -ForegroundColor Green -NoNewline
-            Write-Host ", $skipped skipped" -ForegroundColor Gray -NoNewline
-            Write-Host ", $failed failed" -ForegroundColor Red -NoNewline
-            Write-Host ", $pending pending" -ForegroundColor DarkGray
+            Write-Host "$($counts.Updated) updated" -ForegroundColor Green -NoNewline
+            Write-Host ", $($counts.Skipped) skipped" -ForegroundColor Gray -NoNewline
+            Write-Host ", $($counts.Failed) failed" -ForegroundColor Red -NoNewline
+            Write-Host ", $($counts.InProgress) in progress" -ForegroundColor Yellow -NoNewline
+            Write-Host ", $($counts.Pending) pending" -ForegroundColor DarkGray
             Write-Host ""
 
-            # Return success if no failures and no pending
-            if($failed -eq 0 -and $pending -eq 0)
+            # Return success only if every repo finished (no failures, nothing pending or in flight)
+            if($counts.Failed -eq 0 -and $counts.Pending -eq 0 -and $counts.InProgress -eq 0)
             {
                 $result = $true
             }
             else
             {
-                # there were failures or pending repos
+                # there were failures, pending or in-progress repos
             }
         }
         else
@@ -343,4 +487,26 @@ function show-propagation-status
     }
 
     return $result
+}
+
+
+# Restore the original working directory. Called on success and failure exit paths.
+function restore-original-directory
+{
+    if ($global:original_dir)
+    {
+        Set-Location $global:original_dir
+    }
+    else
+    {
+        # no original_dir saved
+    }
+}
+
+
+# Sleep for the poll interval between PR status checks.
+function wait-poll-interval
+{
+    param([int] $seconds)
+    Start-Sleep -Seconds $seconds
 }

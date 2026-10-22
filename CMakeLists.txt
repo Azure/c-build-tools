@@ -64,6 +64,10 @@ enable_testing()
 add_subdirectory(build_functions)
 add_subdirectory(repo_validation)
 
+if(WIN32 AND ${run_unittests})
+    add_subdirectory(update_deps/tests)
+endif()
+
 include (CheckIncludeFiles)
 
 CHECK_INCLUDE_FILES(stdint.h HAVE_STDINT_H)

@@ -204,40 +204,29 @@ function restore-repo-status
                     Status = $saved.Status
                     Message = $saved.Message
                     PrUrl = $saved.PrUrl
+                    Details = ""
                 }
             }
             else
             {
-                # failed or in-progress — reset to pending for retry, but preserve PrUrl
+                # failed or in-progress - reset to pending for retry, but preserve PrUrl
                 $global:repo_status[$repo] = @{
                     Status = $script:STATUS_PENDING
                     Message = ""
                     PrUrl = if ($saved.PrUrl) { $saved.PrUrl } else { "" }
+                    Details = ""
                 }
             }
         }
         else
         {
-            # not in saved state — treat as pending
+            # not in saved state - treat as pending
             $global:repo_status[$repo] = @{
                 Status = $script:STATUS_PENDING
                 Message = ""
                 PrUrl = ""
+                Details = ""
             }
         }
-    }
-}
-
-# Restore the original working directory.
-# Called on both success and failure exit paths.
-function restore-original-directory
-{
-    if ($global:original_dir)
-    {
-        Set-Location $global:original_dir
-    }
-    else
-    {
-        # no original_dir saved
     }
 }

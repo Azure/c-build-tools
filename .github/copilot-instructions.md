@@ -126,8 +126,8 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 ## Dependency Management
 
 ### Update Propagation (`update_deps/`)
-- **Workflow**: `build_graph.ps1` → `propagate_updates.ps1` for bottom-up dependency updates
-- **Requires**: Azure PAT with Code permissions, GitHub CLI authentication
+- **Workflow**: `propagate_updates.ps1` builds the dependency graph (`helper_scripts/build_graph.ps1`) and opens PRs bottom-up
+- **Modes**: Interactive by default (WAM or PAT, `gh auth login`, `-Resume`, `-AutoFix`); `-Pipeline` runs unattended on Azure DevOps agents with `SYSTEM_ACCESSTOKEN` and `GH_TOKEN`
 - **Ignores**: Repository exclusions defined in `ignores.json`
 
 ## Project Conventions

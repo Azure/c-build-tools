@@ -10,89 +10,47 @@ Watch GitHub PR check status until all checks pass or one fails.
 
 Similar to 'gh pr checks --watch', but allows custom callbacks during polling
 to display additional status information (e.g., propagation status).
-
-.PARAMETER poll_interval
-
-How often to poll for updates in seconds. Default is 30.
-
-.PARAMETER timeout
-
-Maximum time to wait in minutes. Default is 120 (2 hours).
-
-.PARAMETER OnIteration
-
-Optional script block to run after each status display.
+Loaded by load_helpers.ps1; uses the common watch loop in pr_watch_utils.ps1.
 
 .EXAMPLE
 
-PS> Watch-GitHubPRChecks -poll_interval 30 -timeout 120
+PS> watch-github-pr-checks -pr_url https://github.com/Azure/c-pal/pull/123 -poll_interval 30 -timeout 120
 #>
 
-param(
-    [int]$poll_interval = 30,
-    [int]$timeout = 120
-)
 
-# Import common utilities
-. "$PSScriptRoot\pr_watch_utils.ps1"
-
-
-# Pre-fetch all data needed for display
-function get-github-pr-display-data
+# Pre-fetch all data needed for display. Global so the watch loop's closures can call it.
+function global:get-github-pr-display-data
 {
+    param(
+        [string] $pr_url
+    )
     $result = $null
 
-    # Get PR URL
-    $pr_url = $null
-    $pr_info = gh pr view --json url 2>&1
-    if($LASTEXITCODE -eq 0)
-    {
-        $pr_data = $pr_info | ConvertFrom-Json
-        $pr_url = $pr_data.url
-    }
-    else
-    {
-        # couldn't get PR URL
-    }
-
     # Get PR checks status (include timing and link info)
-    $checks_output = gh pr checks --json name,state,bucket,startedAt,completedAt,link 2>&1
-    if($LASTEXITCODE -ne 0)
+    $checks = (get-github-pr-checks -pr_url $pr_url -fields 'name,state,bucket,startedAt,completedAt,link').Checks
+    if (-not $checks)
     {
-        # error getting checks
+        # no checks reported yet, or they could not be read
     }
     else
     {
-        $checks = $checks_output | ConvertFrom-Json
-        if(-not $checks)
+        # Build normalized check items
+        $normalized_checks = @()
+        foreach($check in $checks)
         {
-            # no checks parsed
+            $normalized_checks += [PSCustomObject]@{
+                Name = $check.name
+                Status = (convert-github-bucket-to-normalized -bucket $check.bucket)
+                StartTime = $check.startedAt
+                FinishTime = $check.completedAt
+                Url = $check.link
+            }
         }
-        else
-        {
-            # Build normalized check items
-            $normalized_checks = @()
-            foreach($check in $checks)
-            {
-                $normalized_status = convert-github-bucket-to-normalized -bucket $check.bucket
 
-                $normalized_checks += [PSCustomObject]@{
-                    Name = $check.name
-                    Status = $normalized_status
-                    StartTime = $check.startedAt
-                    FinishTime = $check.completedAt
-                    Url = $check.link
-                }
-            }
-
-            # Get counts using common utility
-            $counts = get-check-status-counts -checks $normalized_checks
-
-            $result = @{
-                PrUrl = $pr_url
-                Checks = $normalized_checks
-                Counts = $counts
-            }
+        $result = @{
+            PrUrl = $pr_url
+            Checks = $normalized_checks
+            Counts = (get-check-status-counts -checks $normalized_checks)
         }
     }
 
@@ -100,153 +58,36 @@ function get-github-pr-display-data
 }
 
 
-# Display PR status using pre-fetched data
-function show-github-pr-status
-{
-    param(
-        [hashtable] $displayData,
-        [int] $poll_interval
-    )
-
-    $checks = $displayData.Checks
-    $counts = $displayData.Counts
-
-    if(-not $checks -or $checks.Count -eq 0)
-    {
-        Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit." -ForegroundColor Gray
-        if($displayData.PrUrl)
-        {
-            Write-Host "PR: $($displayData.PrUrl)" -ForegroundColor Cyan
-        }
-        else
-        {
-            # no PR URL
-        }
-        Write-Host ""
-        Write-Host "No checks found yet, waiting..." -ForegroundColor Yellow
-    }
-    else
-    {
-        # Use common display functions
-        show-status-summary -counts $counts -pr_url $displayData.PrUrl -poll_interval $poll_interval
-        show-pr-check-table -checks $checks
-    }
-}
-
-
 # Watch GitHub PR checks until complete or timeout
 function watch-github-pr-checks
 {
     param(
+        [string] $pr_url,
         [int] $poll_interval = 30,
         [int] $timeout = 120,
         [scriptblock] $OnIteration = $null
     )
-    $fn_result = $null
 
-    # Define the fetch data callback - inline the data fetching logic
     $fetch_data = {
-        $result = $null
-
-        # Get PR URL
-        $pr_url = $null
-        $pr_info = gh pr view --json url 2>&1
-        if($LASTEXITCODE -eq 0)
-        {
-            $pr_data = $pr_info | ConvertFrom-Json
-            $pr_url = $pr_data.url
-        }
-        else
-        {
-            # couldn't get PR URL
-        }
-
-        # Get PR checks status (include timing and link info)
-        $checks_output = gh pr checks --json name,state,bucket,startedAt,completedAt,link 2>&1
-        if($LASTEXITCODE -ne 0)
-        {
-            # error getting checks
-        }
-        else
-        {
-            $checks = $checks_output | ConvertFrom-Json
-            if(-not $checks)
-            {
-                # no checks parsed
-            }
-            else
-            {
-                # Build normalized check items
-                $normalized_checks = @()
-                foreach($check in $checks)
-                {
-                    $normalized_status = convert-github-bucket-to-normalized -bucket $check.bucket
-
-                    $normalized_checks += [PSCustomObject]@{
-                        Name = $check.name
-                        Status = $normalized_status
-                        StartTime = $check.startedAt
-                        FinishTime = $check.completedAt
-                        Url = $check.link
-                    }
-                }
-
-                # Get counts using common utility
-                $counts = get-check-status-counts -checks $normalized_checks
-
-                $result = @{
-                    PrUrl = $pr_url
-                    Checks = $normalized_checks
-                    Counts = $counts
-                }
-            }
-        }
-
-        return $result
-    }
-
-    # Define the show status callback - inline the display logic
-    $show_status = {
-        param($displayData)
-        $checks = $displayData.Checks
-        $counts = $displayData.Counts
-
-        if(-not $checks -or $checks.Count -eq 0)
-        {
-            Write-Host "Refreshing checks status every $poll_interval seconds. Press Ctrl+C to quit." -ForegroundColor Gray
-            if($displayData.PrUrl)
-            {
-                Write-Host "PR: $($displayData.PrUrl)" -ForegroundColor Cyan
-            }
-            else
-            {
-                # no PR URL
-            }
-            Write-Host ""
-            Write-Host "No checks found yet, waiting..." -ForegroundColor Yellow
-        }
-        else
-        {
-            # Use common display functions
-            show-status-summary -counts $counts -pr_url $displayData.PrUrl -poll_interval $poll_interval
-            show-pr-check-table -checks $checks
-        }
+        get-github-pr-display-data -pr_url $pr_url
     }.GetNewClosure()
 
-    # Define the test complete callback
+    $show_status = {
+        param($displayData)
+        show-pr-watch-status -displayData $displayData -poll_interval $poll_interval -empty_message "No checks found yet, waiting..."
+    }.GetNewClosure()
+
     $test_complete = {
         param($displayData)
         Test-ChecksComplete -checks $displayData.Checks
     }
 
     # Use the generic watch loop
-    $fn_result = watch-pr-status `
+    return (watch-pr-status `
         -FetchData $fetch_data `
         -ShowStatus $show_status `
         -TestComplete $test_complete `
         -poll_interval $poll_interval `
         -timeout $timeout `
-        -OnIteration $OnIteration
-
-    return $fn_result
+        -OnIteration $OnIteration)
 }
