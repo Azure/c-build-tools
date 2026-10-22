@@ -90,6 +90,11 @@ macro(set_default_build_options)
     #compile the code as C17
     set(CMAKE_C_STANDARD 17)
 
+    if (NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 23)
+        set(CMAKE_CXX_STANDARD 23)
+    endif()
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
     # Make sure we have a runtime output directory always set
     if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG)
         set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/Debug)
