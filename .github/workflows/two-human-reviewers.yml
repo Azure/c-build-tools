@@ -24,8 +24,9 @@ on:
         type: string
         required: false
   # A manual run uses the default branch's copy with a token that can write, and publishes the status to
-  # the PR's head commit. Use "Run workflow", since re-running a fork PR's run keeps its read-only token,
-  # and repeat it after each push or review.
+  # the PR's head commit. Start it with "Run workflow" or the command below; re-running a fork PR's own
+  # run keeps its read-only token. Repeat it after each push or review.
+  #   gh workflow run two-human-reviewers.yml -R <owner>/<repo> -f pr=<number>
   workflow_dispatch:
     inputs:
       pr:

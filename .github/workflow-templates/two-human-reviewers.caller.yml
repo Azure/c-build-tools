@@ -11,8 +11,9 @@ name: Two human reviewers
 # END template-only
 # Calls the shared gate in c-build-tools. Keep `pull_request_review`, or approvals never re-run it. A
 # fork's PR gets a read-only token (`pull_request_target` is blocked by default), so a maintainer
-# publishes its status by running this workflow manually with its number, again after each push or
-# review. Never add a checkout.
+# publishes its status with "Run workflow" or the command below, again after each push or review.
+# Never add a checkout.
+#   gh workflow run two-human-reviewers.yml -R <owner>/<repo> -f pr=<number>
 
 on:
   workflow_dispatch:
