@@ -11,23 +11,36 @@ name: Two human reviewers
 # the caller's, so it gates the calling repository's PR.
 #
 # A called workflow's own triggers are ignored - only the caller's events run it - so a caller MUST
-# declare `pull_request_review` as well as `pull_request_target`. Without it the gate evaluates once at
-# open, finds no approvals, and never re-runs when humans approve, leaving the required check stuck.
+# declare `pull_request_review` as well as `pull_request`. Without it the gate evaluates once at open,
+# finds no approvals, and never re-runs when humans approve, leaving the required check stuck.
 # `.github/workflow-templates/two-human-reviewers.caller.yml` is the template to copy.
 #
-# `pull_request_target` rather than `pull_request`, because the verdict is published as a commit status
-# and a pull request from a fork carries a read-only token on `pull_request`; it could never publish for
-# one, and that pull request would wait forever on a status that never arrives. `pull_request_target`
-# runs in the base repository's context with a token that can write.
+# `pull_request` rather than `pull_request_target`, which GitHub blocks by default in public repositories
+# from November 2, 2026:
+# https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target#default-policy-for-pull_request_target
 #
-# It never checks out the pull request's code - it reads the API and nothing else - which is what makes
-# `pull_request_target` safe here, and what makes running on `pull_request_review` safe too, since both
-# carry a writable token. Do not add a checkout to this workflow.
+# The verdict is published as a commit status, which needs a token that can write. On `pull_request` and
+# `pull_request_review`, a run for a pull request from a branch in the same repository gets one, so those
+# publish as they always have, `pending` included. Dependabot's runs start read-only, but GitHub honours
+# the `permissions` below for them, so its pull requests publish too. A run for a fork's pull request is
+# read-only whatever `permissions` asks for, so its status cannot be published and the pull request stays
+# blocked. That fails safe - a missing required status never lets a merge through. A maintainer unblocks
+# it by running this workflow manually with its number (see `workflow_dispatch` below), and runs it again
+# after each push and, for a bot's pull request, whenever its reviews change. Fork pull requests are rare
+# in the repositories this gates, so that manual step is the accepted cost.
 #
-# Because both triggers take the definition from the base branch rather than from the pull request, a
-# pull request can no longer be judged by its own edited copy of this file. Deleting or weakening it now
-# takes effect only once merged. It is still security-relevant: review a diff that touches it as such,
-# and requiring code owner review on `.github/workflows/**` in branch protection is what enforces that.
+# It never checks out the pull request's code - it reads the API and nothing else. Keep it that way: the
+# manual run that publishes for a fork's pull request holds a token that can write, as does a run from any
+# caller still on `pull_request_target`, and anything checked out from the fork could run with it.
+#
+# `pull_request` takes this file from the pull request's merge commit, as `pull_request_review` always
+# has, so a pull request from a branch in this repository that edits it is judged by its edited copy.
+# Deleting it fails safe - the required status never arrives and the pull request cannot merge - but
+# weakening it does not, and nor does adding another workflow that publishes the status. Review a diff
+# that touches `.github/workflows/` as security-relevant; requiring code owner review on
+# `.github/workflows/**` in branch protection is what enforces that. A consuming repository's pull
+# request cannot alter the logic here, but editing its own caller stub is just as decisive, and the same
+# rule is what covers it there.
 #
 # Why a job and not a branch rule: GitHub cannot condition an approval count on the PR author, and a
 # required check that never reports blocks a PR forever ("Expected - waiting for status to be
@@ -53,9 +66,6 @@ name: Two human reviewers
 # otherwise have written and vetted, leaving one human short. A dependency bump has no missing author:
 # the change is a version number, and the code it pulls in was never going to be written here. The
 # repository's normal review rule is the control that fits it.
-#
-# It deliberately never checks out the PR's code, so running on `pull_request_review` (which carries a
-# writable token) cannot execute anything from the branch under review.
 
 on:
   workflow_call:
@@ -76,18 +86,22 @@ on:
           to it.
         type: string
         required: false
-  # Dispatching runs against the default branch, so the check run it produces attaches to that branch's
-  # commit rather than to a pull request's head, and no pull request is unblocked by it. It reports the
-  # verdict to the run log, which makes it useful for checking this logic against a real pull request. A
-  # pull request that was already open when the gate landed has no event to evaluate it with - those don't
-  # fire retroactively - and is unstuck by reopening it, or by any push to it.
+  # Dispatching runs the default branch's copy of this workflow, with a token that can write. Its own
+  # check run attaches to that branch's commit, but the status it publishes - the verdict branch
+  # protection requires - goes to the pull request's head commit, because the run looks that commit up
+  # from the API. That is how a maintainer unblocks a fork's pull request, whose own runs cannot publish:
+  # start a new run with "Run workflow", since re-running one of the fork's runs keeps its read-only
+  # token. The verdict holds for the head as it stands, so repeat it after each push and, for a bot's pull
+  # request, whenever its reviews change. A pull request that was already open when the gate landed has no
+  # event to evaluate it with - those don't fire retroactively - and is unstuck by dispatching this for
+  # it, by reopening it, or by any push to it; a fork's pull request only by dispatching.
   workflow_dispatch:
     inputs:
       pr:
         description: PR number to evaluate.
         type: string
         required: true
-  pull_request_target:
+  pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
   pull_request_review:
     types: [submitted, dismissed]
@@ -136,15 +150,16 @@ jobs:
           # protection treats a pending required status as blocking, which is exactly the intent.
           #
           # Publishing is best effort. It needs `statuses: write`, which a called workflow only has if its
-          # caller granted it, and a `pull_request` run on a fork's pull request holds a read-only token
-          # whatever the caller granted. Neither case may fail the run: the job's own exit code is what
-          # those repositories still gate on, and turning a missing permission into a red check would
-          # block them on the automation rather than on the review.
+          # caller granted it, and a `pull_request` or `pull_request_review` run on a fork's pull request
+          # holds a read-only token whatever the caller granted. Neither case fails the run, because
+          # branch protection reads the status rather than this job: the status stays missing, or at
+          # whatever an earlier run published for this commit, until a run that can write publishes it,
+          # and the warning says how to get one.
           publish() {
             if ! gh api --method POST "repos/$REPO/statuses/$head_sha" \
                    -f state="$1" -f context="$STATUS_CONTEXT" -f description="$2" \
                    -f target_url="$RUN_URL" >/dev/null 2>&1; then
-              echo "::warning::Could not publish the $STATUS_CONTEXT status. The run needs 'statuses: write', and a fork's pull request cannot be published to from a pull_request trigger."
+              echo "::warning::Could not publish the $STATUS_CONTEXT status: the run needs 'statuses: write', which pull_request and pull_request_review runs on a fork's pull request never get. A maintainer can publish it by starting this workflow with Run workflow (not Re-run) and pr=$PR, again after each push and, for a bot's pull request, whenever its reviews change."
             fi
           }
 
