@@ -452,39 +452,25 @@ function new-e2e-template
             [System.IO.File]::WriteAllText((Join-Path $work 'helper.txt'), "helper`r`n")
             [void](invoke-e2e-fixture-git -directory $work -git_args @('add', '--', 'helper.txt'))
             [void](invoke-e2e-fixture-git -directory $work -git_args @('commit', '-q', '-m', $helper_subject))
-            # Enough commits that listing each one exceeds the 4000-character Azure DevOps limit,
-            # made in one fast-import run (empty commits keep their parent's tree).
-            $helper = invoke-e2e-fixture-git -directory $work -git_args @('rev-parse', 'HEAD')
-            $stream = New-Object System.Text.StringBuilder
-            $filler_count = 60
-            if ($interactive)
+            # Pipeline fixtures need enough commits that listing each one exceeds the 4000-character
+            # Azure DevOps limit: empty commits (each keeps its parent's tree) made with commit-tree.
+            # (Not fast-import: on Windows PowerShell with a UTF-8 console code page, a redirected
+            # stdin starts with a byte order mark, which fast-import rejects.)
+            if (-not $interactive)
             {
-                $filler_count = 0
+                $tip = invoke-e2e-fixture-git -directory $work -git_args @('rev-parse', 'HEAD')
+                $tree = invoke-e2e-fixture-git -directory $work -git_args @('rev-parse', 'HEAD^{tree}')
+                for ($i = 1; $i -le 60; $i++)
+                {
+                    $message = 'Refine build helper step {0:D2} so the propagated commit list exceeds the description limit' -f $i
+                    $tip = invoke-e2e-fixture-git -directory $work -git_args @('commit-tree', $tree, '-p', $tip, '-m', $message)
+                }
+                [void](invoke-e2e-fixture-git -directory $work -git_args @('reset', '-q', '--hard', $tip))
             }
             else
             {
-                # pipeline fixtures exercise the description limit
+                # the original interactive scripts truncate a long Azure DevOps description past the limit
             }
-            for ($i = 1; $i -le $filler_count; $i++)
-            {
-                $message = 'Refine build helper step {0:D2} so the propagated commit list exceeds the description limit' -f $i
-                [void]$stream.Append("commit refs/heads/master`n")
-                [void]$stream.Append("committer Fixture Author <fixture-author@example.com> $(1767225600 + $i) +0000`n")
-                [void]$stream.Append("data $($message.Length)`n$message`n")
-                if ($i -eq 1)
-                {
-                    [void]$stream.Append("from $helper`n")
-                }
-                else
-                {
-                    # continues the branch
-                }
-                [void]$stream.Append("`n")
-            }
-            $stream_file = Join-Path $directory 'c-build-tools-commits.txt'
-            [System.IO.File]::WriteAllText($stream_file, $stream.ToString())
-            [void](invoke-fake-git -git_args @('fast-import', '--quiet') -directory $work -input_file $stream_file)
-            [void](invoke-e2e-fixture-git -directory $work -git_args @('reset', '-q', '--hard', 'master'))
             [void](invoke-e2e-fixture-git -directory $work -git_args @('checkout', '-q', '-b', 'side'))
             [System.IO.File]::WriteAllText((Join-Path $work 'side.txt'), "side`r`n")
             [void](invoke-e2e-fixture-git -directory $work -git_args @('add', '--', 'side.txt'))

@@ -24,7 +24,8 @@ endif()
 # Azure-MessagingStore copy for -Pipeline runs, and the c-build-tools version before the merge for
 # interactive runs; see dependency_updates_propagation.md. Each test runs its scenarios in parallel
 # (interactive ones with Windows PowerShell and, when installed, PowerShell 7). They do not depend on
-# the build flavor, so they run only for Debug. A run times out after 1500 seconds; the test
+# the build flavor, so they run only for Debug; their _e2e names put them in the e2e category, which
+# the gate runs only in its MAX_STAGE=ALL legs. A run times out after 1500 seconds; the test
 # timeouts leave room for the runner to report a run that hangs.
 add_test(NAME update_deps_pipeline_e2e_test
     CONFIGURATIONS Debug

@@ -104,7 +104,6 @@ function invoke-fake-git
     param(
         [string[]] $git_args,
         [string] $directory = $null,
-        [string] $input_file = $null,
         [switch] $AllowFail
     )
     if (-not $global:FakeGitPath)
@@ -132,20 +131,9 @@ function invoke-fake-git
     $info.RedirectStandardError = $true
     $info.StandardOutputEncoding = [System.Text.Encoding]::UTF8
     $info.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-    $info.RedirectStandardInput = [bool]$input_file
     $process = [System.Diagnostics.Process]::Start($info)
     $stderr = $process.StandardError.ReadToEndAsync()
     $stdout = $process.StandardOutput.ReadToEndAsync()
-    if ($input_file)
-    {
-        $bytes = [System.IO.File]::ReadAllBytes($input_file)
-        $process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
-        $process.StandardInput.Close()
-    }
-    else
-    {
-        # no input
-    }
     $process.WaitForExit()
     $result = [pscustomobject]@{ ExitCode = $process.ExitCode; StdOut = $stdout.Result.TrimEnd(); StdErr = $stderr.Result.TrimEnd() }
     $process.Dispose()
