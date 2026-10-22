@@ -1,398 +1,162 @@
 # Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
+#
+# Pipeline-only dependency propagation. Azure DevOps PR operations use the REST API directly with the
+# build account token; GitHub operations use the gh CLI.
 
 <#
 .SYNOPSIS
-
-Propagates dependency updates for git repositories.
+Propagates dependency updates up to the given root repositories.
 
 .DESCRIPTION
-
-Given a root repo, this script builds the dependency graph and propagates updates from the
-lowest level up to the root repo by making PRs to each repo in bottom-up level-order.
-
-By default, if a PR fails (e.g., checks fail), it is automatically closed/abandoned before
-exiting. Use -NoCloseFailedPr to leave failed PRs open instead.
-
-Authentication for Azure DevOps uses WAM (Web Account Manager) by default on Windows, which
-provides SSO using your Windows login. If WAM is not available or fails, you can provide a
-PAT token as a fallback. GitHub authentication is handled via 'gh auth login'.
+Builds the dependency graph from the roots. Then, bottom-up, it updates each repo's submodules to
+the snapshotted commits and, where anything changed, opens a PR. A repo starts as soon as every
+repo it depends on has been propagated (its PR merged, or it had no changes), and all open PRs are
+polled together, so independent dependency chains proceed in parallel instead of waiting for each
+other. Azure PRs are created/approved/auto-completed via the Azure DevOps REST API; GitHub PRs via
+the gh CLI.
 
 .PARAMETER root_list
-
-Comma-separated list of URLs of the repositories up to which updates must be propagated.
+Comma-separated repository URLs up to which updates must be propagated.
 
 .PARAMETER azure_work_item
+Work item id linked to every Azure DevOps PR (satisfies the linked-work-items policy).
 
-Work item id that is linked to PRs made to Azure repos.
-
-.PARAMETER azure_token
-
-(Optional) Personal Access Token for Azure DevOps authentication. If not provided, WAM
-authentication will be used. PAT must have Code (Read & Write) and Work Items (Read) permissions.
+.PARAMETER poll_interval
+Seconds between PR status polls while waiting for a PR to merge.
 
 .PARAMETER NoCloseFailedPr
-
-(Optional) When set, disables the default behavior of automatically closing/abandoning the
-PR that caused a failure. By default, failed PRs are closed (GitHub via 'gh pr close',
-Azure via 'az repos pr update --status abandoned').
-
-.PARAMETER Resume
-
-(Optional) Resume a previously failed propagation run. Finds the most recent work directory
-(new_deps_*) in the current folder, loads saved state (repo order, fixed commits, branch name),
-and continues from the repo that failed. Repos that were already updated or skipped are not
-re-processed.
-
-.INPUTS
-
-ignore.json: list of repositories that must be ignored for updates.
-
-.OUTPUTS
-
-None.
+Leave a failed PR open instead of abandoning it.
 
 .EXAMPLE
-
-PS> .\propagate_updates.ps1 -azure_work_item 12345 -root_list root1, root2, ...
-
-.EXAMPLE
-
-PS> .\propagate_updates.ps1 -azure_token <your-pat-token> -azure_work_item 12345 -root_list root1, root2, ...
-
-.EXAMPLE
-
-PS> .\propagate_updates.ps1 -Resume
-# Resumes the most recent failed propagation run from the last failed repo
+PS> .\propagate_updates.ps1 -azure_work_item 12345 -root_list https://.../_git/RepoA,https://.../_git/RepoB
 #>
-
-
 param(
-    [Parameter(Mandatory=$false)][string]$azure_token, # Personal Access Token for Azure DevOps (optional, WAM used if not provided)
-    [Parameter(Mandatory=$false)][Int32]$azure_work_item, # Work item id to link to Azure PRs
-    [Parameter(Mandatory=$false)][Int32]$poll_interval = 15, # Seconds between status polls during PR watch
-    [switch]$NoCloseFailedPr, # keep the PR open if it fails (default: close/abandon failed PRs)
-    [switch]$ForceBuildGraph, # force graph rebuild even if known graph matches
-    [switch]$Resume, # resume a previously failed propagation run
-    [switch]$AutoFix, # use Copilot CLI to auto-fix build failures
-    [Parameter(Mandatory=$false)][string[]]$root_list # comma-separated list of URLs for repositories upto which updates must be propagated
+    [Parameter(Mandatory = $false)][Int32] $azure_work_item,
+    [Parameter(Mandatory = $false)][Int32] $poll_interval = 15,
+    [switch] $NoCloseFailedPr,
+    [Parameter(Mandatory = $false)][string[]] $root_list
 )
 
-
-# Source helper scripts
+# Source helper scripts (logging first so Write-Log is available everywhere).
 $helper_scripts = "$PSScriptRoot\helper_scripts"
+. "$helper_scripts\logging.ps1"
+. "$helper_scripts\preflight.ps1"
 . "$helper_scripts\check_powershell_version.ps1"
-. "$helper_scripts\check_script_update.ps1"
-. "$helper_scripts\install_az_cli.ps1"
 . "$helper_scripts\install_gh_cli.ps1"
 . "$helper_scripts\status_tracking.ps1"
 . "$helper_scripts\git_operations.ps1"
-. "$helper_scripts\watch_azure_pr.ps1"
-. "$helper_scripts\watch_github_pr.ps1"
 . "$helper_scripts\azure_repo_ops.ps1"
 . "$helper_scripts\github_repo_ops.ps1"
-. "$helper_scripts\success_animation.ps1"
-. "$helper_scripts\propagation_state.ps1"
 . "$helper_scripts\update_repo.ps1"
-. "$helper_scripts\autofix.ps1"
-
-# Build the resume command from the current invocation args
-$resume_args = @()
-if ($azure_token) { $resume_args += "-azure_token `"$azure_token`"" }
-if ($azure_work_item) { $resume_args += "-azure_work_item $azure_work_item" }
-if ($root_list) { $resume_args += "-root_list $($root_list -join ',')" }
-if ($poll_interval -ne 15) { $resume_args += "-poll_interval $poll_interval" }
-if ($NoCloseFailedPr) { $resume_args += "-NoCloseFailedPr" }
-if ($AutoFix) { $resume_args += "-AutoFix" }
-$global:resume_command = "$($MyInvocation.MyCommand.Path) $($resume_args -join ' ') -Resume"
 
 
-# iterate over all repos and update them
 function propagate-updates
 {
-    # Save original directory to restore at exit (including on failure)
     $global:original_dir = (Get-Location).Path
-
-    # Close failed PRs by default unless -NoCloseFailedPr is specified
     $global:close_failed_pr = -not $NoCloseFailedPr.IsPresent
-
-    # Store poll interval for use by repo ops functions
     $global:poll_interval = $poll_interval
 
-    # Store auto-fix flag for use by repo ops functions
-    $global:auto_fix = $AutoFix.IsPresent
+    Write-Log STEP "Dependency propagation starting"
+    Write-Log INFO ("roots: {0}" -f ($root_list -join ', '))
+    Write-Log INFO ("work item: {0}; poll interval: {1}s; close failed PR: {2}" -f $azure_work_item, $poll_interval, $global:close_failed_pr)
 
-    # Store resume flag so update-repo knows whether to look for existing PRs
-    $global:is_resume = $Resume.IsPresent
-
-    # Check PowerShell version first
     check-powershell-version
+    ensure-gh-cli
 
-    # Check for script updates before starting
-    check-for-script-updates -script_root $PSScriptRoot
+    # Self-test: validate the GitHub token and Azure DevOps build-account access before any work.
+    Invoke-Preflight -root_list $root_list
 
-    check-az-cli-exists -pat_token $azure_token
-    check-gh-cli-exists
+    # Authenticate git pushes to github.com with the gh token. Without this, the branch push for any
+    # GitHub repo fails with "could not read Username for 'https://github.com'". gh is confirmed
+    # working by preflight; setup-git writes a credential helper into the isolated global git config.
+    Write-Log INFO "Configuring git GitHub credential helper (gh auth setup-git)"
+    $setup_git = gh auth setup-git 2>&1
+    if ($LASTEXITCODE -ne 0)
+    {
+        Write-Log WARN "gh auth setup-git returned non-zero; GitHub pushes may fail: $($setup_git | Out-String)"
+    }
+
+    if (-not $azure_work_item)
+    {
+        fail-with-status "azure_work_item is required. Provide: -azure_work_item [id]"
+    }
+    if (-not $root_list)
+    {
+        fail-with-status "root_list is required. Provide: -root_list repo1,repo2,..."
+    }
+
+    $new_branch_name = "new_deps_" + (Get-Date -Format "yyyyMMddHHmmss")
+    Write-Log INFO "Propagation branch name: $new_branch_name"
+
+    $global:work_dir = Join-Path (Get-Location).Path $new_branch_name
+    New-Item -ItemType Directory -Path $global:work_dir -Force | Out-Null
+    Set-Location $global:work_dir
+    Write-Log INFO "Work directory: $global:work_dir"
 
     $repo_order = $null
     $repo_urls = $null
-    $new_branch_name = $null
+    $repo_edges = $null
 
-    # Store state params as globals so fail-with-status can save state before exiting
-    $global:_state_repo_order = $null
-    $global:_state_repo_urls = $null
-    $global:_state_branch_name = $null
-    $global:_state_root_list = $root_list
-    $global:_state_azure_work_item = $azure_work_item
-
-    if ($Resume.IsPresent)
+    Write-Log STEP "Building dependency graph"
+    . "$helper_scripts\build_graph.ps1" -root_list $root_list
+    if (-not $repo_order -or $repo_order.Count -eq 0)
     {
-        # --- Resume path: load state from the most recent run ---
-        Write-Host "`nResuming previous propagation run..." -ForegroundColor Cyan
+        fail-with-status "Could not build dependency graph for $($root_list -join ', ')."
+    }
+    Write-Log INFO "Dependency graph built ($($repo_order.Count) repos)"
 
-        $state_path = find-latest-state-file
-        if (-not $state_path)
+    # Now that the graph is known, validate GitHub write access (SSO + push) to the discovered
+    # github.com repos before opening any PRs, so a non-authorized token fails fast.
+    Test-GitHubRepoAccess -repo_urls @($repo_urls.Values)
+
+    Write-Log STEP "Ensuring all repositories are cloned"
+    Set-Location $global:work_dir
+    foreach ($repo_name in $repo_order)
+    {
+        if (-not (Test-Path -Path $repo_name))
         {
-            fail-with-status "No previous propagation state found. Run without -Resume first."
+            if ($repo_urls.ContainsKey($repo_name))
+            {
+                clone-repo-with-retry -repo_url $repo_urls[$repo_name] -target_dir $repo_name
+            }
+            else
+            {
+                Write-Log WARN "No URL for $repo_name; skipping clone"
+            }
         }
-        else
-        {
-            # state file found
-        }
+    }
 
-        Write-Host "Loading state from: $state_path"
-        $saved_state = load-propagation-state -state_path $state_path
+    initialize-repo-status -repos $repo_order
 
-        if (-not $saved_state)
-        {
-            fail-with-status "Failed to load propagation state from: $state_path"
-        }
-        else
-        {
-            # state loaded successfully
-        }
+    # Snapshot master HEAD commits for all repos before starting. After each repo's PR merges,
+    # update-fixed-commit advances its entry so downstream repos pick up the propagated commit.
+    Write-Log STEP "Snapshotting master commits for all repos"
+    Set-Location $global:work_dir
+    $global:fixed_commits = snapshot-repo-commits -repo_order $repo_order
+    Write-Log INFO "Fixed commits captured for $($global:fixed_commits.Count) repos"
 
-        # Restore globals from saved state
-        $new_branch_name = $saved_state.branch_name
-        $repo_order = $saved_state.repo_order
-        $repo_urls = $saved_state.repo_urls
-        $global:fixed_commits = $saved_state.fixed_commits
-        $global:work_dir = Split-Path $state_path -Parent
+    Write-Log INFO "Dependencies (a repo's PR opens as soon as all of these are propagated):"
+    foreach ($repo_name in $repo_order)
+    {
+        $deps = @($repo_edges[$repo_name])
+        Write-Log INFO ("  {0} <- {1}" -f $repo_name, $(if ($deps.Count -gt 0) { $deps -join ', ' } else { '(none)' }))
+    }
 
-        # Update state globals for fail-with-status
-        $global:_state_branch_name = $new_branch_name
-        $global:_state_repo_order = $repo_order
-        $global:_state_repo_urls = $repo_urls
-        $global:_state_root_list = $saved_state.root_list
-        $global:_state_azure_work_item = $saved_state.azure_work_item
-        $azure_work_item = $saved_state.azure_work_item
-        $root_list = $saved_state.root_list
+    update-repos-greedily -repo_order $repo_order -repo_edges $repo_edges -new_branch_name $new_branch_name
 
-        # Restore change descriptions for recursive bubbling on resume
-        $global:repo_change_descriptions = $saved_state.change_descriptions
+    $success = show-propagation-status -Final
+    show-skipped-commits-summary
+    restore-original-directory
 
-        # Validate that critical state was restored
-        if (-not $global:fixed_commits -or $global:fixed_commits.Count -eq 0)
-        {
-            fail-with-status "State file is missing fixed_commits. Cannot resume without commit information."
-        }
-        else
-        {
-            # fixed_commits restored successfully
-        }
-
-        Set-Location $global:work_dir
-        Write-Host "Work directory: $global:work_dir"
-        Write-Host "Branch name: $new_branch_name"
-
-        # Restore repo statuses (updated/skipped stay, failed resets to pending)
-        restore-repo-status -repos $repo_order -saved_statuses $saved_state.repo_statuses
-
-        # Check if the previous run already completed successfully
-        $pending_count = ($repo_order | Where-Object {
-            $global:repo_status[$_].Status -ne "updated" -and $global:repo_status[$_].Status -ne "skipped"
-        }).Count
-        if ($pending_count -eq 0)
-        {
-            Write-Host "`nThe previous propagation run already completed successfully. Nothing to resume." -ForegroundColor Green
-            Write-Host "To start a new propagation, run the script without -Resume." -ForegroundColor Cyan
-            restore-original-directory
-            return
-        }
-        else
-        {
-            # there are repos to process
-        }
-
-        # Show what was already done
-        Write-Host "`nResumed propagation status:" -ForegroundColor Cyan
-        [void](show-propagation-status)
+    if ($success)
+    {
+        Write-Log STEP "Dependency propagation completed successfully"
     }
     else
     {
-        # --- Normal path: validate params, build graph, snapshot ---
-
-        # Validate required parameters for normal (non-resume) runs
-        if (-not $azure_work_item)
-        {
-            fail-with-status "azure_work_item is required. Provide: -azure_work_item [id]"
-        }
-        else
-        {
-            # azure_work_item provided
-        }
-        if (-not $root_list)
-        {
-            fail-with-status "root_list is required. Provide: -root_list repo1, repo2, ..."
-        }
-        else
-        {
-            # root_list provided
-        }
-
-        # Generate branch name with timestamp
-        $new_branch_name = "new_deps_" + (Get-Date -Format "yyyyMMddHHmmss")
-        Write-Host "New branch name: $new_branch_name"
-
-        # Update state globals for fail-with-status
-        $global:_state_branch_name = $new_branch_name
-
-        # Create a new directory for this update session
-        $global:work_dir = Join-Path (Get-Location).Path $new_branch_name
-        New-Item -ItemType Directory -Path $global:work_dir -Force | Out-Null
-        Set-Location $global:work_dir
-        Write-Host "Working directory: $global:work_dir"
-
-        # build dependency graph
-        Write-Host "Building dependency graph..."
-        $build_graph_args = @{ root_list = $root_list }
-        if ($ForceBuildGraph) { $build_graph_args['ForceBuildGraph'] = $true }
-        . "$helper_scripts\build_graph.ps1" @build_graph_args
-        if (-not $repo_order -or $repo_order.Count -eq 0)
-        {
-            fail-with-status "Could not build dependency graph for $root_list."
-        }
-        else
-        {
-            # graph built successfully
-        }
-        Write-Host "Done building dependency graph"
-
-        # Update state globals for fail-with-status
-        $global:_state_repo_order = $repo_order
-        $global:_state_repo_urls = $repo_urls
-
-        # Clone any repos that aren't already present (known graph path only clones roots)
-        Write-Host "Ensuring all repositories are cloned..."
-        Set-Location $global:work_dir
-        foreach ($repo_name in $repo_order)
-        {
-            if (-not (Test-Path -Path $repo_name))
-            {
-                if ($repo_urls.ContainsKey($repo_name))
-                {
-                    Write-Host "Cloning: $repo_name" -ForegroundColor Cyan
-                    git clone $repo_urls[$repo_name]
-                }
-                else
-                {
-                    Write-Host "Warning: No URL for $repo_name, skipping clone" -ForegroundColor Yellow
-                }
-            }
-            else
-            {
-                # already cloned
-            }
-        }
-
-        # Initialize status tracking
-        initialize-repo-status -repos $repo_order
-
-        # Snapshot master HEAD commits for all repos before starting updates.
-        # This prevents external changes from affecting propagation. After each
-        # repo's PR merges, its entry is updated via update-fixed-commit so that
-        # downstream repos pick up the new commit created by propagation.
-        Write-Host "`nSnapshotting master commits for all repos..."
-        Set-Location $global:work_dir
-        $global:fixed_commits = snapshot-repo-commits -repo_order $repo_order
-        Write-Host "Fixed commits captured for $($global:fixed_commits.Count) repos`n"
-    }
-
-    Write-Host "Updating repositories in the following order: "
-    for($i = 0; $i -lt $repo_order.Count; $i++)
-    {
-        Write-Host "$($i+1). $($repo_order[$i])"
-    }
-
-    # Ctrl+C handling: works during our own sleep intervals (wait-or-cancel).
-    # During external commands (az, gh, git), Ctrl+C terminates immediately.
-    # State is saved after each repo, so use -Resume to continue.
-    $global:propagation_cancelled = $false
-    [Console]::TreatControlCAsInput = $true
-
-    try
-    {
-        foreach ($repo in $repo_order)
-        {
-            # Check for Ctrl+C between repos
-            if ($global:propagation_cancelled)
-            {
-                break
-            }
-            else
-            {
-                # continue propagation
-            }
-
-            # Skip repos that were already updated or skipped (for resume)
-            if ($global:repo_status.ContainsKey($repo) -and
-                ($global:repo_status[$repo].Status -eq "updated" -or $global:repo_status[$repo].Status -eq "skipped"))
-            {
-                Write-Host "`nSkipping $repo (already $($global:repo_status[$repo].Status))" -ForegroundColor Gray
-            }
-            else
-            {
-                update-repo $repo $new_branch_name
-            }
-
-            # Save state after each repo so the run can be resumed
-            save-propagation-state -branch_name $new_branch_name -repo_order $repo_order -repo_urls $repo_urls -root_list $root_list -azure_work_item $azure_work_item
-        }
-    }
-    finally
-    {
-        # Restore normal Ctrl+C behavior
-        [Console]::TreatControlCAsInput = $false
-    }
-
-    if ($global:propagation_cancelled)
-    {
-        [void](show-propagation-status -Final)
-        restore-original-directory
-        Write-Host "`nPropagation cancelled by user." -ForegroundColor Yellow
-        Write-Host "To resume from where it stopped, run:" -ForegroundColor Cyan
-        Write-Host "  $global:resume_command" -ForegroundColor White
-        exit 1
-    }
-    else
-    {
-        # Show final status and check if all succeeded
-        $success = show-propagation-status -Final
-
-        # Warn about any repos with newer commits that were not propagated
-        show-skipped-commits-summary
-
-        if ($success)
-        {
-            play-success-animation
-        }
-        else
-        {
-            Write-Host "Done updating repos (with some failures)" -ForegroundColor Yellow
-        }
-
-        # Restore original directory
-        restore-original-directory
+        # Do not exit green when repos are still pending or failed.
+        fail-with-status "Dependency propagation finished with failures or pending repos."
     }
 }
 

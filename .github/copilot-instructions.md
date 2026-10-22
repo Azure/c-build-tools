@@ -127,7 +127,7 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 
 ### Update Propagation (`update_deps/`)
 - **Workflow**: `build_graph.ps1` → `propagate_updates.ps1` for bottom-up dependency updates
-- **Requires**: Azure PAT with Code permissions, GitHub CLI authentication
+- **Requires**: `SYSTEM_ACCESSTOKEN` (Azure DevOps) and `GH_TOKEN` (GitHub) in the environment; see `update_deps/dependency_updates_propagation.md`
 - **Ignores**: Repository exclusions defined in `ignores.json`
 
 ## Project Conventions

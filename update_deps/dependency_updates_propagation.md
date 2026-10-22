@@ -2,41 +2,126 @@
 
 ## Overview
 
-This toolset builds dependency graphs and propagates updates from the lowest level up to root repositories by making PRs to each repo in bottom-up level-order.
+This toolset builds dependency graphs and propagates updates from the lowest level up to root repositories by making PRs to each repo, bottom-up. A repo's PR is opened as soon as every repo it depends on has been propagated (its PR merged, or it had no changes), so independent dependency chains are reviewed and merged in parallel instead of waiting for each other.
+
+## Running via the Pipeline
+
+The supported way to run a propagation is the `aa_propagate_submodules` pipeline
+(definition 464812: https://msazure.visualstudio.com/One/_build?definitionId=464812),
+defined by Azure-MessagingStore's [`build/propagate_deps.yml`](https://msazure.visualstudio.com/One/_git/Azure-MessagingStore?path=/build/propagate_deps.yml). It runs
+`propagate_updates.ps1` as the build service account so the resulting PRs are
+bot-authored. A bot-authored PR lets any developer act as a valid non-contributor
+approver, so a single Approve plus the script's armed auto-complete merges each PR.
+GitHub repos in the chain are merged by the Microsoft GitHub Policy Service. The
+build service identity needs **Contribute to pull requests** on each target Azure
+repo.
+
+### How to queue a run
+
+1. Open the pipeline and click **Run pipeline** (run it from `master`, the default).
+2. Provide `workItemId` and the `ghToken` secret variable (see Inputs below).
+3. The run blocks while it waits for the required human approvals, advancing up the
+   dependency chain as PRs merge. Cancel the run manually to abort.
+
+### Inputs
+
+| Input | Kind | Description |
+|-------|------|-------------|
+| `workItemId` | Parameter (required) | Id of any tracked work item in the One project, linked to every PR to satisfy the linked-work-items policy. Entered in the Run pipeline dialog. |
+| `ghToken` | Secret variable, settable at queue time | GitHub token for the script's `gh` calls and pushes to github.com. It is a secret variable (not a parameter) because parameters are not masked in logs. Needs `repo` (write) scope and `Azure` org SSO authorization, exactly like `GH_TOKEN` in [Authentication](#github-gh_token). Add it under Pipeline -> Edit -> Variables as `ghToken`, marked secret and settable at queue time. Verify before queueing: `gh api repos/Azure/macro-utils-c --jq .permissions.push` should print `true`. |
+
+Azure DevOps auth (git and REST) uses the job's `System.AccessToken`, so no
+`SYSTEM_ACCESSTOKEN` setup is needed when running in the pipeline. The `gh` CLI is
+installed by the script if the agent does not already have it.
+
+### What the YAML fixes (edit the file to change)
+
+- **Roots**: `root_list` is hardcoded to `Azure-Messaging-ElasticLog` and
+  `Azure-Messaging-GeoReplication`. Change it in `build/propagate_deps.yml` (or run
+  the script directly, see below) to target a different set of roots.
+- **Pool**: `Azure-MessagingStore-WinBuildPoolVS2022_1`.
+- **`-NoCloseFailedPr`**: failed PRs stay open so a later approval can still merge
+  them even if the run was cancelled first.
+- **No timeout**: the job sets `timeoutInMinutes: 0`; the default 60-minute job
+  timeout would otherwise cancel the run mid human-gated wait, so it is disabled to
+  let the run block for hours across sequential approvals.
+- **No waiting on prompts or dead connections**: git, Git Credential Manager and `gh`
+  are told never to prompt (nobody could answer), and git aborts any transfer that
+  moves less than 1 byte/s for 1 minute instead of waiting on it forever.
+
+To run with a custom root list, a different account, or interactively, invoke
+`propagate_updates.ps1` directly as described below.
+
+### Monitoring a run
+
+While PRs are open, the log shows a status table after every poll round (about every 30
+seconds; longer while requests are being retried):
+
+```
+--- Propagation Status (2026-09-30 06:31:53) ---
+Repos: 14 of 18 done (12 updated, 2 skipped), 1 in progress, 3 not started, 0 failed
+   #   REPOSITORY                     STATUS      PR
+-  1.  azure-messaging-ai-context     SKIPPED
++  3.  Azure-MessagingStore-AITools   UPDATED     https://dev.azure.com/msazure/One/_git/Azure-MessagingStore-AITools/pullrequest/17339084
+...
++  14. Azure-Messaging-Metrics        UPDATED     https://dev.azure.com/msazure/One/_git/Azure-Messaging-Metrics/pullrequest/17339074
+*  15. zrpc                           IN PROGRESS https://dev.azure.com/msazure/One/_git/zrpc/pullrequest/17339125
+       waiting on 2 of 12 gates: 1 running, 1 awaiting action [Required reviewers]; 10 done
+.  16. Azure-Messaging-GeoReplication PENDING
+       waiting for zrpc
+.  17. Azure-MessagingStore           PENDING
+       waiting for zrpc
+.  18. Azure-Messaging-ElasticLog     PENDING
+       waiting for zrpc, Azure-MessagingStore
+```
+
+The line under each open PR counts its gates: for an Azure DevOps PR, its blocking
+branch policies (builds, reviewer requirements, status checks, ...); for a GitHub PR,
+its checks plus the review requirement. A gate is done, running, not started, awaiting
+action (usually a human approval), or failed; gates awaiting action or failed are named.
+Anything else that keeps the PR from merging is appended, such as
+`merge status: conflicts` or `auto-complete not set`. The line under a repo that has not
+started yet names the dependencies it is still waiting for.
+
+Requests that stop responding fail instead of stalling the run: Azure DevOps REST calls
+time out after 60 seconds (300 for writes), `gh` calls after 120 seconds, and the git
+fetches and pulls the script depends on after 10 minutes per attempt. A failed poll is
+retried on the next one, so the log keeps moving. If no new log line appears for more than
+15 minutes, the run is stuck: cancel it and, once the PRs it already opened have merged
+(they are armed to merge on their own), queue a new run; repos that are already up to date
+are skipped.
 
 ## Folder Structure
 
 ```
 update_deps/
-├── propagate_updates.ps1      # Main orchestration script
-├── ignores.json               # Repos to exclude from updates
-├── helper_scripts/
-│   ├── build_graph.ps1        # Builds dependency graph via BFS
-│   ├── status_tracking.ps1    # Progress display functions
-│   ├── git_operations.ps1     # Local git operations
-│   ├── azure_repo_ops.ps1     # Azure DevOps PR operations
-│   ├── github_repo_ops.ps1    # GitHub PR operations
-│   ├── watch_azure_pr.ps1     # Azure PR policy monitoring
-│   ├── watch_github_pr.ps1    # GitHub PR check monitoring
-│   ├── install_az_cli.ps1     # Azure CLI setup
-│   └── install_gh_cli.ps1     # GitHub CLI setup
+|-- propagate_updates.ps1      # Main orchestration script
+|-- ignores.json               # Repos to exclude from updates
+|-- helper_scripts/
+|   |-- build_graph.ps1        # Discovers the dependency graph (BFS) and a bottom-up order
+|   |-- update_repo.ps1        # Greedy scheduling: create/poll PRs as dependencies merge
+|   |-- status_tracking.ps1    # Progress display functions
+|   |-- git_operations.ps1     # Local git operations + mirror cache
+|   |-- azure_repo_ops.ps1     # Azure DevOps PR operations (REST)
+|   |-- github_repo_ops.ps1    # GitHub PR operations (gh)
+|   |-- logging.ps1            # Structured logging, secret redaction, time-bounded native calls
+|   |-- preflight.ps1          # GitHub/ADO self-test before any work
+|   |-- check_powershell_version.ps1
+|   `-- install_gh_cli.ps1     # Ensures gh is installed + authenticated
 ```
 
 ## propagate_updates.ps1
 
-Given a root repo, this script builds the dependency graph and propagates updates from the lowest level up to the root repo by making PRs to each repo in bottom-up level-order.
+Given root repos, this script builds the dependency graph and propagates updates from the lowest level up to the roots. It opens a repo's PR as soon as all of that repo's dependencies have been propagated, polls all open PRs together, and on each merge advances that repo's pinned commit before starting whatever depends on it. For example, `Azure-Messaging-GeoReplication` does not depend on `Azure-MessagingStore`, so both are updated in parallel, while `Azure-Messaging-ElasticLog` waits for `Azure-MessagingStore`.
 
 ### Usage
 
 ```powershell
-# Using WAM authentication (recommended on Windows)
-.\propagate_updates.ps1 -azure_work_item {work_item_id} -root_list {root1}, {root2}, ...
+# Authentication comes from the environment (the pipeline sets these); see Authentication below.
+$env:GH_TOKEN = "<github token>"          # gh PRs + git pushes to github.com
+$env:SYSTEM_ACCESSTOKEN = "<ado token>"   # Azure DevOps REST + git
 
-# Using PAT token authentication
-.\propagate_updates.ps1 -azure_token {your_pat_token} -azure_work_item {work_item_id} -root_list {root1}, {root2}, ...
-
-# Force a full graph rebuild (ignores known_graph.json)
-.\propagate_updates.ps1 -azure_work_item {work_item_id} -ForceBuildGraph -root_list {root1}, {root2}, ...
+.\propagate_updates.ps1 -azure_work_item {work_item_id} -root_list {root1},{root2},...
 ```
 
 ### Arguments
@@ -45,14 +130,12 @@ Given a root repo, this script builds the dependency graph and propagates update
 |----------|----------|-------------|
 | `-root_list` | Yes | Comma-separated list of URLs of the repositories up to which updates must be propagated |
 | `-azure_work_item` | Yes | Work item ID to link to PRs made to Azure repos |
-| `-azure_token` | No | Personal access token for Azure DevOps. If not provided, WAM (Web Account Manager) authentication is used |
-| `-poll_interval` | No | Seconds between status polls during PR watch (default: 15) |
-| `-ForceBuildGraph` | No | Force a full graph rebuild even if the known graph matches |
+| `-poll_interval` | No | Seconds between status polls while waiting for a PR to merge (default: 15) |
 | `-NoCloseFailedPr` | No | Keep the PR open if it fails (default: close/abandon failed PRs) |
 
 ## build_graph.ps1
 
-This script takes a list of repository URLs and builds the dependency graph. It performs bottom-up level-order traversal to determine the order in which submodules must be updated.
+This script takes a list of repository URLs and builds the dependency graph. It records each repo's direct dependencies (used to start a repo as soon as they are done) and orders the repos bottom-up by the length of the longest dependency chain below each one, which is roughly the order in which they can start. A dependency cycle fails the run.
 
 ### Usage
 
@@ -60,61 +143,40 @@ This script takes a list of repository URLs and builds the dependency graph. It 
 .\helper_scripts\build_graph.ps1 -root_list {root1}, {root2}, ...
 ```
 
+## Local git object cache
+
+The same dependency (for example `c-build-tools`, `c-pal`, `c-util`) is a submodule of many repos, so a naive run would clone it once per parent. To avoid that, `git_operations.ps1` mirrors each unique repository once into a per-run `_gitmirrors` cache and then clones it (both at top level and as a submodule) with git alternates pointing at that mirror. Objects are shared from local disk instead of being fetched again, while full history is preserved so PR-description log reads and fixed-commit checkouts still work. The cache lives under the run's work directory and is discarded with it.
+
+## Authentication
+
+Authentication is provided through the environment (the pipeline sets these), not script parameters.
+
+### GitHub (`GH_TOKEN`)
+
+Used by `gh` for pull requests and by git for pushes to github.com. The propagation opens PRs on the
+upstream `Azure/*` GitHub repos (`c-build-tools`, `macro-utils-c`, `c-pal`, ...), so the token must
+have `repo` (write) scope AND be SSO-authorized for the `Azure` organization, which enforces SAML
+SSO. A token that lacks this returns HTTP 403 ("Resource protected by organization SAML enforcement")
+on push/PR. Create a PAT at https://github.com/settings/tokens, then click `Configure SSO` next to it
+and authorize the `Azure` org. The preflight self-test validates this before any work: it runs
+`gh api repos/<owner>/<repo> --jq .permissions.push` for every GitHub repo in the dependency graph and
+fails fast with guidance if any is not writable/authorized (verify yourself: the command should print
+`true`).
+
+### Azure DevOps (`SYSTEM_ACCESSTOKEN`)
+
+Azure DevOps PR operations call the REST API directly (no `az` CLI) and git authenticates via an http
+extraheader, both using the build account OAuth token in `SYSTEM_ACCESSTOKEN`. The job token stays
+valid for the lifetime of the job, so a single run can wait through hours of human approvals without
+the token expiring.
+
 ## Prerequisites
 
-### Automatic Setup
-
-The script automatically handles most setup tasks:
-
-- **Azure CLI**: Automatically installed if not present (Windows only)
-- **GitHub CLI**: Automatically installed if not present (Windows only)
-- **Azure DevOps extension**: Automatically installed for Azure CLI
-- **Azure authentication**: Uses WAM (Web Account Manager) automatically if `-azure_token` is not provided
-- **GitHub authentication**: Prompts for `gh auth login` if not already authenticated
-
-### Manual Setup (if automatic installation fails)
-
-#### Azure CLI
-
-1. Download and install the Azure CLI from [here](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli).
-
-2. The azure-devops extension will be automatically installed when you run the script. Alternatively, you can install it manually:
-   ```powershell
-   az extension add --name azure-devops
-   ```
-
-#### GitHub CLI
-
-1. Download the latest version of GitHub CLI from [here](https://cli.github.com/) and install it.
-
-2. Authenticate with GitHub CLI (the script will prompt you if needed):
-   ```powershell
-   gh auth login
-   ```
-   Follow the prompts:
-   - `What account do you want to log into?` : Select `GitHub.com`
-   - `What is your preferred protocol for Git operations?` : Select `HTTPS`
-   - `Authenticate Git with your GitHub credentials?` : Enter `Y`
-   - `How would you like to authenticate GitHub CLI?` : Select `Login with a web browser`
-   - Select the `Azure` organization on the authentication page.
-
-### Azure DevOps PAT Token (Optional)
-
-If WAM authentication doesn't work in your environment, you can use a Personal Access Token instead:
-
-1. Go to `https://msazure.visualstudio.com/` and sign in.
-
-2. Click on the person icon with the gear in the top right corner and select `Personal access tokens` from the menu:
-
-![azure_pat](images/azure_pat.jpg)
-
-3. Click on `+ New Token`. Give your token a name. Give the token `Read, write, & manage` permission for `Work Items` and `Full` permissions for `Code`:
-
-![azure_token](images/azure_token.jpg)
-
-4. Click `Create` at the bottom.
-
-5. Copy the generated token and pass it using `-azure_token {your_token}`.
+- **GitHub CLI (`gh`)**: used for pull requests. The propagation script uses it if already installed
+  and otherwise downloads a pinned release automatically (the build agent has no winget), so no manual
+  install is needed.
+- **Git**: required for cloning and submodule operations.
+- No Azure CLI is required: all Azure DevOps operations use the REST API directly.
 
 ## Configuration
 
@@ -152,7 +214,7 @@ When propagating updates, the script updates both the `deps/c-build-tools` submo
 
 The `ref:` field in `resources.repositories` only supports [template expressions](https://learn.microsoft.com/en-us/azure/devops/release-notes/2022/sprint-212-update#template-expressions-in-repository-resource-definition) (`${{ }}`) with **parameters** and **system predefined variables**. It does **not** support YAML-defined variables, including those loaded from variable template files.
 
-We attempted to externalize the SHA into a separate file (`deps/c_build_tools_ref.yml`) and reference it via `${{ variables.c_build_tools_ref }}`, but the value silently fell back to the default branch (`master`) at compile time.
+Externalizing the SHA into a separate file (`deps/c_build_tools_ref.yml`) and referencing it via `${{ variables.c_build_tools_ref }}` does not work: the value silently falls back to the default branch (`master`) at compile time.
 
 Per the Sprint 212 release notes:
 > "you can use `parameters` and system predefined variables, but you **cannot use YAML or Pipelines UI-defined variables**"
