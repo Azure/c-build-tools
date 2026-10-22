@@ -29,15 +29,5 @@ function check-powershell-version
         throw "PowerShell version $currentVersion is not supported. Minimum required: $minMajor.$minMinor"
     }
 
-    # Check for PowerShell ISE (limited console support)
-    if ($host.Name -eq 'Windows PowerShell ISE Host')
-    {
-        Write-Host ""
-        Write-Host "WARNING: Running in PowerShell ISE." -ForegroundColor Yellow
-        Write-Host "Some features (like animations) may not work properly." -ForegroundColor Yellow
-        Write-Host "Consider using Windows Terminal or PowerShell console instead." -ForegroundColor Yellow
-        Write-Host ""
-    }
-
     Write-Host "PowerShell $currentVersion - OK" -ForegroundColor Green
 }

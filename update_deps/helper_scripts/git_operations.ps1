@@ -1,4 +1,4 @@
-﻿# Copyright (c) Microsoft. All rights reserved.
+# Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 # Git operations functions for propagate_updates.ps1
@@ -22,6 +22,140 @@ function create-ignore-pattern
 
 # Initialize the ignore pattern when script is sourced
 create-ignore-pattern
+
+# --- Local git object cache (mirror + alternates) -----------------------------------------------
+# Every parent repo re-clones its whole deps/ submodule set, so without a cache the same dependency
+# (c-build-tools, c-pal, c-util, ...) is fetched once per parent. Instead each unique repository is
+# mirrored once into a per-run cache; subsequent clones (top-level and submodule) reference that
+# mirror via git alternates, so their objects come from local disk rather than the network. Full
+# history stays present, so PR-description log reads and fixed-commit checkouts keep working.
+$global:git_mirror_index = @{}
+
+function get-repo-name-from-url
+{
+    param([string] $url)
+    $last = ($url -split '[/\\]')[-1]
+    return ($last -replace '\.git$', '')
+}
+
+function get-mirror-cache-dir
+{
+    if ($global:work_dir) { $base = $global:work_dir } else { $base = (Get-Location).Path }
+    $dir = Join-Path $base '_gitmirrors'
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    return $dir
+}
+
+# Run a networked git command (e.g. fetch), retrying on failure. Returns $true on success. Each
+# attempt has a wall-clock limit so a stalled transfer cannot block the run, and callers check the
+# result because a failed fetch must never silently leave stale commits behind.
+function invoke-git-with-retry
+{
+    param(
+        [string[]] $git_args,
+        [int] $max_attempts = 3,
+        [int] $timeout_sec = 600
+    )
+    $result = $false
+    for ($attempt = 1; $attempt -le $max_attempts; $attempt++)
+    {
+        $run = Invoke-NativeWithTimeout -File git -Arguments $git_args -TimeoutSec $timeout_sec
+        foreach ($text in @($run.StdOut, $run.StdErr))
+        {
+            if ($text -and $text.Trim())
+            {
+                Write-Host (Protect-Secret $text.TrimEnd())
+            }
+        }
+        if ($run.ExitCode -eq 0)
+        {
+            $result = $true
+            break
+        }
+        Write-Log WARN ("git {0} failed with exit code {1} in {2} (attempt {3}/{4})" -f ($git_args -join ' '), $run.ExitCode, (Get-Location).Path, $attempt, $max_attempts)
+        if ($attempt -lt $max_attempts)
+        {
+            Start-Sleep -Seconds 10
+        }
+    }
+    return $result
+}
+
+# Ensure a bare mirror of $repo_url exists in the cache. Returns the mirror path, or $null if the
+# mirror could not be created (callers then fall back to a normal networked clone).
+function ensure-git-mirror
+{
+    param(
+        [string] $repo_url,
+        [string] $repo_name
+    )
+    if (-not $repo_name) { $repo_name = get-repo-name-from-url $repo_url }
+    if ($global:git_mirror_index.ContainsKey($repo_name))
+    {
+        $existing = $global:git_mirror_index[$repo_name]
+        if ($existing -and (Test-Path $existing)) { return $existing }
+    }
+    $mirror = Join-Path (get-mirror-cache-dir) "$repo_name.git"
+    if (Test-Path $mirror)
+    {
+        $global:git_mirror_index[$repo_name] = $mirror
+        return $mirror
+    }
+    $attempt = 1
+    while ($attempt -le 3)
+    {
+        Write-Log INFO "Mirroring $repo_name into local git cache (attempt $attempt/3)"
+        git clone --mirror $repo_url $mirror
+        if ($LASTEXITCODE -eq 0 -and (Test-Path $mirror))
+        {
+            $global:git_mirror_index[$repo_name] = $mirror
+            return $mirror
+        }
+        if (Test-Path $mirror) { Remove-Item -Recurse -Force $mirror -ErrorAction SilentlyContinue }
+        $attempt++
+        if ($attempt -le 3) { Start-Sleep -Seconds 10 }
+    }
+    Write-Log WARN "Could not mirror $repo_name; will clone it without the local cache"
+    return $null
+}
+
+# Initialize and update all submodules, sharing objects from the local mirror cache. Replaces a
+# plain "git submodule update --init" so each submodule references a one-time local mirror of its
+# repository instead of fetching the same dependency again for every parent repo.
+function update-submodules-with-cache
+{
+    if (-not (Test-Path ".gitmodules"))
+    {
+        return
+    }
+    # init resolves relative submodule URLs and copies them into .git/config
+    git submodule init
+    $path_lines = git config --file .gitmodules --get-regexp '\.path$'
+    if (-not $path_lines)
+    {
+        return
+    }
+    foreach ($line in $path_lines)
+    {
+        $key = ($line -split "\s+", 2)[0]
+        $sub_name = $key -replace '^submodule\.', '' -replace '\.path$', ''
+        $sub_path = ($line -split "\s+", 2)[1]
+        $sub_url = (git config "submodule.$sub_name.url" 2>$null)
+
+        $ref_args = @()
+        if ($sub_url)
+        {
+            $mirror = ensure-git-mirror -repo_url $sub_url -repo_name (get-repo-name-from-url $sub_url)
+            if ($mirror) { $ref_args += @('--reference', $mirror) }
+        }
+        git submodule update --init $ref_args -- $sub_path
+        if ($LASTEXITCODE -ne 0)
+        {
+            Write-Host "  submodule update failed for $sub_path; retrying without local cache" -ForegroundColor Yellow
+            git submodule update --init -- $sub_path
+        }
+    }
+}
 
 # Snapshot the current master HEAD commit for all repos in the work directory.
 # Called once before propagation starts to establish a baseline. Entries are
@@ -115,94 +249,6 @@ function test-submodule-is-ahead
     return $result
 }
 
-# Check if resuming with a PR would regress any submodule compared to current master.
-# Also detects if master already has all changes (PR is redundant).
-# Returns a hashtable: { WouldRegress = $bool; AlreadyUpToDate = $bool }
-function check-pr-would-regress
-{
-    param(
-        [string] $repo_name
-    )
-    $would_regress = $false
-    $all_up_to_date = $true
-
-    Push-Location $repo_name
-
-    # Fetch latest master
-    git fetch origin master 2>$null
-
-    if (Test-Path ".gitmodules")
-    {
-        $submodule_lines = git config --file .gitmodules --get-regexp '\.path$'
-        if ($submodule_lines)
-        {
-            foreach ($line in $submodule_lines)
-            {
-                $sub_path = ($line -split "\s+", 2)[1]
-                $sub_repo_name = Split-Path $sub_path -Leaf
-
-                if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
-                {
-                    $target_sha = $global:fixed_commits[$sub_repo_name]
-
-                    # Get what master currently has for this submodule
-                    $master_sub_sha = git ls-tree origin/master -- $sub_path 2>$null
-                    if ($master_sub_sha -match '([0-9a-f]{40})')
-                    {
-                        $current_sha = $matches[1]
-
-                        if ($current_sha -eq $target_sha)
-                        {
-                            # master already at the target — this submodule is up to date
-                        }
-                        else
-                        {
-                            # Check if current master is ahead of target
-                            Push-Location $sub_path
-                            git fetch origin 2>$null
-                            $is_ahead = test-submodule-is-ahead -target_sha $target_sha
-                            if ($is_ahead)
-                            {
-                                Write-Host "  REGRESSION: $sub_repo_name on master is at $($current_sha.Substring(0, 8)) which is AHEAD of fixed commit $($target_sha.Substring(0, 8))" -ForegroundColor Red
-                                Write-Host "  Someone has already updated this repo with newer submodule versions." -ForegroundColor Red
-                                $would_regress = $true
-                            }
-                            else
-                            {
-                                # target is newer than current — this submodule still needs updating
-                                $all_up_to_date = $false
-                            }
-                            Pop-Location
-                        }
-                    }
-                    else
-                    {
-                        # couldn't parse submodule SHA from master
-                        $all_up_to_date = $false
-                    }
-                }
-                else
-                {
-                    # no fixed commit for this submodule — can't determine if up to date
-                }
-            }
-        }
-        else
-        {
-            # no submodule lines
-            $all_up_to_date = $false
-        }
-    }
-    else
-    {
-        # no .gitmodules
-        $all_up_to_date = $false
-    }
-
-    Pop-Location
-    return @{ WouldRegress = $would_regress; AlreadyUpToDate = $all_up_to_date }
-}
-
 # Update each submodule to its fixed commit, or latest master if no fixed commit is available
 function update-submodules-to-fixed-commits
 {
@@ -237,7 +283,9 @@ function update-submodules-to-fixed-commits
                     if ($global:fixed_commits -and $global:fixed_commits.ContainsKey($sub_repo_name))
                     {
                         $target_sha = $global:fixed_commits[$sub_repo_name]
-                        git fetch origin
+                        # A failed fetch is tolerated here when the target is already present locally
+                        # (e.g. from the mirror); the checkout is verified below either way.
+                        [void](invoke-git-with-retry -git_args @('fetch', 'origin'))
 
                         # Check if the submodule is already at or ahead of the target commit
                         $current_sha = (git rev-parse HEAD 2>$null)
@@ -259,24 +307,34 @@ function update-submodules-to-fixed-commits
                             $is_ahead = test-submodule-is-ahead -target_sha $target_sha
                             if ($is_ahead)
                             {
-                                # Current commit is ahead of target — do NOT downgrade
+                                # Current commit is ahead of target - do NOT downgrade
                                 Write-Host "  $sub_path is already at $($current_sha.Substring(0, 8)) which is ahead of fixed commit $($target_sha.Substring(0, 8)), keeping current" -ForegroundColor Yellow
                             }
                             else
                             {
-                                # Target is not an ancestor of current — could be a different branch or target is newer
+                                # Target is not an ancestor of current - could be a different branch or target is newer
                                 Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
                                 git checkout $target_sha
-                                # Reset console color — git checkout may leave ANSI color codes active
-                                Write-Host "`e[0m" -NoNewline
+                                # Reset console color - git checkout may leave ANSI color codes active
                             }
                         }
                         else
                         {
-                            # Couldn't determine current SHA — proceed with checkout
+                            # Couldn't determine current SHA - proceed with checkout
                             Write-Host "  Checking out $sub_path at fixed commit $($target_sha.Substring(0, 8))"
                             git checkout $target_sha
-                            Write-Host "`e[0m" -NoNewline
+                        }
+
+                        # The submodule must now be at (or ahead of) its fixed commit. Anything else
+                        # (e.g. the commit was never fetched) would propagate a stale dependency.
+                        git merge-base --is-ancestor $target_sha HEAD 2>$null
+                        if ($LASTEXITCODE -ne 0)
+                        {
+                            fail-with-status "Could not check out $sub_path at its fixed commit $target_sha."
+                        }
+                        else
+                        {
+                            # at or ahead of the fixed commit
                         }
 
                         # Warn if remote master has moved ahead of the fixed commit
@@ -302,7 +360,6 @@ function update-submodules-to-fixed-commits
                     {
                         Write-Host "  Updating $sub_path to latest master (no fixed commit)"
                         git checkout master
-                        Write-Host "`e[0m" -NoNewline
                         git pull
                     }
                     Pop-Location
@@ -487,7 +544,11 @@ function update-fixed-commit
     if ($global:fixed_commits)
     {
         Push-Location $repo_name
-        git fetch origin master 2>$null
+        if (-not (invoke-git-with-retry -git_args @('fetch', 'origin', 'master')))
+        {
+            # Without the merged master, repos up the chain would be updated to the stale pre-merge commit.
+            fail-with-status "Could not fetch the merged master of $repo_name."
+        }
         $new_sha = (git rev-parse origin/master 2>$null)
         if ($LASTEXITCODE -eq 0 -and $new_sha)
         {
@@ -496,7 +557,7 @@ function update-fixed-commit
         }
         else
         {
-            Write-Host "  Warning: Could not fetch new master commit for $repo_name" -ForegroundColor Yellow
+            fail-with-status "Could not resolve the merged master of $repo_name after fetching it."
         }
         Pop-Location
     }
@@ -673,10 +734,13 @@ function collect-upstream-changes
                                             # no PR reference to replace
                                         }
 
-                                        # Filter out dep-update commits produced by this script
+                                        # Filter out dep-update commits produced by this script.
+                                        # Squash-merge subjects are the PR title, which is prefixed
+                                        # with [no begging], so match the literal [autogenerated]
+                                        # marker anywhere in the subject.
                                         if ($commit_subject -eq "Update dependencies" -or
                                             $commit_subject -like "Update deps:*" -or
-                                            $commit_subject -like "`[autogenerated`]*")
+                                            $commit_subject.Contains("[autogenerated]"))
                                         {
                                             # dep-update commit, skip
                                         }
@@ -758,7 +822,7 @@ function build-propagation-description
     $result = @{
         CommitSubject = "Update dependencies"
         CommitBody = ""
-        PrTitle = "[autogenerated] update dependencies"
+        PrTitle = "[no begging] [autogenerated] update dependencies"
         PrBody = "Propagating dependency updates"
     }
 
@@ -818,8 +882,8 @@ function build-propagation-description
         }
         $result.CommitBody = $body_lines -join "`n"
 
-        # Build PR title — only include repo names, not commit subjects
-        $pr_title = "[autogenerated] update deps: " + ($repo_names -join ", ")
+        # Build PR title - only include repo names, not commit subjects
+        $pr_title = "[no begging] [autogenerated] update deps: " + ($repo_names -join ", ")
         if ($pr_title.Length -gt 120)
         {
             $pr_title = $pr_title.Substring(0, 117) + "..."
@@ -830,19 +894,17 @@ function build-propagation-description
         }
         $result.PrTitle = $pr_title
 
-        # Build PR body: same as commit body but with markdown formatting
+        # Concise per-repo summary.
         $pr_body_lines = @()
         $pr_body_lines += "## Dependency Updates"
         $pr_body_lines += ""
         foreach ($repo in $repo_names)
         {
-            $pr_body_lines += "### $repo"
-            foreach ($change in $grouped[$repo])
-            {
-                $pr_body_lines += "- ``$($change.SHA)`` $($change.Subject)"
-            }
-            $pr_body_lines += ""
+            $commit_count = @($grouped[$repo]).Count
+            $commit_word = if ($commit_count -eq 1) { "commit" } else { "commits" }
+            $pr_body_lines += "- **$repo**: $commit_count $commit_word"
         }
+        $pr_body_lines += ""
 
         # Add links to PRs created by this propagation run
         if ($global:repo_status)
@@ -882,6 +944,48 @@ function build-propagation-description
     return $result
 }
 
+# Clone a repo with retries so transient connection resets on large clones (e.g. the curl 56
+# "Connection was reset" / "early EOF" seen on Azure-MessagingStore) do not abort the run.
+# Removes any partial directory between attempts and fails the run if every attempt fails.
+function clone-repo-with-retry
+{
+    param(
+        [string] $repo_url,
+        [string] $target_dir,
+        [int]    $depth = 0,
+        [int]    $max_attempts = 5
+    )
+    $clone_args = @()
+    if ($depth -gt 0)
+    {
+        # Shallow discovery clone (only .gitmodules is needed); not worth mirroring.
+        $clone_args += @('--depth', "$depth")
+    }
+    else
+    {
+        # Full clone: share objects from the local mirror cache so repeated clones of the same repo
+        # (at top level and as a submodule of many parents) do not re-download it.
+        $mirror = ensure-git-mirror -repo_url $repo_url -repo_name (get-repo-name-from-url $repo_url)
+        if ($mirror) { $clone_args += @('--reference-if-able', $mirror) }
+    }
+    $attempt = 1
+    while ($attempt -le $max_attempts)
+    {
+        if (Test-Path $target_dir) { Remove-Item -Recurse -Force $target_dir -ErrorAction SilentlyContinue }
+        Write-Host "Cloning $repo_url -> $target_dir (attempt $attempt/$max_attempts)..." -ForegroundColor Cyan
+        git clone $clone_args $repo_url $target_dir
+        if ($LASTEXITCODE -eq 0 -and (Test-Path (Join-Path $target_dir '.git')))
+        {
+            return
+        }
+        Write-Host "Clone failed (exit $LASTEXITCODE) for $repo_url on attempt $attempt/$max_attempts." -ForegroundColor Yellow
+        $attempt++
+        if ($attempt -le $max_attempts) { Start-Sleep -Seconds 10 }
+    }
+    fail-with-status "Failed to clone $repo_url after $max_attempts attempts."
+}
+
+
 # update the submodules of the given repo and push changes
 # returns a hashtable with GitOutput (commit output) and Description (propagation description)
 function update-local-repo
@@ -892,21 +996,36 @@ function update-local-repo
     )
     $result = $null
 
+    if (-not (Test-Path -Path $repo_name))
+    {
+        fail-with-status "Repository directory '$repo_name' is missing (clone failed). Aborting before git operations corrupt the outer checkout."
+    }
     Push-Location $repo_name
     git checkout master
-    Write-Host "`e[0m" -NoNewline
     # Unshallow if this is a shallow clone (e.g., from build_graph.ps1 --depth 1)
     $is_shallow = git rev-parse --is-shallow-repository 2>$null
     if ($is_shallow -eq "true")
     {
         Write-Host "  Unshallowing repository..."
-        git fetch --unshallow
+        if (-not (invoke-git-with-retry -git_args @('fetch', '--unshallow')))
+        {
+            # Continuing would push the PR branch from a shallow clone, which is never exercised.
+            fail-with-status "Could not unshallow $repo_name."
+        }
+        else
+        {
+            # full history available
+        }
     }
     else
     {
         # full clone, no unshallowing needed
     }
-    git pull
+    if (-not (invoke-git-with-retry -git_args @('pull')))
+    {
+        # A stale master would base the PR on outdated files, risking conflicts that block it forever.
+        fail-with-status "Could not update master of $repo_name."
+    }
     # Sometimes git fails to detect updates in submodules
     # Fix is to delete the submodule and reinitializes it
     if (Test-Path "deps\")
@@ -917,14 +1036,13 @@ function update-local-repo
     {
         # no deps folder
     }
-    git submodule update --init --jobs 20
+    update-submodules-with-cache
     # update all submodules to their fixed commits (or latest master as fallback)
     update-submodules-to-fixed-commits
     # Update c-build-tools YAML refs to match new submodule SHA
     update-c-build-tools-yaml-refs
     # create new branch
     git checkout -B $new_branch_name
-    Write-Host "`e[0m" -NoNewline
     # add updates and push to remote
     git add .
 
