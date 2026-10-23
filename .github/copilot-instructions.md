@@ -123,13 +123,6 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
     3. **Unit tests** (`_ut.c` file): The test with `// Tests_SRS_XX_YYY: [...]` comment
   - Run the traceability tool after any spec changes to verify all three locations are synchronized
 
-## Dependency Management
-
-### Update Propagation (`update_deps/`)
-- **Workflow**: `build_graph.ps1` → `propagate_updates.ps1` for bottom-up dependency updates
-- **Requires**: Azure PAT with Code permissions, GitHub CLI authentication
-- **Ignores**: Repository exclusions defined in `ignores.json`
-
 ## Project Conventions
 
 ### File Patterns
