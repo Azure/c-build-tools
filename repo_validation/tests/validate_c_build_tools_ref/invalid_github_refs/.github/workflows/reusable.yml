@@ -1,0 +1,7 @@
+name: Invalid reusable workflow callers
+
+jobs:
+  branch:
+    uses: "Azure/c-build-tools/.github/workflows/two-human-reviewers.yml@master" # preserve this comment
+  short_sha:
+    uses: Azure/c-build-tools/.github/workflows/build.yml@deadbeef

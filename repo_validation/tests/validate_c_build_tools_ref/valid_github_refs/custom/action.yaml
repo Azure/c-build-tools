@@ -1,0 +1,9 @@
+name: Composite action
+description: Test action
+runs:
+  using: composite
+  steps:
+    - uses: 'Azure/c-build-tools/actions/example@aabbccdd00112233445566778899aabbccddeeff' # matches submodule
+    - uses: ./local-action
+    - uses: docker://alpine:3.20
+    - uses: actions/checkout@v4
