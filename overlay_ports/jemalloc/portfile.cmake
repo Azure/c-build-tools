@@ -10,7 +10,10 @@ vcpkg_from_github(
         fix-host-use-libc.patch # https://github.com/jemalloc/jemalloc/commit/45249cf5a9cfa13c2c62e68e272a391721523b4b
 )
 if(VCPKG_TARGET_IS_WINDOWS)
-    set(opts "ac_cv_search_log=none required" "--without-private-namespace")
+    # autoconf >= 2.73 makes AC_PROG_CC add -std:c11 for cl.exe. That defines __STDC_VERSION__, so
+    # jemalloc 5.3.0 declares VARIABLE_ARRAY as a VLA, which MSVC rejects (5.3.1 also checks
+    # __STDC_NO_VLA__). Keep cl.exe in its default mode, as before.
+    set(opts "ac_cv_search_log=none required" "--without-private-namespace" "ac_cv_prog_cc_c11=no")
 endif()
 
 vcpkg_make_configure(
