@@ -15,8 +15,11 @@ This folder contains pipeline yml templates for devops pipelines.
   - If the job was canceled or failed then these ETL logs are published as artifacts.
   - Requires the path to this repository root.
 - dump_drive_usage_on_failure.yml
-  - For a given drive (default c), dump the largest directories/files recursively when they are at least a certain size (1GB by default) and down to a certain depth (6 by default).
-  - Run only when the job failed.
+  - Currently emits no steps: the du based reporting is disabled (work item 32920581). Kept so existing callers still compile.
+- discover_native_tools.yml
+  - Finds the native build tools for the target architecture and sets their paths as pipeline variables.
+  - Runs `scripts/discover_native_tools.ps1` from `repo_root` (default `$(Build.SourcesDirectory)/deps/c-build-tools`), so it must run after the checkout that provides c-build-tools.
+  - The template and the script check a shared contract version, so a `c_build_tools` resource ref and a c-build-tools checkout at incompatible commits fail the step instead of misbehaving.
 - tttracer_start.yml
   - Starts tttracer for a given process to collect time-travel traces.
 - tttracer_stop.yml

@@ -8,6 +8,8 @@ parameters:
   - name: setup_nuget
     type: boolean
     default: false
+  - name: repo_root
+    default: $(Build.SourcesDirectory)/deps/c-build-tools
 
 steps:
   - template: get_machine_information.yml
@@ -30,6 +32,7 @@ steps:
   - template: discover_native_tools.yml
     parameters:
       architecture: ${{ parameters.ARCH_TYPE }}
+      repo_root: ${{ parameters.repo_root }}
 
   # Setup VS environment - use discovered vsPath for correct VS version
   - task: PowerShell@2

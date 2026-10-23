@@ -85,7 +85,9 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
 
 ### C# Projects
 - Must include `csharp_sdk_fix/` subdirectory
-- Use `build_as_csharp_net6_project()` helper
+- Use `build_as_csharp_net6_project()` helper (self-contained, RuntimeIdentifier set)
+- Use `build_as_csharp_netcore_framework_dependent_project(target framework snk_path [TEST])` for projects that must not carry a .NET runtime, such as test projects; `TEST` adds `IsTestProject` and a `Microsoft.NET.Test.Sdk` reference versioned by central package management
+- Use `build_as_csharp_netfx_project(target framework_version snk_path)` for .NET Framework projects
 - Strong name signing with `MSSharedLibSN1024.snk`
 - Only builds with Visual Studio generators (not Ninja)
 
@@ -120,13 +122,6 @@ add_vld_if_defined(${CMAKE_CURRENT_SOURCE_DIR})
     2. **Source code** (`.c` file): The implementation with `/*Codes_SRS_XX_YYY: [...] */` comment
     3. **Unit tests** (`_ut.c` file): The test with `// Tests_SRS_XX_YYY: [...]` comment
   - Run the traceability tool after any spec changes to verify all three locations are synchronized
-
-## Dependency Management
-
-### Update Propagation (`update_deps/`)
-- **Workflow**: `build_graph.ps1` → `propagate_updates.ps1` for bottom-up dependency updates
-- **Requires**: Azure PAT with Code permissions, GitHub CLI authentication
-- **Ignores**: Repository exclusions defined in `ignores.json`
 
 ## Project Conventions
 

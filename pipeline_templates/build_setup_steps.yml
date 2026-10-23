@@ -23,6 +23,8 @@ steps:
     parameters:
       ARCH_TYPE: ${{ parameters.ARCH_TYPE }}
       setup_nuget: ${{ parameters.setup_nuget }}
+      ${{ if ne(parameters.repo_root_override, '') }}:
+        repo_root: ${{ parameters.repo_root_override }}
 
   # Cleanup appverifier from any previous runs
   - template : disable_appverifier.yml
