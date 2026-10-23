@@ -1,9 +1,0 @@
-[
-    "libcrc",
-    "smhasher",
-    "vcpkg",
-    "mimalloc",
-    "jemalloc",
-    "Detours",
-    "libuv"
-]
