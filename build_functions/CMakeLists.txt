@@ -95,7 +95,8 @@ macro(set_default_build_options)
     endif()
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-    # CMake maps C++23 to /std:c++latest on MSVC, which also enables experimental features; use the C++23-only switch.
+    # On MSVC, CMake maps C++23 to /std:c++latest, which also enables post-C++23 features.
+    # Use /std:c++23 (MSVC 19.52+) or /std:c++23preview (MSVC 19.43-19.51) instead.
     if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.52)
             set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "-std:c++23")
