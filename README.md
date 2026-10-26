@@ -1,4 +1,8 @@
 
+# Build defaults
+
+`set_default_build_options()` uses C17 and at least C++23; a newer caller-selected C++ standard is kept. MSVC uses `/std:c++23` (19.52+) or `/std:c++23preview` (19.43-19.51).
+
 # Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
