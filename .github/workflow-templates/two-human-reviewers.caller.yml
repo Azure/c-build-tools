@@ -2,17 +2,20 @@ name: Two human reviewers
 # BEGIN template-only - Deploy-GitHubReviewPolicy.ps1 strips this block when it installs the file, since
 # it describes the template rather than the workflow, and would be wrong in the copy that runs.
 #
-# Copy this into a consuming repository as `.github/workflows/two-human-reviewers.yml`.
+# Copy this into a consuming repository as `.github/workflows/two-human-reviewers.yml`. It needs a
+# `deps/c-build-tools` submodule; a repository without one calls
+# `Azure/c-build-tools/.github/workflows/two-human-reviewers.yml@<commit SHA>` instead.
 #
 # It is a template and deliberately lives outside `.github/workflows/` here, because anything in that
 # directory runs, and this repository already gates its own pull requests with the reusable workflow
 # directly.
 #
 # END template-only
-# Calls the shared gate in c-build-tools. Keep `pull_request_review`, or approvals never re-run it. A
-# fork's PR gets a read-only token (`pull_request_target` is blocked by default), so a maintainer
-# publishes its status with "Run workflow" or the command below, again after each push or review.
-# Never add a checkout.
+# Runs the shared gate from the c-build-tools commit that the target branch's `deps/c-build-tools` pins, so
+# dependency updates move the gate without editing this file, and a pull request never picks the gate that judges
+# it. Keep `pull_request_review`, or approvals never re-run it. A fork's PR gets a read-only token
+# (`pull_request_target` is blocked by default), so a maintainer publishes its status with "Run workflow" or the
+# command below, again after each push or review. Never check out PR code.
 #   gh workflow run two-human-reviewers.yml -R <owner>/<repo> -f pr=<number>
 
 on:
@@ -27,7 +30,6 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
 
-# Set here because a called workflow can never hold more permission than its caller.
 permissions:
   contents: read
   pull-requests: read
@@ -35,8 +37,47 @@ permissions:
 
 jobs:
   two-human-reviewers:
-    # Pin to a tag or commit SHA instead of a branch if you need the gate's behaviour to change only when
-    # you choose to update it.
-    uses: Azure/c-build-tools/.github/workflows/two-human-reviewers.yml@master
-    with:
-      pr: ${{ github.event.pull_request.number || inputs.pr }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch the gate pinned by the target branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$PR" ]; then
+            echo "::error::No pull request to evaluate; pass the PR number when dispatching manually."
+            exit 1
+          fi
+
+          # The target branch's pointer, not the pull request's: a pull request that moves deps/c-build-tools is
+          # judged by the gate already merged, and the new gate applies once the move merges.
+          base_ref=$(gh api "repos/$REPO/pulls/$PR" --jq .base.ref)
+          gate_sha=$(gh api -X GET "repos/$REPO/contents/deps/c-build-tools" -f ref="$base_ref" \
+            --jq 'select(.type == "submodule") | .sha')
+          if ! [[ "$gate_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::deps/c-build-tools on $base_ref is not a submodule."
+            exit 1
+          fi
+
+          # Dependency updates can merge without a human reading the new pointer, so only a commit already on
+          # c-build-tools' master, and therefore reviewed there, may become the gate.
+          ancestry=$(gh api "repos/Azure/c-build-tools/compare/$gate_sha...master" --jq .status 2>/dev/null || true)
+          if [ "$ancestry" != "ahead" ] && [ "$ancestry" != "identical" ]; then
+            echo "::error::deps/c-build-tools on $base_ref pins $gate_sha, which is not on Azure/c-build-tools master."
+            exit 1
+          fi
+
+          mkdir -p .gate
+          if ! gh api -X GET "repos/Azure/c-build-tools/contents/.github/actions/two-human-reviewers/action.yml" \
+              -f ref="$gate_sha" -H "Accept: application/vnd.github.raw+json" > .gate/action.yml; then
+            echo "::error::Azure/c-build-tools@$gate_sha predates the composite gate; update deps/c-build-tools."
+            exit 1
+          fi
+          echo "::notice::Gate from Azure/c-build-tools@$gate_sha, pinned by $base_ref."
+
+      - uses: ./.gate
+        with:
+          pr: ${{ github.event.pull_request.number || inputs.pr }}
