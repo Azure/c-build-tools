@@ -90,22 +90,12 @@ macro(set_default_build_options)
     #compile the code as C17
     set(CMAKE_C_STANDARD 17)
 
-    if (NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 23)
-        set(CMAKE_CXX_STANDARD 23)
+    # C++20 rather than C++23: Visual Studio generators do not map /std:c++23 (any CMake) or /std:c++23preview
+    # (CMake < 4.0) to a C++-only setting, so mixed C/C++ targets would get it on C files too and fail with D8016.
+    if (NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
+        set(CMAKE_CXX_STANDARD 20)
     endif()
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-    # On MSVC, CMake maps C++23 to /std:c++latest, which also enables post-C++23 features.
-    # Use /std:c++23 (MSVC 19.52+) or /std:c++23preview (MSVC 19.43-19.51) instead.
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.52)
-            set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "-std:c++23")
-            set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "-std:c++23")
-        elseif (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.43)
-            set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "-std:c++23preview")
-            set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "-std:c++23preview")
-        endif()
-    endif()
 
     # Make sure we have a runtime output directory always set
     if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG)
