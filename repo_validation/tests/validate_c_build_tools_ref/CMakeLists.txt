@@ -95,6 +95,39 @@ add_custom_target(test_validate_c_build_tools_ref_multiple_fix
     DEPENDS repo_validator_rs
 )
 
+# Test 8: Verify GitHub Actions refs that pin the submodule SHA pass (workflow and composite action)
+add_custom_target(test_validate_c_build_tools_ref_clean_github
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/valid_github_refs"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing GitHub Actions refs that pin the submodule SHA (should pass)"
+    DEPENDS repo_validator_rs
+)
+
+# Test 9: Verify branch, short SHA and mismatched SHA GitHub Actions refs are detected (exit code 1)
+add_custom_target(test_validate_c_build_tools_ref_github_detection
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/invalid_github_refs"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing detection of GitHub Actions refs that differ from the submodule SHA (should fail)"
+    DEPENDS repo_validator_rs
+)
+
+# Test 10: Verify fix pins GitHub Actions refs to the submodule SHA
+add_custom_target(test_validate_c_build_tools_ref_github_fix
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/temp_github_fix_test"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/invalid_github_refs"
+        "${CMAKE_CURRENT_BINARY_DIR}/temp_github_fix_test"
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_github_fix_test"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}" --fix
+    COMMAND "${REPO_VALIDATOR_RS_EXE}" --repo-root "${CMAKE_CURRENT_BINARY_DIR}/temp_github_fix_test"
+        --check c_build_tools_ref --submodule-sha "${TEST_SHA}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Testing GitHub Actions ref fix functionality"
+    DEPENDS repo_validator_rs
+)
+
 # Master target for all c-build-tools ref validation tests
 add_custom_target(test_validate_c_build_tools_ref
     COMMENT "Running all c-build-tools ref validation tests"
@@ -107,6 +140,8 @@ add_dependencies(test_validate_c_build_tools_ref
     test_validate_c_build_tools_ref_no_submodule
     test_validate_c_build_tools_ref_fix
     test_validate_c_build_tools_ref_multiple_fix
+    test_validate_c_build_tools_ref_clean_github
+    test_validate_c_build_tools_ref_github_fix
 )
 
 # Master target for all expected-failure tests
@@ -116,4 +151,20 @@ add_custom_target(test_validate_c_build_tools_ref_failures
 add_dependencies(test_validate_c_build_tools_ref_failures
     test_validate_c_build_tools_ref_detection
     test_validate_c_build_tools_ref_multiple_detection
+    test_validate_c_build_tools_ref_github_detection
 )
+
+# Test 11: Verify against a real git repository without --submodule-sha: deps/c-build-tools gitlink,
+# exact fix output, and refs reported with file:line when the submodule or gitlink is missing
+find_program(POWERSHELL_EXECUTABLE NAMES pwsh powershell)
+if(POWERSHELL_EXECUTABLE)
+    add_custom_target(test_validate_c_build_tools_ref_gitlink
+        COMMAND ${POWERSHELL_EXECUTABLE} -NoProfile -ExecutionPolicy Bypass -File
+            "${CMAKE_CURRENT_SOURCE_DIR}/test_gitlink_parity.ps1"
+            -ValidatorPath "${REPO_VALIDATOR_RS_EXE}"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Testing GitHub Actions refs against a real deps/c-build-tools gitlink"
+        DEPENDS repo_validator_rs
+    )
+    add_dependencies(test_validate_c_build_tools_ref test_validate_c_build_tools_ref_gitlink)
+endif()

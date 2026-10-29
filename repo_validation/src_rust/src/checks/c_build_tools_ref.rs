@@ -5,6 +5,7 @@ use crate::checks::Check;
 use crate::config::*;
 use crate::file_walker::is_path_excluded;
 use std::fs;
+use std::ops::Range;
 use std::path::Path;
 use std::process::Command;
 
@@ -50,7 +51,8 @@ fn find_cbt_submodule_path(gitmodules_content: &str) -> Option<String> {
 }
 
 /// Determine expected SHA from git ls-tree, or use the provided override.
-fn get_expected_sha(repo_root: &str, submodule_path: &str, sha_override: &Option<String>) -> Result<String, String> {
+/// With gitlink_only, the path must be a submodule commit (mode 160000) in HEAD.
+fn get_expected_sha(repo_root: &str, submodule_path: &str, sha_override: &Option<String>, gitlink_only: bool) -> Result<String, String> {
     if let Some(sha) = sha_override {
         return Ok(sha.clone());
     }
@@ -66,6 +68,9 @@ fn get_expected_sha(repo_root: &str, submodule_path: &str, sha_override: &Option
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    if gitlink_only && !stdout.starts_with("160000 commit ") {
+        return Err(format!("{} is not a gitlink in HEAD", submodule_path));
+    }
     // Output format: "160000 commit <sha>\t<path>"
     for part in stdout.split_whitespace() {
         if part.len() == 40 && part.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -76,8 +81,8 @@ fn get_expected_sha(repo_root: &str, submodule_path: &str, sha_override: &Option
     Err(format!("Could not parse submodule SHA from: {}", stdout.trim()))
 }
 
-/// Recursively find all .yml files under a directory, respecting exclusions and
-/// skipping hidden directories.
+/// Recursively find all .yml/.yaml files under a directory, respecting exclusions and
+/// skipping .git.
 fn find_yml_files(dir: &Path, repo_root: &str, exclude_folders: &[String], out: &mut Vec<(String, String)>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -90,7 +95,7 @@ fn find_yml_files(dir: &Path, repo_root: &str, exclude_folders: &[String], out: 
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
-        if name_str.starts_with('.') {
+        if name_str == ".git" {
             continue;
         }
 
@@ -113,7 +118,7 @@ fn find_yml_files(dir: &Path, repo_root: &str, exclude_folders: &[String], out: 
             if !is_path_excluded(&relative, exclude_folders) {
                 find_yml_files(&full_path, repo_root, exclude_folders, out);
             }
-        } else if ft.is_file() && name_str.ends_with(".yml") && !is_path_excluded(&relative, exclude_folders) {
+        } else if ft.is_file() && (name_str.ends_with(".yml") || name_str.ends_with(".yaml")) && !is_path_excluded(&relative, exclude_folders) {
             out.push((full_path_str, relative));
         }
     }
@@ -174,6 +179,98 @@ fn check_yaml_file(lines: &[String], expected_sha: &str) -> Option<(bool, usize,
     None
 }
 
+/// Locate a `uses: Azure/c-build-tools/...@ref` value on a GitHub Actions YAML line.
+/// Returns the value's byte range and the offset where its ref starts. Refs cannot contain
+/// whitespace, so the value ends at whitespace (e.g. before a comment) or a quote; a `#`
+/// inside a ref such as `refs/heads/feature#1` stays part of it.
+fn find_cbt_action_ref(line: &str) -> Option<(Range<usize>, usize)> {
+    let body = line.trim_start().trim_start_matches(['-', ' ']);
+    let value = ["uses:", "\"uses\":", "'uses':"].iter().find_map(|key| body.strip_prefix(key))?;
+    let value = value.trim_start().trim_start_matches(['"', '\'']);
+    let start = line.len() - value.len();
+    let len = value.find(|c: char| c.is_whitespace() || c == '"' || c == '\'').unwrap_or(value.len());
+    let target = &value[..len];
+    if !target.to_ascii_lowercase().starts_with("azure/c-build-tools/") {
+        return None;
+    }
+    Some((start..start + len, start + target.find('@')? + 1))
+}
+
+impl CBuildToolsRef {
+    /// Every `uses: Azure/c-build-tools/...@ref` in GitHub workflows and composite actions
+    /// must pin the deps/c-build-tools gitlink SHA.
+    fn check_action_refs(&mut self, yml_files: &[(String, String)], expected: &Result<String, String>, fix_mode: bool) {
+        for (full_path, relative_path) in yml_files {
+            let path = relative_path.replace('\\', "/");
+            let workflow = path.starts_with(".github/workflows/");
+            let name = path.rsplit('/').next().unwrap_or_default();
+            if !workflow && name != "action.yml" && name != "action.yaml" {
+                continue;
+            }
+
+            let mut content = match fs::read_to_string(full_path) {
+                Ok(c) => c,
+                Err(_) => {
+                    println!("  [WARN] Cannot read file: {}", relative_path);
+                    continue;
+                }
+            };
+
+            // Only composite actions run `uses:` steps from their metadata.
+            if !workflow && !content.lines().any(|line| {
+                line.trim().strip_prefix("using:").and_then(|value| value.split_whitespace().next())
+                    .map(|value| value.trim_matches(['"', '\''])) == Some("composite")
+            }) {
+                continue;
+            }
+
+            let mut offset = 0;
+            let mut stale = Vec::new();
+            for (index, line) in content.split_inclusive('\n').enumerate() {
+                if let Some((value, ref_start)) = find_cbt_action_ref(line) {
+                    let target = &line[value.clone()];
+                    match expected {
+                        Ok(sha) if &line[ref_start..value.end] == sha.as_str() => {
+                            println!("  [OK]   {}:{} ({})", relative_path, index + 1, target);
+                        }
+                        Ok(sha) => {
+                            println!("  [FAIL] {}:{}: {} must pin submodule SHA {}", relative_path, index + 1, target, sha);
+                            stale.push(offset + ref_start..offset + value.end);
+                        }
+                        Err(e) => {
+                            println!("  [FAIL] {}:{}: {} has no matching deps/c-build-tools gitlink: {}", relative_path, index + 1, target, e);
+                            self.violations += 1;
+                        }
+                    }
+                }
+                offset += line.len();
+            }
+
+            let sha = match expected {
+                Ok(sha) if fix_mode && !stale.is_empty() => sha,
+                _ => {
+                    self.violations += stale.len() as i32;
+                    continue;
+                }
+            };
+            // Replace from the end so earlier byte ranges stay valid.
+            for range in stale.iter().rev() {
+                content.replace_range(range.clone(), sha);
+            }
+            match fs::write(full_path, content) {
+                Ok(_) => {
+                    println!("         [FIXED] {}: pinned {} ref(s) to {}", relative_path, stale.len(), sha);
+                    self.fixed += 1;
+                }
+                Err(e) => {
+                    println!("         [ERROR] Failed to fix {}: {}", relative_path, e);
+                    self.violations += stale.len() as i32;
+                }
+            }
+        }
+    }
+}
+
 impl Check for CBuildToolsRef {
     fn name(&self) -> &str {
         "c_build_tools_ref"
@@ -201,6 +298,19 @@ impl Check for CBuildToolsRef {
         println!("  c-build-tools Ref Validation");
         println!("  ----------------------------------------");
 
+        // Find all .yml/.yaml files
+        let mut yml_files: Vec<(String, String)> = Vec::new();
+        find_yml_files(Path::new(&config.repo_root), &config.repo_root, &config.exclude_folders, &mut yml_files);
+
+        // GitHub Actions refs must pin the deps/c-build-tools gitlink, so they are checked even without a submodule.
+        let action_sha = fs::read_to_string(Path::new(&config.repo_root).join(".gitmodules"))
+            .ok()
+            .and_then(|content| find_cbt_submodule_path(&content))
+            .filter(|path| path == "deps/c-build-tools")
+            .ok_or_else(|| "no deps/c-build-tools submodule in .gitmodules".to_string())
+            .and_then(|path| get_expected_sha(&config.repo_root, &path, &config.submodule_sha, true));
+        self.check_action_refs(&yml_files, &action_sha, config.fix_mode);
+
         // Step 1: Find .gitmodules
         let gitmodules_path = format!("{}/.gitmodules", config.repo_root);
         let gitmodules_path_win = format!("{}\\.gitmodules", config.repo_root);
@@ -225,22 +335,21 @@ impl Check for CBuildToolsRef {
         println!("  c-build-tools submodule path: {}", submodule_path);
 
         // Step 3: Get expected SHA
-        let expected_sha = match get_expected_sha(&config.repo_root, &submodule_path, &config.submodule_sha) {
+        let expected_sha = match get_expected_sha(&config.repo_root, &submodule_path, &config.submodule_sha, false) {
             Ok(sha) => sha,
             Err(e) => {
                 println!("  [ERROR] {}", e);
-                self.violations = 1;
+                self.violations += 1;
                 return;
             }
         };
         println!("  Expected submodule SHA: {}", expected_sha);
 
-        // Step 4: Find all .yml files
-        let mut yml_files: Vec<(String, String)> = Vec::new();
-        find_yml_files(Path::new(&config.repo_root), &config.repo_root, &config.exclude_folders, &mut yml_files);
-
-        // Step 5: Check each YAML file
+        // Step 4: Check each Azure DevOps pipeline YAML file (.yml outside hidden directories)
         for (full_path, relative_path) in &yml_files {
+            if relative_path.ends_with(".yaml") || relative_path.split(['/', '\\']).any(|part| part.starts_with('.')) {
+                continue;
+            }
             let content = match fs::read_to_string(full_path) {
                 Ok(c) => c,
                 Err(_) => {
