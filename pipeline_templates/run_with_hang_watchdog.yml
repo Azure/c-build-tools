@@ -9,7 +9,7 @@
 # run from a developer shell against a locally-built test exe.
 #
 # Dumps and hang_summary.txt are written to $(Build.ArtifactStagingDirectory)/test_hang_dumps,
-# which build_teardown_steps.yml publishes as the test_hang_dumps pipeline artifact on failure.
+# which this template discovers and publishes after a failure or cancellation.
 #
 # The wrapper preserves the wrapped executable's exit code so failure semantics are unchanged.
 
@@ -29,6 +29,9 @@ parameters:
   - name: poll_interval_sec
     type: number
     default: 30
+  - name: dump_tool_timeout_sec
+    type: number
+    default: 45
   - name: name_pattern
     type: string
     default: '_exe_'
@@ -37,10 +40,9 @@ parameters:
   - name: include_watched
     type: boolean
     default: false
-  # When true, the watchdog kills each candidate process after capturing its dump. Use this for
-  # single-exe runs so the wrapped exe exits promptly after the dump is taken -- otherwise the
-  # surrounding ADO job timeout can reap the task before the dump artifact gets published.
-  # Leave false under ctest (killing a child would skip remaining tests).
+  # When true, the watchdog kills each candidate process after capturing its dump so the wrapped
+  # executable returns before the ADO job timeout. Under ctest, the killed test is reported as
+  # failed and ctest can continue with the remaining tests.
   - name: kill_after_dump
     type: boolean
     default: false
@@ -62,9 +64,36 @@ steps:
           -WorkingDirectory '${{ parameters.working_directory }}' `
           -DumpThresholdSec ${{ parameters.dump_threshold_sec }} `
           -PollIntervalSec ${{ parameters.poll_interval_sec }} `
+          -DumpToolTimeoutSec ${{ parameters.dump_tool_timeout_sec }} `
           -NamePattern '${{ parameters.name_pattern }}' `
           -IncludeWatched $${{ parameters.include_watched }} `
           -KillAfterDump $${{ parameters.kill_after_dump }} `
           -WatchdogScript '${{ parameters.repo_root }}/pipeline_templates/scripts/test_hang_watchdog.ps1'
         exit $LASTEXITCODE
     env: ${{ parameters.env }}
+
+  - task: PowerShell@2
+    displayName: 'Detect hang diagnostics'
+    inputs:
+      targetType: inline
+      script: |
+        if ($env:AGENT_JOBSTATUS -notin @('Failed', 'Canceled')) {
+          return
+        }
+
+        $diagnosticsPath = '$(Build.ArtifactStagingDirectory)\test_hang_dumps'
+        $diagnostics = @(Get-ChildItem -Path $diagnosticsPath -File -ErrorAction SilentlyContinue)
+        if ($diagnostics.Count -gt 0) {
+          Write-Host "Found $($diagnostics.Count) hang diagnostic file(s) under $diagnosticsPath."
+          Write-Host '##vso[task.setvariable variable=HangDiagnosticsAvailable]true'
+        }
+    condition: always()
+    continueOnError: true
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish hang diagnostics'
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)\test_hang_dumps'
+      artifactName: 'test_hang_dumps_$(System.JobName)_$(System.JobAttempt)_$(System.JobId)'
+      parallel: true
+    condition: and(always(), eq(variables['HangDiagnosticsAvailable'], 'true'))
