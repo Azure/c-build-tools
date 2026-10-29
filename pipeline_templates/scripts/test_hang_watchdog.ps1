@@ -41,10 +41,13 @@
 
 .PARAMETER KillAfterDump
     If set, each candidate process is killed after its dump has been captured. Use this in
-    single-exe scenarios (combined with -IncludeWatched) so the wrapped test exits promptly
-    after we've captured evidence -- otherwise the surrounding ADO job timeout can kill the
-    entire task before the dump artifact gets published. Not appropriate under ctest, where
-    killing a child test would corrupt ctest's bookkeeping and skip remaining tests.
+    single-exe scenarios (combined with -IncludeWatched) or under ctest so the wrapped process
+    exits promptly after we've captured evidence. Under ctest, the killed test is reported as
+    failed and ctest can continue with the remaining tests.
+
+.PARAMETER DumpToolTimeoutSec
+    Maximum number of seconds to wait for each dump tool invocation. Defaults to 45 so a stuck
+    awdump or procdump invocation cannot consume the remaining job timeout.
 
 .EXAMPLE
     PS> .\test_hang_watchdog.ps1 -WatchedPid 12345 -DumpDir C:\dumps -DumpThresholdSec 1200
@@ -71,7 +74,11 @@ param (
     [switch]$IncludeWatched,
 
     [Parameter(Mandatory = $false)]
-    [switch]$KillAfterDump
+    [switch]$KillAfterDump,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 3600)]
+    [int]$DumpToolTimeoutSec = 45
 )
 
 $ErrorActionPreference = 'Continue'
@@ -81,7 +88,40 @@ if (-not (Test-Path $DumpDir)) {
 }
 
 $summaryFile = Join-Path $DumpDir 'hang_summary.txt'
-"=== test_hang_watchdog started at $(Get-Date -Format o) (WatchedPid=$WatchedPid, threshold=${DumpThresholdSec}s, poll=${PollIntervalSec}s, includeWatched=$IncludeWatched, killAfterDump=$KillAfterDump) ===" | Add-Content $summaryFile
+"=== test_hang_watchdog started at $(Get-Date -Format o) (WatchedPid=$WatchedPid, threshold=${DumpThresholdSec}s, poll=${PollIntervalSec}s, includeWatched=$IncludeWatched, killAfterDump=$KillAfterDump, dumpToolTimeout=${DumpToolTimeoutSec}s) ===" | Add-Content $summaryFile
+
+function Invoke-BoundedProcess {
+    param (
+        [string]$ToolName,
+        [string]$FilePath,
+        [string[]]$ArgumentList,
+        [string]$WorkingDirectory
+    )
+
+    $process = $null
+    try {
+        $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -WorkingDirectory $WorkingDirectory -PassThru -NoNewWindow -ErrorAction Stop
+        if ($process.WaitForExit($DumpToolTimeoutSec * 1000)) {
+            return $true
+        }
+
+        "$(Get-Date -Format o) DUMP_TOOL_TIMEOUT tool=$ToolName pid=$($process.Id) timeout=${DumpToolTimeoutSec}s" | Add-Content $summaryFile
+        Stop-Process -Id $process.Id -Force -ErrorAction Stop
+        if (-not $process.WaitForExit(5000)) {
+            "$(Get-Date -Format o) DUMP_TOOL_STOP_TIMEOUT tool=$ToolName pid=$($process.Id)" | Add-Content $summaryFile
+        }
+        return $false
+    }
+    catch {
+        "$(Get-Date -Format o) DUMP_TOOL_ERROR tool=$ToolName err=$($_.Exception.Message)" | Add-Content $summaryFile
+        return $false
+    }
+    finally {
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
+    }
+}
 
 # Locate awdump.exe via MonAgentCore install directory
 # Reference: https://eng.ms/docs/products/azure-watson/azurewatson/dumpcreationwithawdump
@@ -146,12 +186,12 @@ function Invoke-Dump {
         # awdump's default destination depends on its configuration; force it to write under $DumpDir
         # by running it with -WorkingDirectory $DumpDir and then picking up any new *.dmp.
         $beforeDumps = @(Get-ChildItem -Path $DumpDir -Filter '*.dmp' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
-        Start-Process -FilePath $awdumpPath -ArgumentList @('create', $procId, '-bypass') -WorkingDirectory $DumpDir -Wait -NoNewWindow | Out-Null
+        $awdumpCompleted = Invoke-BoundedProcess -ToolName 'awdump' -FilePath $awdumpPath -ArgumentList @('create', $procId, '-bypass') -WorkingDirectory $DumpDir
         $newDump = Get-ChildItem -Path $DumpDir -Filter '*.dmp' -File -ErrorAction SilentlyContinue |
             Where-Object { $beforeDumps -notcontains $_.FullName } |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
-        if ($null -ne $newDump) {
+        if ($awdumpCompleted -and $null -ne $newDump) {
             if ($newDump.FullName -ne $dumpFile) {
                 Move-Item -Path $newDump.FullName -Destination $dumpFile -Force -ErrorAction SilentlyContinue
             }
@@ -166,9 +206,9 @@ function Invoke-Dump {
     $procdumpPath = Find-Procdump
     if ($null -ne $procdumpPath) {
         # procdump's exit code is the count of dumps written, not 0/1 success. Check the file instead.
-        Start-Process -FilePath $procdumpPath -ArgumentList @('-accepteula', '-ma', $procId, $dumpFile) -Wait -NoNewWindow | Out-Null
+        $procdumpCompleted = Invoke-BoundedProcess -ToolName 'procdump' -FilePath $procdumpPath -ArgumentList @('-accepteula', '-ma', $procId, $dumpFile) -WorkingDirectory $DumpDir
         $success = (Test-Path $dumpFile) -and ((Get-Item $dumpFile).Length -gt 0)
-        return @{ Success = $success; Tool = 'procdump'; DumpFile = $dumpFile }
+        return @{ Success = ($procdumpCompleted -and $success); Tool = 'procdump'; DumpFile = $dumpFile }
     }
 
     return @{ Success = $false; Tool = 'none'; DumpFile = '' }

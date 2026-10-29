@@ -15,10 +15,9 @@
       4. Prints the watchdog's hang_summary.txt (if any) and reports how many dumps were captured.
       5. Returns the executable's exit code.
 
-    When invoked in an Azure DevOps task, also emits ##vso[] commands so:
-      - A warning shows up in the build summary if any dumps were captured.
-      - The HangDumpsCaptured task variable is set to 'true' (consumed by upload_logs_on_fail.yml
-        to conditionally publish the test_hang_dumps artifact).
+    When invoked in an Azure DevOps task, also emits a warning in the build summary if any
+    dumps were captured. run_with_hang_watchdog.yml discovers diagnostics independently so a
+    cancellation while this script is waiting cannot prevent artifact publication.
 
 .PARAMETER Executable
     Full path to the executable to run (e.g. ctest.exe, or a single test exe).
@@ -52,10 +51,12 @@
     Use this when wrapping a single test exe directly, not when wrapping ctest.
 
 .PARAMETER KillAfterDump
-    If set, each candidate process is killed immediately after a successful dump. Intended for
-    single-exe runs so the wrapped exe exits promptly and the artifact-publishing step gets to
-    run before the surrounding ADO job timeout reaps the entire task. Leave false under ctest --
-    killing a child would skip remaining tests and confuse ctest's reporting.
+    If set, each candidate process is killed immediately after a successful dump so the wrapped
+    executable can return before the surrounding ADO job timeout. Under ctest, the killed test
+    is reported as failed and ctest can continue with the remaining tests.
+
+.PARAMETER DumpToolTimeoutSec
+    Maximum number of seconds to wait for each dump tool invocation. Default 45.
 
 .EXAMPLE
     # CI-style: wrap a ctest invocation
@@ -102,7 +103,11 @@ param (
     [bool]$IncludeWatched = $false,
 
     [Parameter(Mandatory = $false)]
-    [bool]$KillAfterDump = $false
+    [bool]$KillAfterDump = $false,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 3600)]
+    [int]$DumpToolTimeoutSec = 45
 )
 
 $ErrorActionPreference = 'Stop'
@@ -151,7 +156,7 @@ $psi.UseShellExecute = $false
 $psi.WorkingDirectory = $WorkingDirectory
 $childProc = [System.Diagnostics.Process]::Start($psi)
 
-Write-Host "Child pid: $($childProc.Id) - launching test_hang_watchdog (threshold ${DumpThresholdSec}s, poll ${PollIntervalSec}s, includeWatched=$IncludeWatched, killAfterDump=$KillAfterDump)"
+Write-Host "Child pid: $($childProc.Id) - launching test_hang_watchdog (threshold ${DumpThresholdSec}s, poll ${PollIntervalSec}s, includeWatched=$IncludeWatched, killAfterDump=$KillAfterDump, dumpToolTimeout=${DumpToolTimeoutSec}s)"
 
 # Start-Process -ArgumentList joins string[] with spaces and does NOT quote individual
 # values, so paths containing spaces would be split into multiple arguments. Build a single
@@ -163,6 +168,7 @@ $watchdogArgs = @(
     '-DumpDir', "`"$DumpDir`"",
     '-DumpThresholdSec', $DumpThresholdSec,
     '-PollIntervalSec', $PollIntervalSec,
+    '-DumpToolTimeoutSec', $DumpToolTimeoutSec,
     '-NamePattern', "`"$NamePattern`""
 )
 if ($IncludeWatched) { $watchdogArgs += '-IncludeWatched' }
@@ -195,7 +201,6 @@ if (Test-Path $summaryFile) {
 if ($env:TF_BUILD) {
     if ($dumpCount -gt 0) {
         Write-Host "##vso[task.logissue type=warning]Captured $dumpCount hang dump(s) under $DumpDir; see test_hang_dumps artifact."
-        Write-Host "##vso[task.setvariable variable=HangDumpsCaptured]true"
     }
 }
 else {
