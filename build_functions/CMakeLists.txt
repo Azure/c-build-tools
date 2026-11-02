@@ -98,13 +98,9 @@ macro(set_default_build_options)
     # On MSVC, CMake maps C++23 to /std:c++latest, which also enables post-C++23 features.
     # Use /std:c++23 (MSVC 19.52+) or /std:c++23preview (MSVC 19.43-19.51) instead.
     if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.52)
-            set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "-std:c++23")
-            set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "-std:c++23")
-        elseif (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.43)
+        
             set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "-std:c++23preview")
             set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "-std:c++23preview")
-        endif()
     endif()
 
     # Make sure we have a runtime output directory always set
