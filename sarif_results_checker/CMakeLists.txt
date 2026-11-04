@@ -20,6 +20,11 @@ set_property(TARGET Azure.Messaging.SarifResultsChecker
 )
 
 set_property(TARGET Azure.Messaging.SarifResultsChecker
+    PROPERTY VS_DOTNET_REFERENCES
+        "System"
+)
+
+set_property(TARGET Azure.Messaging.SarifResultsChecker
     PROPERTY VS_GLOBAL_TreatWarningsAsErrors true
 )
 
