@@ -1,0 +1,174 @@
+name: Two human reviewers
+description: >-
+  Publishes the `mrbot/two-human-reviewers` commit status. A bot-authored pull request needs approvals on its head
+  commit from distinct humans with push access; any other pull request passes.
+# Run only a copy fetched from a trusted ref - the target branch's `deps/c-build-tools` pointer, or the target branch
+# itself in this repository - never the pull request's own, or the pull request picks the gate that judges it. See
+# .github/workflow-templates/two-human-reviewers.caller.yml.
+
+inputs:
+  pr:
+    description: PR number to evaluate.
+    required: true
+  required-approvals:
+    description: How many distinct humans must approve a bot-authored PR. Defaults to 2.
+    required: false
+  exempt-bots:
+    description: >-
+      Comma-separated GitHub account names of bots that may merge under the repository's normal rules. Defaults to
+      "dependabot[bot]"; passing this replaces that default rather than adding to it.
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Count human approvals
+      shell: bash
+      env:
+        # github.token rather than secrets.GITHUB_TOKEN, which a composite action cannot read.
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ inputs.pr }}
+        # Fallbacks rather than `default:`, because callers pass these through even when they are empty, and an
+        # empty value suppresses a `default:`.
+        EXEMPT_BOTS: ${{ inputs.exempt-bots || 'dependabot[bot]' }}
+        REQUIRED_APPROVALS: ${{ inputs.required-approvals || 2 }}
+        STATUS_CONTEXT: mrbot/two-human-reviewers
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "$PR" ]; then
+          echo "::error::No pull request to evaluate; pass the PR number when dispatching manually."
+          exit 1
+        fi
+
+        if ! [[ "$REQUIRED_APPROVALS" =~ ^[1-9][0-9]*$ ]]; then
+          echo "::error::required-approvals must be a positive integer, not '$REQUIRED_APPROVALS'."
+          exit 1
+        fi
+
+        # Read the PR from the API rather than the event payload, so a manual dispatch - which carries
+        # no pull_request payload - evaluates exactly what an event-triggered run would.
+        pr_json=$(gh api "repos/$REPO/pulls/$PR")
+        head_sha=$(jq -r '.head.sha' <<< "$pr_json")
+
+        # The verdict is published as a commit status because a status can sit in `pending` and a job
+        # cannot: a job either passes or fails, so an unmet gate could only ever render as a failure -
+        # which reads as "the automation is broken" rather than "waiting for a second human". Branch
+        # protection treats a pending required status as blocking, which is exactly the intent.
+        #
+        # Publishing is best effort. It needs `statuses: write`, which a called workflow only has if its
+        # caller granted it, and a `pull_request` run on a fork's pull request holds a read-only token
+        # whatever the caller granted. Neither case fails the run: branch protection reads the status,
+        # which stays unchanged until a run that can write publishes it.
+        publish() {
+          if ! gh api --method POST "repos/$REPO/statuses/$head_sha" \
+                 -f state="$1" -f context="$STATUS_CONTEXT" -f description="$2" \
+                 -f target_url="$RUN_URL" >/dev/null 2>&1; then
+            echo "::warning::Could not publish the $STATUS_CONTEXT status: the run needs 'statuses: write', which pull_request and pull_request_review runs on a fork's pull request never get. A maintainer can publish it with Run workflow (not Re-run) and pr=$PR, after each push or review."
+          fi
+        }
+
+        # Every open pull request whose head is this commit, because they all share this check and
+        # so must all get the same answer. The triggering pull request is folded in explicitly rather
+        # than trusted to appear, so lag in the commit-to-pull-request index cannot drop the one pull
+        # request known to be on this commit. Pull requests that merely contain the commit further back
+        # in their history are excluded - their own head commit carries their own check.
+        shared=$(
+          {
+            gh api --paginate "repos/$REPO/commits/$head_sha/pulls" --jq '.[]'
+            printf '\n%s' "$pr_json"
+          } | jq -s --arg head "$head_sha" '
+              map(select(.state == "open" and .head.sha == $head))
+              | unique_by(.number)'
+        )
+
+        # Nothing open on the commit means nothing can merge on it; judging the triggering pull request
+        # alone still reports a result rather than erroring on an empty set.
+        if [ "$(jq 'length' <<< "$shared")" -eq 0 ]; then
+          shared=$(jq -s '.' <<< "$pr_json")
+        fi
+
+        exempt=$(jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))' <<< "$EXEMPT_BOTS")
+        gated=$(jq -c --argjson exempt "$exempt" '
+          map(select(.user.type == "Bot"))
+          | map(select(.user.login as $login | $exempt | index($login) | not))' <<< "$shared")
+
+        shared_desc=$(jq -r 'map("#\(.number) by \(.user.login)") | join(", ")' <<< "$shared")
+
+        if [ "$(jq 'length' <<< "$gated")" -eq 0 ]; then
+          publish success "No bot-authored pull request on this commit"
+          echo "No bot-authored pull request is open on commit ${head_sha:0:7} ($shared_desc), so the repository's normal review rules apply."
+          exit 0
+        fi
+
+        gated_desc=$(jq -r 'map("#\(.number) by \(.user.login)") | join(", ")' <<< "$gated")
+
+        # Reduce each reviewer to their most recent verdict *before* judging it, so a dismissal that
+        # arrives as its own record supersedes the approval it dismissed instead of being filtered out
+        # and leaving that approval standing. COMMENTED and PENDING reviews say nothing either way.
+        # Grouping by reviewer also means re-approving can never count as two people, and that a
+        # reviewer who approved one pull request on this commit and then rejected another counts once,
+        # as their latest verdict.
+        #
+        # Only approvals from reviewers who can push count. These repositories are public, so anyone
+        # with a GitHub account can submit an approving review, and counting those would let two
+        # throwaway accounts satisfy the gate. Push access is the test rather than the reviewer's
+        # association with the repository, because association does not imply write: an organisation
+        # member or a collaborator can be read-only, while an outside collaborator granted write is
+        # legitimately a reviewer. This mirrors how GitHub counts its own required approvals.
+        #
+        # An approval counts only for the commit it was given on: the bot pushes to its own PR, so an
+        # approval of an earlier commit must not carry over to code no human has looked at. Reviews are
+        # pooled across the pull requests sharing the commit because the question being answered is
+        # whether two humans have signed off on this code, not on a particular pull request.
+        reviews=$(mktemp)
+        for number in $(jq -r '.[].number' <<< "$shared"); do
+          gh api graphql --paginate \
+            -F owner="${REPO%/*}" -F repo="${REPO#*/}" -F pr="$number" \
+            -f query='
+              query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $pr) {
+                    reviews(first: 100, after: $endCursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes {
+                        databaseId
+                        state
+                        authorCanPushToRepository
+                        author { login __typename }
+                        commit { oid }
+                      }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequest.reviews.nodes[]' >> "$reviews"
+        done
+
+        approvers=$(jq -s --arg head "$head_sha" '
+          map(select(.author.__typename != "Bot"))
+          | map(select(.authorCanPushToRepository == true))
+          | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED"))
+          | group_by(.author.login)
+          | map(max_by(.databaseId))
+          | map(select(.state == "APPROVED" and .commit.oid == $head))
+          | map(.author.login)
+          | unique' "$reviews")
+        approvals=$(jq 'length' <<< "$approvers")
+        approver_list=$(jq -r 'join(", ")' <<< "$approvers")
+
+        if [ "$approvals" -ge "$REQUIRED_APPROVALS" ]; then
+          publish success "$approvals of $REQUIRED_APPROVALS human approvals on this commit"
+          echo "::notice::Commit ${head_sha:0:7} has $approvals of $REQUIRED_APPROVALS human approvals ($approver_list); bot-authored $gated_desc may merge."
+          exit 0
+        fi
+
+        publish pending "Needs $REQUIRED_APPROVALS approvals from distinct humans on this commit; $approvals so far"
+        # Not a failure. The gate's verdict is the status published above, which is what branch
+        # protection requires and which sits in `pending` until the approvals arrive. Failing the job
+        # too would put a red row on a pull request whose only problem is that it is waiting for a
+        # person. A publish that did not land still blocks the merge, because the required status is
+        # then missing rather than green.
+        echo "::notice::Commit ${head_sha:0:7} carries bot-authored $gated_desc and needs $REQUIRED_APPROVALS approvals from distinct humans on this commit; $approvals so far${approver_list:+ ($approver_list)}."
