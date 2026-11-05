@@ -413,6 +413,7 @@ def fake_gh(argv):
     parser.add_argument("--paginate", action="store_true")
     parser.add_argument("--jq")
     parser.add_argument("-f", "-F", dest="fields", action="append", default=[])
+    parser.add_argument("-H", dest="headers", action="append", default=[])
     args = parser.parse_args(argv)
     fields = dict(value.split("=", 1) for value in args.fields)
     fixture = json.loads(Path(os.environ["FIXTURE_DATA"]).read_text(encoding="utf-8"))
@@ -424,7 +425,8 @@ def fake_gh(argv):
         kind = "pr"
         read_number = sum(call["kind"] == "pr" for call in previous) + 1
         error_key = f"pr:{read_number}"
-        pages = [pr if read_number == 1 else fixture.get("pr_after", pr)]
+        sequence = fixture.get("pr_sequence", [pr, fixture.get("pr_after", pr)])
+        pages = [sequence[min(read_number - 1, len(sequence) - 1)]]
     elif args.endpoint == f"repos/{REPO}/commits/{pr['head']['sha']}/pulls":
         kind = error_key = "shared"
         pages = fixture["shared"]
@@ -441,17 +443,26 @@ def fake_gh(argv):
             }}}}}
             for index, nodes in enumerate(fixture["reviews"][number])
         ]
-    elif args.endpoint == f"repos/{REPO}/statuses/{pr['head']['sha']}" and args.method == "POST":
+    elif args.endpoint.startswith(f"repos/{REPO}/statuses/") and args.method == "POST":
         kind = error_key = "status"
         pages = [{"state": fields["state"]}]
+    elif args.endpoint in fixture.get("resources", {}):
+        kind = "resource"
+        error_key = f"resource:{args.endpoint}"
+        pages = [fixture["resources"][args.endpoint]]
     else:
         raise ValueError(f"Unexpected fixture API call: {argv!r}")
 
+    failures = fixture.get("fail", [])
+    if isinstance(failures, str):
+        failures = [failures]
+    status_number = sum(call["kind"] == "status" for call in previous) + 1
+    failed = error_key in failures or (kind == "status" and f"status:{status_number}" in failures)
     call = {"kind": kind, "endpoint": args.endpoint, "fields": fields, "method": args.method,
-            "paginate": args.paginate, "jq": args.jq}
+            "paginate": args.paginate, "jq": args.jq, "failed": failed}
     with log.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(call) + "\n")
-    if error_key == fixture.get("fail"):
+    if failed:
         print(f"Fixture API failure: {error_key}", file=sys.stderr)
         return 1
     for page in pages if args.paginate else pages[:1]:
@@ -461,18 +472,21 @@ def fake_gh(argv):
                 input=json.dumps(page), text=True, capture_output=True, check=True,
             )
             sys.stdout.write(result.stdout)
+        elif "Accept: application/vnd.github.raw+json" in args.headers:
+            sys.stdout.write(page)
         else:
             print(json.dumps(page))
     return 0
 
 
-def action_environment(action, step, inputs):
+def action_environment(action, step, inputs, extra_context=None):
     """Render only the input fallbacks and context substitutions used by this action."""
     context = {
         "github.token": "fixture-token-not-a-credential",
         "github.repository": REPO,
         "github.server_url": "https://github.invalid",
         "github.run_id": "123",
+        **(extra_context or {}),
     }
 
     def replace(match):
@@ -495,6 +509,48 @@ def action_environment(action, step, inputs):
     }
 
 
+def fixture_environment(work, api):
+    data_file = work / "api.json"
+    calls_file = work / "calls.jsonl"
+    data_file.write_text(json.dumps(api), encoding="utf-8")
+    calls_file.write_text("", encoding="utf-8")
+    # Do not inherit credentials, gh configuration, shell startup files, or GitHub event data.
+    env = {
+        key: value for key, value in os.environ.items()
+        if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"}
+    }
+    env.update({
+        "HOME": str(work),
+        "GH_CONFIG_DIR": str(work),
+        "XDG_CONFIG_HOME": str(work),
+        "TEMP": str(work),
+        "TMP": str(work),
+        "TMPDIR": work.as_posix(),
+        "FIXTURE_DATA": str(data_file),
+        "FIXTURE_CALLS": str(calls_file),
+        "FIXTURE_PYTHON": Path(sys.executable).as_posix(),
+        "FIXTURE_SCRIPT": Path(__file__).resolve().as_posix(),
+        "FIXTURE_JQ": Path(shutil.which("jq")).as_posix(),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    })
+    return env, calls_file
+
+
+def run_bash_step(step, env, cwd):
+    if step.get("shell") != "bash" or "run" not in step or "uses" in step:
+        raise ValueError("The fixture harness requires inline Bash steps")
+    prelude = 'gh() { "$FIXTURE_PYTHON" "$FIXTURE_SCRIPT" --fake-gh "$@"; }\n'
+    if os.name == "nt":
+        # Native jq otherwise emits CRLF between results; match the Ubuntu runner's LF.
+        prelude += 'jq() { "$FIXTURE_JQ" --binary "$@"; }\n'
+    result = subprocess.run(
+        [shutil.which("bash"), "--noprofile", "--norc", "-eo", "pipefail", "-s"],
+        input=(prelude + step["run"]).encode("utf-8"), capture_output=True, cwd=cwd,
+        env=env, timeout=30,
+    )
+    return result.returncode, result.stdout.decode("utf-8") + result.stderr.decode("utf-8")
+
+
 def run_fixture(action, fixture):
     api = {
         "pr": pull_request(),
@@ -505,47 +561,14 @@ def run_fixture(action, fixture):
     inputs = {"pr": str(api["pr"]["number"]), **fixture.inputs}
     with tempfile.TemporaryDirectory(prefix=fixture.name + "-", dir=SCRATCH) as directory:
         work = Path(directory)
-        data_file = work / "api.json"
-        calls_file = work / "calls.jsonl"
-        data_file.write_text(json.dumps(api), encoding="utf-8")
-        calls_file.write_text("", encoding="utf-8")
-        # Do not inherit credentials, gh configuration, shell startup files, or GitHub event data.
-        env = {
-            key: value for key, value in os.environ.items()
-            if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"}
-        }
-        env.update({
-            "HOME": directory,
-            "GH_CONFIG_DIR": directory,
-            "XDG_CONFIG_HOME": directory,
-            "TEMP": directory,
-            "TMP": directory,
-            "TMPDIR": work.as_posix(),
-            "FIXTURE_DATA": str(data_file),
-            "FIXTURE_CALLS": str(calls_file),
-            "FIXTURE_PYTHON": Path(sys.executable).as_posix(),
-            "FIXTURE_SCRIPT": Path(__file__).resolve().as_posix(),
-            "FIXTURE_JQ": Path(shutil.which("jq")).as_posix(),
-            "PYTHONDONTWRITEBYTECODE": "1",
-        })
+        env, calls_file = fixture_environment(work, api)
         output = ""
         exit_code = 0
         for step in action["runs"]["steps"]:
-            if step.get("shell") != "bash" or "run" not in step or "uses" in step:
-                raise ValueError("The fixture harness requires inline Bash action steps")
-            prelude = 'gh() { "$FIXTURE_PYTHON" "$FIXTURE_SCRIPT" --fake-gh "$@"; }\n'
-            if os.name == "nt":
-                # Native jq otherwise emits CRLF between results; match the Ubuntu runner's LF.
-                prelude += 'jq() { "$FIXTURE_JQ" --binary "$@"; }\n'
-            script = prelude + step["run"]
-            # Avoid Windows' System32 WSL launcher and newline translation on Bash's stdin.
-            result = subprocess.run(
-                [shutil.which("bash"), "--noprofile", "--norc", "-eo", "pipefail", "-s"],
-                input=script.encode("utf-8"), capture_output=True, cwd=SCRATCH,
-                env={**env, **action_environment(action, step, inputs)}, timeout=30,
+            exit_code, step_output = run_bash_step(
+                step, {**env, **action_environment(action, step, inputs)}, SCRATCH
             )
-            output += result.stdout.decode("utf-8") + result.stderr.decode("utf-8")
-            exit_code = result.returncode
+            output += step_output
             if exit_code:
                 break
         calls = [json.loads(line) for line in calls_file.read_text(encoding="utf-8").splitlines()]
@@ -578,6 +601,8 @@ class ReviewerGateFixtures(unittest.TestCase):
                     self.assertEqual([], posts, output)
                 else:
                     self.assertEqual(1, len(posts), output)
+                    self.assertEqual(f"repos/{REPO}/statuses/{fixture.api.get('pr', pull_request())['head']['sha']}",
+                                     posts[0]["endpoint"])
                     self.assertEqual({
                         "state": fixture.state,
                         "context": "mrbot/two-human-reviewers",

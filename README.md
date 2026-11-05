@@ -3,6 +3,11 @@
 
 `set_default_build_options()` uses C17 and at least C++23; a newer caller-selected C++ standard is kept. MSVC uses `/std:c++23` (19.52+) or `/std:c++23preview` (19.43-19.51).
 
+# GitHub reviewer gate
+
+The [two-human-reviewers gate](docs/two_human_reviewers.md) can follow the target branch's
+`deps/c-build-tools` pin without allowing workflow edits through dependency auto-approval.
+
 # Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
@@ -16,4 +21,3 @@ provided by the bot. You will only need to do this once across all repos using o
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
-
