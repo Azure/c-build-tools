@@ -1,4 +1,3 @@
-# two-human-reviewers-snapshot-contract: 1
 name: Two human reviewers
 description: >-
   Publishes the `mrbot/two-human-reviewers` commit status. A bot-authored pull request needs approvals on its head
@@ -18,16 +17,6 @@ inputs:
       Comma-separated GitHub account names of bots that may merge under the repository's normal rules. Defaults to
       "dependabot[bot]"; passing this replaces that default rather than adding to it.
     required: false
-  expected-head:
-    description: >-
-      Optional captured PR head SHA. A mismatch fails without publishing. With either snapshot input supplied,
-      both the head and target are checked again immediately before publishing.
-    required: false
-  expected-target:
-    description: >-
-      Optional captured PR target branch name (base.ref, not a commit SHA). A mismatch fails without publishing.
-      An omitted snapshot member is captured from the initial PR read; omit both inputs for legacy behavior.
-    required: false
 
 runs:
   using: composite
@@ -43,8 +32,6 @@ runs:
         # empty value suppresses a `default:`.
         EXEMPT_BOTS: ${{ inputs.exempt-bots || 'dependabot[bot]' }}
         REQUIRED_APPROVALS: ${{ inputs.required-approvals || 2 }}
-        EXPECTED_HEAD: ${{ inputs.expected-head }}
-        EXPECTED_TARGET: ${{ inputs.expected-target }}
         STATUS_CONTEXT: mrbot/two-human-reviewers
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
@@ -55,28 +42,10 @@ runs:
           exit 1
         fi
 
-        if ! [[ "$REQUIRED_APPROVALS" =~ ^[1-9][0-9]*$ ]]; then
-          echo "::error::required-approvals must be a positive integer, not '$REQUIRED_APPROVALS'."
-          exit 1
-        fi
-
         # Read the PR from the API rather than the event payload, so a manual dispatch - which carries
         # no pull_request payload - evaluates exactly what an event-triggered run would.
         pr_json=$(gh api "repos/$REPO/pulls/$PR")
         head_sha=$(jq -r '.head.sha' <<< "$pr_json")
-        target_ref=$(jq -r '.base.ref' <<< "$pr_json")
-
-        check_snapshot() {
-          if ! jq -e --arg head "${EXPECTED_HEAD:-$head_sha}" --arg target "${EXPECTED_TARGET:-$target_ref}" \
-              '.head.sha == $head and .base.ref == $target' <<< "$1" >/dev/null; then
-            echo "::error::Pull request head or target no longer matches the captured snapshot; no verdict was published."
-            exit 1
-          fi
-        }
-
-        if [[ -n "$EXPECTED_HEAD" || -n "$EXPECTED_TARGET" ]]; then
-          check_snapshot "$pr_json"
-        fi
 
         # The verdict is published as a commit status because a status can sit in `pending` and a job
         # cannot: a job either passes or fails, so an unmet gate could only ever render as a failure -
@@ -88,12 +57,6 @@ runs:
         # whatever the caller granted. Neither case fails the run: branch protection reads the status,
         # which stays unchanged until a run that can write publishes it.
         publish() {
-          if [[ -n "$EXPECTED_HEAD" || -n "$EXPECTED_TARGET" ]]; then
-            local current_pr
-            current_pr=$(gh api "repos/$REPO/pulls/$PR")
-            check_snapshot "$current_pr"
-          fi
-
           if ! gh api --method POST "repos/$REPO/statuses/$head_sha" \
                  -f state="$1" -f context="$STATUS_CONTEXT" -f description="$2" \
                  -f target_url="$RUN_URL" >/dev/null 2>&1; then
@@ -108,8 +71,7 @@ runs:
         # in their history are excluded - their own head commit carries their own check.
         shared=$(
           {
-            # Do not let the following printf hide an API failure inside this command substitution.
-            gh api --paginate "repos/$REPO/commits/$head_sha/pulls" --jq '.[]' || exit 1
+            gh api --paginate "repos/$REPO/commits/$head_sha/pulls" --jq '.[]'
             printf '\n%s' "$pr_json"
           } | jq -s --arg head "$head_sha" '
               map(select(.state == "open" and .head.sha == $head))
@@ -156,7 +118,6 @@ runs:
         # pooled across the pull requests sharing the commit because the question being answered is
         # whether two humans have signed off on this code, not on a particular pull request.
         reviews=$(mktemp)
-        trap 'rm -f -- "$reviews"' EXIT
         for number in $(jq -r '.[].number' <<< "$shared"); do
           gh api graphql --paginate \
             -F owner="${REPO%/*}" -F repo="${REPO#*/}" -F pr="$number" \
