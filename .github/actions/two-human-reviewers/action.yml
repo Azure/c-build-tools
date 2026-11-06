@@ -31,7 +31,8 @@ runs:
         # Fallbacks rather than `default:`, because callers pass these through even when they are empty, and an
         # empty value suppresses a `default:`.
         EXEMPT_BOTS: ${{ inputs.exempt-bots || 'dependabot[bot]' }}
-        REQUIRED_APPROVALS: ${{ inputs.required-approvals || 2 }}
+        # Keep zero falsy, as it is for the reusable workflow's numeric input.
+        REQUIRED_APPROVALS: ${{ fromJSON(inputs.required-approvals || '0') || 2 }}
         STATUS_CONTEXT: mrbot/two-human-reviewers
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
