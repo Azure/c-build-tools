@@ -4,11 +4,19 @@ description: >-
   commit from distinct humans with push access; any other pull request passes.
 # Run only a copy fetched from a trusted ref - the target branch's `deps/c-build-tools` pointer, or the target branch
 # itself in this repository - never the pull request's own, or the pull request picks the gate that judges it.
+# two-human-reviewers-snapshot-contract: 1
+# Marks support for paired snapshot inputs, not that this copy is trusted.
 
 inputs:
   pr:
     description: PR number to evaluate.
     required: true
+  expected-head:
+    description: Exact PR head SHA to check. Supply with expected-target, or omit both.
+    required: false
+  expected-target:
+    description: PR base branch name (base.ref), not its SHA. Supply with expected-head, or omit both.
+    required: false
   required-approvals:
     description: How many distinct humans must approve a bot-authored PR. Defaults to 2.
     required: false
@@ -28,6 +36,8 @@ runs:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.repository }}
         PR: ${{ inputs.pr }}
+        EXPECTED_HEAD: ${{ inputs.expected-head }}
+        EXPECTED_TARGET: ${{ inputs.expected-target }}
         # Fallbacks rather than `default:`, because callers pass these through even when they are empty, and an
         # empty value suppresses a `default:`.
         EXEMPT_BOTS: ${{ inputs.exempt-bots || 'dependabot[bot]' }}
@@ -43,10 +53,26 @@ runs:
           exit 1
         fi
 
+        if [ "${EXPECTED_HEAD:+set}" != "${EXPECTED_TARGET:+set}" ]; then
+          echo "::error::expected-head and expected-target must be supplied together, or both omitted."
+          exit 1
+        fi
+
+        check_snapshot() {
+          if ! jq -e --arg head "$EXPECTED_HEAD" --arg target "$EXPECTED_TARGET" \
+                 '.head.sha == $head and .base.ref == $target' >/dev/null <<< "$1"; then
+            echo "::error::Pull request #$PR does not match expected-head and expected-target; refusing to publish a verdict."
+            exit 1
+          fi
+        }
+
         # Read the PR from the API rather than the event payload, so a manual dispatch - which carries
         # no pull_request payload - evaluates exactly what an event-triggered run would.
         pr_json=$(gh api "repos/$REPO/pulls/$PR")
         head_sha=$(jq -r '.head.sha' <<< "$pr_json")
+        if [ -n "$EXPECTED_HEAD" ]; then
+          check_snapshot "$pr_json"
+        fi
 
         # The verdict is published as a commit status because a status can sit in `pending` and a job
         # cannot: a job either passes or fails, so an unmet gate could only ever render as a failure -
@@ -58,6 +84,12 @@ runs:
         # whatever the caller granted. Neither case fails the run: branch protection reads the status,
         # which stays unchanged until a run that can write publishes it.
         publish() {
+          if [ -n "$EXPECTED_HEAD" ]; then
+            # Recheck as late as possible; GitHub statuses have no compare-and-set.
+            local current_pr
+            current_pr=$(gh api "repos/$REPO/pulls/$PR")
+            check_snapshot "$current_pr"
+          fi
           if ! gh api --method POST "repos/$REPO/statuses/$head_sha" \
                  -f state="$1" -f context="$STATUS_CONTEXT" -f description="$2" \
                  -f target_url="$RUN_URL" >/dev/null 2>&1; then
