@@ -3,8 +3,8 @@
 
 <#
 .SYNOPSIS
-    Finds native build tools (CMake, MSBuild, CTest, dumpbin, vstest, appverif) for the given
-    architecture and publishes their paths as pipeline variables.
+    Finds native build tools (CMake, MSBuild, CTest, dumpbin, vstest, midl, TlbImp, appverif) for the
+    given architecture and publishes their paths as pipeline variables.
 
 .DESCRIPTION
     Called by pipeline_templates/discover_native_tools.yml, which documents the output variables.
@@ -13,8 +13,8 @@
 
     The template comes from the c_build_tools pipeline resource while this script comes from the
     consumer's c-build-tools checkout, so the two can be at different commits. ContractVersion
-    turns a mismatch into a hard failure. Bump it here and in the template whenever the parameters
-    or the output variables change.
+    turns a mismatch into a hard failure. Bump it here and in the template whenever the parameters change
+    or output variables are removed or renamed; adding output variables needs no bump.
 
 .PARAMETER Architecture
     Target architecture: x64, x86 or ARM64.
@@ -325,12 +325,76 @@ if ($vstestPath -and (Test-Path $vstestPath)) {
     Write-Host "##[warning]$vstestExeName not found"
 }
 
+# midl.exe from the newest Windows SDK that has it for this host architecture.
+# The SDK ships midl for x86, x64 and arm64 hosts; like MSBuild, x86 targets use the x64 host build.
+$midlHost = switch ($arch) {
+    'ARM64' { 'arm64' }
+    default { 'x64' }
+}
+$kitsRoot = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots' -Name KitsRoot10 -ErrorAction SilentlyContinue).KitsRoot10
+if (-not $kitsRoot) {
+    $kitsRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\"
+}
+$midlPath = $null
+$kitsBin = Join-Path $kitsRoot "bin"
+if (Test-Path $kitsBin) {
+    $sdkVersions = Get-ChildItem $kitsBin -Directory | Where-Object { $_.Name -match '^\d+(\.\d+){3}$' } | Sort-Object { [version]$_.Name } -Descending
+    foreach ($sdkVersion in $sdkVersions) {
+        $candidatePath = Join-Path $sdkVersion.FullName "$midlHost\midl.exe"
+        if (Test-Path $candidatePath) {
+            $midlPath = $candidatePath
+            break
+        }
+    }
+}
+if ($midlPath) {
+    Write-Host "  midl.exe    found"
+    Write-Host "##vso[task.setvariable variable=midlPath]$midlPath"
+} else {
+    Write-Host "##vso[task.logissue type=error]midl.exe ($midlHost host) not found under $kitsBin"
+    exit 1
+}
+
+# TlbImp.exe from the newest .NET Framework SDK (NETFXSDK). As of 09 Nov 2026 there is no ARM64 TlbImp, and the
+# struct layout TlbImp computes follows its own process bitness: the 32-bit TlbImp generates
+# 4-byte-pointer layouts, which corrupt COM interop on 64-bit targets. So 64-bit targets (x64 and
+# ARM64) use the x64 TlbImp and x86 targets use the x86 one.
+$tlbimpToolsKey = switch ($arch) {
+    'x86'   { 'WinSDK-NetFx40Tools-x86' }
+    default { 'WinSDK-NetFx40Tools-x64' }
+}
+$tlbimpExpectedArch = switch ($arch) {
+    'x86'   { 'x86' }
+    default { 'x64' }
+}
+$tlbimpPath = $null
+$netfxSdkRoot = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Microsoft SDKs\NETFXSDK'
+if (Test-Path $netfxSdkRoot) {
+    $netfxSdks = Get-ChildItem $netfxSdkRoot | Where-Object { $_.PSChildName -match '^\d+(\.\d+)+$' } | Sort-Object { [version]$_.PSChildName } -Descending
+    foreach ($netfxSdk in $netfxSdks) {
+        $toolsFolder = (Get-ItemProperty (Join-Path $netfxSdk.PSPath $tlbimpToolsKey) -Name InstallationFolder -ErrorAction SilentlyContinue).InstallationFolder
+        if ($toolsFolder) {
+            $candidatePath = Join-Path $toolsFolder "TlbImp.exe"
+            if (Test-Path $candidatePath) {
+                $tlbimpPath = $candidatePath
+                break
+            }
+        }
+    }
+}
+if ($tlbimpPath) {
+    Write-Host "  TlbImp.exe  found"
+    Write-Host "##vso[task.setvariable variable=tlbimpPath]$tlbimpPath"
+} else {
+    Write-Host "##vso[task.logissue type=error]TlbImp.exe ($tlbimpToolsKey) not found under $netfxSdkRoot"
+    exit 1
+}
+
 # ----------------------------------------------------------------
 # Summary + architecture verification
 # ----------------------------------------------------------------
 # One table reports every discovered tool, its PE architecture, and whether it
-# matches the expected target architecture. appverif.exe is listed for reference
-# but its architecture is not enforced (status "n/a").
+# matches the expected architecture.
 Write-Section "DISCOVERED TOOLS"
 $expectedArch = switch ($arch) {
     'x64'   { 'x64' }
@@ -338,32 +402,38 @@ $expectedArch = switch ($arch) {
     'ARM64' { 'ARM64' }
 }
 $tools = @(
-    [pscustomobject]@{ Name = 'cmake.exe';          Path = $cmakePath;    Verify = $true  }
-    [pscustomobject]@{ Name = 'ctest.exe';          Path = $ctestPath;    Verify = $true  }
-    [pscustomobject]@{ Name = 'MSBuild.exe';        Path = $msbuildPath;  Verify = $true  }
-    [pscustomobject]@{ Name = 'dumpbin.exe';        Path = $dumpbinPath;  Verify = $true  }
-    [pscustomobject]@{ Name = 'vstest.console.exe'; Path = $vstestPath;   Verify = $true  }
-    [pscustomobject]@{ Name = 'appverif.exe';       Path = $appverifPath; Verify = $false }
+    [pscustomobject]@{ Name = 'cmake.exe';          Path = $cmakePath;    Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'ctest.exe';          Path = $ctestPath;    Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'MSBuild.exe';        Path = $msbuildPath;  Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'dumpbin.exe';        Path = $dumpbinPath;  Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'vstest.console.exe'; Path = $vstestPath;   Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'midl.exe';           Path = $midlPath;     Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'TlbImp.exe';         Path = $tlbimpPath;   Expected = $tlbimpExpectedArch }
+    [pscustomobject]@{ Name = 'appverif.exe';       Path = $appverifPath; Expected = $expectedArch }
 )
 Write-Host ("  {0,-20} {1,-10} {2,-10} {3}" -f "Tool", "Arch", "Status", "Path")
 Write-Host ("  {0,-20} {1,-10} {2,-10} {3}" -f "----", "----", "------", "----")
 $archMismatches = @()
+$tlbimpMismatch = $null
 foreach ($t in $tools) {
     if (-not $t.Path -or -not (Test-Path $t.Path)) {
         Write-Host ("  {0,-20} {1,-10} {2,-10} {3}" -f $t.Name, "-", "missing", "(not found)")
         continue
     }
     $toolArch = Get-PEArchitecture -FilePath $t.Path
-    if ($t.Verify) {
-        $ok = ($toolArch -eq $expectedArch) -or ($expectedArch -eq 'x86' -and $toolArch -eq 'x64')
-        $status = if ($ok) { "OK" } else { "MISMATCH" }
-        if (-not $ok -and $expectedArch -eq 'ARM64') {
-            $archMismatches += "$($t.Name) is $toolArch, expected $expectedArch"
-        }
-    } else {
-        $status = "n/a"
+    $ok = ($toolArch -eq $t.Expected) -or ($t.Expected -eq 'x86' -and $toolArch -eq 'x64' -and $t.Name -ne 'TlbImp.exe')
+    $status = if ($ok) { "OK" } else { "MISMATCH" }
+    if (-not $ok -and $t.Name -eq 'TlbImp.exe') {
+        $tlbimpMismatch = "$($t.Name) is $toolArch, expected $($t.Expected)"
+    } elseif (-not $ok -and $expectedArch -eq 'ARM64') {
+        $archMismatches += "$($t.Name) is $toolArch, expected $($t.Expected)"
     }
     Write-Host ("  {0,-20} {1,-10} {2,-10} {3}" -f $t.Name, $toolArch, $status, $t.Path)
+}
+
+if ($tlbimpMismatch) {
+    Write-Host "##vso[task.logissue type=error]$tlbimpMismatch. Its interop struct layouts would not match a $arch target."
+    exit 1
 }
 
 if ($archMismatches.Count -gt 0) {
@@ -383,5 +453,7 @@ Write-Host '  MSBuild:  "$(msbuildPath)" solution.sln /p:Platform=$(targetPlatfo
 Write-Host '  CTest:    "$(ctestPath)" -C Debug --output-on-failure'
 Write-Host '  dumpbin:  "$(dumpbinPath)" /ALL mylib.lib'
 Write-Host '  vstest:   "$(vstestPath)" test.dll /Platform:$(targetPlatform)'
+Write-Host '  midl:     "$(midlPath)" foo.idl /tlb foo.tlb'
+Write-Host '  TlbImp:   "$(tlbimpPath)" foo.tlb /out:Interop.Foo.dll'
 Write-Host '  appverif: "$(appverifPath)" -enable Heaps -for foo.exe'
 Write-Host "  (environment variable DUMPBIN_PATH is also set for subprocesses such as ctest)"
