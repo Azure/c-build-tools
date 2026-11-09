@@ -1,5 +1,5 @@
 # Template: Discover Native Build Tools
-# Finds native build tools (CMake, MSBuild, CTest, dumpbin) for the specified architecture.
+# Finds native build tools (CMake, MSBuild, CTest, dumpbin, vstest, midl, TlbImp, appverif) for the specified architecture.
 # Sets pipeline variables that can be used in subsequent steps.
 #
 # This template solves the ARM64 agent emulation problem by explicitly finding
@@ -16,6 +16,9 @@
 #   $(msbuildPath)  - Path to MSBuild.exe (architecture-specific)
 #   $(dumpbinPath)  - Path to dumpbin.exe (architecture-specific)
 #   $(vstestPath)   - Path to vstest.console.exe (architecture-specific)
+#   $(midlPath)     - Path to midl.exe from the newest Windows SDK (host matches the architecture; x64 for x86)
+#   $(tlbimpPath)   - Path to TlbImp.exe from the newest .NET Framework SDK; x64 for x64 and ARM64 targets (no ARM64
+#                      TlbImp exists), x86 for x86. Optional; a TlbImp of the wrong bitness fails the step.
 #   $(appverifPath) - Path to appverif.exe (mandatory; discovery aborts if not found)
 #   $(cmakeArch)    - CMake architecture flag (x64, Win32, ARM64)
 #   $(targetPlatform) - MSBuild platform (x64, Win32, ARM64)
@@ -57,5 +60,5 @@ steps:
             Write-Host "##vso[task.logissue type=error]$script not found. discover_native_tools.yml must run after the checkout that provides c-build-tools at repo_root (${{ parameters.repo_root }})."
             exit 1
         }
-        & $script -Architecture '${{ parameters.architecture }}' -ContractVersion 1
+        & $script -Architecture '${{ parameters.architecture }}' -ContractVersion 2
         exit $LASTEXITCODE
