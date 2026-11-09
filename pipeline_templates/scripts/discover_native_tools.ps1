@@ -354,7 +354,7 @@ if ($midlPath) {
     Write-Host "##[warning]midl.exe ($midlHost host) not found under $kitsBin"
 }
 
-# TlbImp.exe from the newest .NET Framework SDK (NETFXSDK). There is no ARM64 TlbImp, and the
+# TlbImp.exe from the newest .NET Framework SDK (NETFXSDK). As of 09 Nov 2026 there is no ARM64 TlbImp, and the
 # struct layout TlbImp computes follows its own process bitness: the 32-bit TlbImp generates
 # 4-byte-pointer layouts, which corrupt COM interop on 64-bit targets. So 64-bit targets (x64 and
 # ARM64) use the x64 TlbImp and x86 targets use the x86 one. Optional: only projects that import
@@ -393,7 +393,7 @@ if ($tlbimpPath) {
 # Summary + architecture verification
 # ----------------------------------------------------------------
 # One table reports every discovered tool, its PE architecture, and whether it
-# matches the expected architecture. As of today TlbImp.exe has no ARM64
+# matches the expected architecture. As of 09 Nov 2026 TlbImp.exe has no ARM64
 # build, so it is expected to be x64 for ARM64 targets too.
 Write-Section "DISCOVERED TOOLS"
 $expectedArch = switch ($arch) {
