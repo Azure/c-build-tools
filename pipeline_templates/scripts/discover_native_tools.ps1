@@ -394,8 +394,7 @@ if ($tlbimpPath) {
 # Summary + architecture verification
 # ----------------------------------------------------------------
 # One table reports every discovered tool, its PE architecture, and whether it
-# matches the expected architecture. As of 09 Nov 2026 TlbImp.exe has no ARM64
-# build, so it is expected to be x64 for ARM64 targets too.
+# matches the expected architecture.
 Write-Section "DISCOVERED TOOLS"
 $expectedArch = switch ($arch) {
     'x64'   { 'x64' }
@@ -432,8 +431,6 @@ foreach ($t in $tools) {
     Write-Host ("  {0,-20} {1,-10} {2,-10} {3}" -f $t.Name, $toolArch, $status, $t.Path)
 }
 
-# TlbImp bakes its own pointer size into the interop struct layouts, so a wrong-bitness TlbImp
-# produces silently corrupt interop assemblies rather than a slow build.
 if ($tlbimpMismatch) {
     Write-Host "##vso[task.logissue type=error]$tlbimpMismatch. Its interop struct layouts would not match a $arch target."
     exit 1
