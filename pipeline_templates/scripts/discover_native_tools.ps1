@@ -351,14 +351,14 @@ if ($midlPath) {
     Write-Host "  midl.exe    found"
     Write-Host "##vso[task.setvariable variable=midlPath]$midlPath"
 } else {
-    Write-Host "##[warning]midl.exe ($midlHost host) not found under $kitsBin"
+    Write-Host "##vso[task.logissue type=error]midl.exe ($midlHost host) not found under $kitsBin"
+    exit 1
 }
 
 # TlbImp.exe from the newest .NET Framework SDK (NETFXSDK). As of 09 Nov 2026 there is no ARM64 TlbImp, and the
 # struct layout TlbImp computes follows its own process bitness: the 32-bit TlbImp generates
 # 4-byte-pointer layouts, which corrupt COM interop on 64-bit targets. So 64-bit targets (x64 and
-# ARM64) use the x64 TlbImp and x86 targets use the x86 one. Optional: only projects that import
-# type libraries need it.
+# ARM64) use the x64 TlbImp and x86 targets use the x86 one.
 $tlbimpToolsKey = switch ($arch) {
     'x86'   { 'WinSDK-NetFx40Tools-x86' }
     default { 'WinSDK-NetFx40Tools-x64' }
@@ -386,7 +386,8 @@ if ($tlbimpPath) {
     Write-Host "  TlbImp.exe  found"
     Write-Host "##vso[task.setvariable variable=tlbimpPath]$tlbimpPath"
 } else {
-    Write-Host "##[warning]TlbImp.exe ($tlbimpToolsKey) not found under $netfxSdkRoot"
+    Write-Host "##vso[task.logissue type=error]TlbImp.exe ($tlbimpToolsKey) not found under $netfxSdkRoot"
+    exit 1
 }
 
 # ----------------------------------------------------------------

@@ -17,7 +17,7 @@
 #   $(dumpbinPath)  - Path to dumpbin.exe (architecture-specific)
 #   $(vstestPath)   - Path to vstest.console.exe (architecture-specific)
 #   $(midlPath)     - Path to midl.exe from the newest Windows SDK (host matches the architecture; x64 for x86)
-#   $(tlbimpPath)   - Path to TlbImp.exe (x64 for ARM64 targets; optional, not set if not found)
+#   $(tlbimpPath)   - Path to TlbImp.exe
 #   $(appverifPath) - Path to appverif.exe (mandatory; discovery aborts if not found)
 #   $(cmakeArch)    - CMake architecture flag (x64, Win32, ARM64)
 #   $(targetPlatform) - MSBuild platform (x64, Win32, ARM64)
