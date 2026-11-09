@@ -453,6 +453,7 @@ Write-Host '  MSBuild:  "$(msbuildPath)" solution.sln /p:Platform=$(targetPlatfo
 Write-Host '  CTest:    "$(ctestPath)" -C Debug --output-on-failure'
 Write-Host '  dumpbin:  "$(dumpbinPath)" /ALL mylib.lib'
 Write-Host '  vstest:   "$(vstestPath)" test.dll /Platform:$(targetPlatform)'
-
+Write-Host '  midl:     "$(midlPath)" foo.idl /tlb foo.tlb'
+Write-Host '  TlbImp:   "$(tlbimpPath)" foo.tlb /out:Interop.Foo.dll'
 Write-Host '  appverif: "$(appverifPath)" -enable Heaps -for foo.exe'
 Write-Host "  (environment variable DUMPBIN_PATH is also set for subprocesses such as ctest)"
