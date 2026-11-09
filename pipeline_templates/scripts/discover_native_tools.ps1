@@ -13,8 +13,8 @@
 
     The template comes from the c_build_tools pipeline resource while this script comes from the
     consumer's c-build-tools checkout, so the two can be at different commits. ContractVersion
-    turns a mismatch into a hard failure. Bump it here and in the template whenever the parameters
-    or the output variables change.
+    turns a mismatch into a hard failure. Bump it here and in the template whenever the parameters change
+    or output variables are removed or renamed; adding output variables needs no bump.
 
 .PARAMETER Architecture
     Target architecture: x64, x86 or ARM64.
@@ -34,7 +34,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$scriptContractVersion = 2
+$scriptContractVersion = 1
 if ($ContractVersion -ne $scriptContractVersion) {
     Write-Host "##vso[task.logissue type=error]discover_native_tools.yml expects contract version $ContractVersion but $PSCommandPath implements version $scriptContractVersion. The c_build_tools pipeline resource ref and the c-build-tools checkout are at incompatible commits; update both to the same commit."
     exit 1

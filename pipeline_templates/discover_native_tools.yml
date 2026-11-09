@@ -60,5 +60,5 @@ steps:
             Write-Host "##vso[task.logissue type=error]$script not found. discover_native_tools.yml must run after the checkout that provides c-build-tools at repo_root (${{ parameters.repo_root }})."
             exit 1
         }
-        & $script -Architecture '${{ parameters.architecture }}' -ContractVersion 2
+        & $script -Architecture '${{ parameters.architecture }}' -ContractVersion 1
         exit $LASTEXITCODE
