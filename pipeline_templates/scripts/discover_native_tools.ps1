@@ -393,8 +393,7 @@ if ($tlbimpPath) {
 # Summary + architecture verification
 # ----------------------------------------------------------------
 # One table reports every discovered tool, its PE architecture, and whether it
-# matches the expected architecture. appverif.exe is listed for reference
-# but its architecture is not enforced (status "n/a"). TlbImp.exe has no ARM64
+# matches the expected architecture. As of today TlbImp.exe has no ARM64
 # build, so it is expected to be x64 for ARM64 targets too.
 Write-Section "DISCOVERED TOOLS"
 $expectedArch = switch ($arch) {
@@ -403,14 +402,14 @@ $expectedArch = switch ($arch) {
     'ARM64' { 'ARM64' }
 }
 $tools = @(
-    [pscustomobject]@{ Name = 'cmake.exe';          Path = $cmakePath;    Verify = $true;  Expected = $expectedArch }
-    [pscustomobject]@{ Name = 'ctest.exe';          Path = $ctestPath;    Verify = $true;  Expected = $expectedArch }
-    [pscustomobject]@{ Name = 'MSBuild.exe';        Path = $msbuildPath;  Verify = $true;  Expected = $expectedArch }
-    [pscustomobject]@{ Name = 'dumpbin.exe';        Path = $dumpbinPath;  Verify = $true;  Expected = $expectedArch }
-    [pscustomobject]@{ Name = 'vstest.console.exe'; Path = $vstestPath;   Verify = $true;  Expected = $expectedArch }
-    [pscustomobject]@{ Name = 'midl.exe';           Path = $midlPath;     Verify = $true;  Expected = $expectedArch }
-    [pscustomobject]@{ Name = 'TlbImp.exe';         Path = $tlbimpPath;   Verify = $true;  Expected = $tlbimpExpectedArch }
-    [pscustomobject]@{ Name = 'appverif.exe';       Path = $appverifPath; Verify = $false; Expected = $null }
+    [pscustomobject]@{ Name = 'cmake.exe';          Path = $cmakePath;    Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'ctest.exe';          Path = $ctestPath;    Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'MSBuild.exe';        Path = $msbuildPath;  Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'dumpbin.exe';        Path = $dumpbinPath;  Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'vstest.console.exe'; Path = $vstestPath;   Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'midl.exe';           Path = $midlPath;     Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'TlbImp.exe';         Path = $tlbimpPath;   Expected = $tlbimpExpectedArch }
+    [pscustomobject]@{ Name = 'appverif.exe';       Path = $appverifPath; Expected = $expectedArch }
 )
 Write-Host ("  {0,-20} {1,-10} {2,-10} {3}" -f "Tool", "Arch", "Status", "Path")
 Write-Host ("  {0,-20} {1,-10} {2,-10} {3}" -f "----", "----", "------", "----")
@@ -422,16 +421,12 @@ foreach ($t in $tools) {
         continue
     }
     $toolArch = Get-PEArchitecture -FilePath $t.Path
-    if ($t.Verify) {
-        $ok = ($toolArch -eq $t.Expected) -or ($t.Expected -eq 'x86' -and $toolArch -eq 'x64' -and $t.Name -ne 'TlbImp.exe')
-        $status = if ($ok) { "OK" } else { "MISMATCH" }
-        if (-not $ok -and $t.Name -eq 'TlbImp.exe') {
-            $tlbimpMismatch = "$($t.Name) is $toolArch, expected $($t.Expected)"
-        } elseif (-not $ok -and $expectedArch -eq 'ARM64') {
-            $archMismatches += "$($t.Name) is $toolArch, expected $($t.Expected)"
-        }
-    } else {
-        $status = "n/a"
+    $ok = ($toolArch -eq $t.Expected) -or ($t.Expected -eq 'x86' -and $toolArch -eq 'x64' -and $t.Name -ne 'TlbImp.exe')
+    $status = if ($ok) { "OK" } else { "MISMATCH" }
+    if (-not $ok -and $t.Name -eq 'TlbImp.exe') {
+        $tlbimpMismatch = "$($t.Name) is $toolArch, expected $($t.Expected)"
+    } elseif (-not $ok -and $expectedArch -eq 'ARM64') {
+        $archMismatches += "$($t.Name) is $toolArch, expected $($t.Expected)"
     }
     Write-Host ("  {0,-20} {1,-10} {2,-10} {3}" -f $t.Name, $toolArch, $status, $t.Path)
 }
