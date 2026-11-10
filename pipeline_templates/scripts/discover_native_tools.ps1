@@ -325,11 +325,17 @@ if ($vstestPath -and (Test-Path $vstestPath)) {
     Write-Host "##[warning]$vstestExeName not found"
 }
 
-# midl.exe from the newest Windows SDK that has it for this host architecture.
-# The SDK ships midl for x86, x64 and arm64 hosts; like MSBuild, x86 targets use the x64 host build.
-$midlHost = switch ($arch) {
-    'ARM64' { 'arm64' }
+# midl.exe from the newest Windows SDK that has it for the host OS architecture. The SDK ships midl
+# for x86, x64 and arm64 hosts, and each midl targets any architecture through /env, so the target
+# architecture does not matter here: an ARM64 build cross-compiled on an x64 host needs the x64 midl.
+$midlHost = switch ("$osArch") {
+    'Arm64' { 'arm64' }
+    'X86'   { 'x86' }
     default { 'x64' }
+}
+$midlExpectedArch = switch ($midlHost) {
+    'arm64' { 'ARM64' }
+    default { $midlHost }
 }
 $kitsRoot = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots' -Name KitsRoot10 -ErrorAction SilentlyContinue).KitsRoot10
 if (-not $kitsRoot) {
@@ -407,7 +413,7 @@ $tools = @(
     [pscustomobject]@{ Name = 'MSBuild.exe';        Path = $msbuildPath;  Expected = $expectedArch }
     [pscustomobject]@{ Name = 'dumpbin.exe';        Path = $dumpbinPath;  Expected = $expectedArch }
     [pscustomobject]@{ Name = 'vstest.console.exe'; Path = $vstestPath;   Expected = $expectedArch }
-    [pscustomobject]@{ Name = 'midl.exe';           Path = $midlPath;     Expected = $expectedArch }
+    [pscustomobject]@{ Name = 'midl.exe';           Path = $midlPath;     Expected = $midlExpectedArch }
     [pscustomobject]@{ Name = 'TlbImp.exe';         Path = $tlbimpPath;   Expected = $tlbimpExpectedArch }
     [pscustomobject]@{ Name = 'appverif.exe';       Path = $appverifPath; Expected = $expectedArch }
 )
@@ -453,7 +459,7 @@ Write-Host '  MSBuild:  "$(msbuildPath)" solution.sln /p:Platform=$(targetPlatfo
 Write-Host '  CTest:    "$(ctestPath)" -C Debug --output-on-failure'
 Write-Host '  dumpbin:  "$(dumpbinPath)" /ALL mylib.lib'
 Write-Host '  vstest:   "$(vstestPath)" test.dll /Platform:$(targetPlatform)'
-Write-Host '  midl:     "$(midlPath)" foo.idl /tlb foo.tlb'
+Write-Host '  midl:     "$(midlPath)" /env arm64 foo.idl /tlb foo.tlb'
 Write-Host '  TlbImp:   "$(tlbimpPath)" foo.tlb /out:Interop.Foo.dll'
 Write-Host '  appverif: "$(appverifPath)" -enable Heaps -for foo.exe'
 Write-Host "  (environment variable DUMPBIN_PATH is also set for subprocesses such as ctest)"
