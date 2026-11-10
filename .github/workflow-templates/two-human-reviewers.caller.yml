@@ -1,15 +1,22 @@
 name: Two human reviewers
-# BEGIN template-only - Deploy-GitHubReviewPolicy.ps1 strips this block when installing the workflow.
+# BEGIN template-only - Deploy-GitHubReviewPolicy.ps1 strips this block when it installs the file, since
+# it describes the template rather than the workflow, and would be wrong in the copy that runs.
 #
-# Copy this into a consuming repository as .github/workflows/two-human-reviewers.yml after its target
-# branch's deps/c-build-tools contains the snapshot-contract action. Without that submodule, call the
-# reusable workflow at a reviewed full commit SHA instead. See docs/two_human_reviewers.md.
+# Copy this into a consuming repository as `.github/workflows/two-human-reviewers.yml` after its target
+# branch's `deps/c-build-tools` contains `.github/actions/two-human-reviewers/action.yml`.
+# Repositories without that submodule can call the reusable workflow at a reviewed full commit SHA.
 #
-# This template is outside .github/workflows because c-build-tools uses its own reusable workflow.
+# It is a template and deliberately lives outside `.github/workflows/` here, because anything in that
+# directory runs, and this repository already gates its own pull requests with the reusable workflow
+# directly.
+#
 # END template-only
-# Read the gate from the target branch, never from PR code. Do not add a checkout.
-# A fork's event token is read-only; a maintainer can publish its status with:
-# gh workflow run two-human-reviewers.yml -R <owner>/<repo> -f pr=<number>
+# Runs the gate pinned by the target branch's deps/c-build-tools, never the PR's proposed pointer.
+# Dependency updates therefore do not need to edit this workflow or widen dependency auto-approval.
+# Keep `pull_request_review`, or approvals never re-run it. A fork's PR gets a read-only token
+# (`pull_request_target` is blocked by default), so a maintainer publishes its status with "Run workflow"
+# or the command below, again after each push or review. Never check out PR code.
+#   gh workflow run two-human-reviewers.yml -R <owner>/<repo> -f pr=<number>
 
 on:
   workflow_dispatch:
@@ -19,7 +26,7 @@ on:
         type: string
         required: true
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, edited]
+    types: [opened, reopened, synchronize, ready_for_review]
   pull_request_review:
     types: [submitted, dismissed]
 
@@ -30,134 +37,51 @@ permissions:
 
 jobs:
   two-human-reviewers:
-    if: ${{ github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null }}
     runs-on: ubuntu-latest
-    env:
-      REPO: ${{ github.repository }}
-      PR: ${{ github.event.pull_request.number || inputs.pr }}
-      STATUS_CONTEXT: mrbot/two-human-reviewers
-      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      READ_ONLY: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]') }}
     steps:
-      - name: Capture the PR and reset its status
-        id: capture
+      - name: Fetch the gate pinned by the target branch
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
         shell: bash
         run: |
           set -euo pipefail
 
           if ! [[ "$PR" =~ ^[1-9][0-9]*$ ]]; then
-            echo "::error::A positive PR number is required."
-            exit 1
-          fi
-          pr_json=$(gh api "repos/$REPO/pulls/$PR")
-          if ! head_sha=$(jq -er '.head.sha | select(type == "string" and test("^[0-9a-f]{40}$"))' <<< "$pr_json"); then
-            echo "::error::The PR API returned an invalid head SHA."
-            exit 1
-          fi
-          if ! target=$(jq -er '.base.ref | select(type == "string" and length > 0)' <<< "$pr_json") ||
-              ! git check-ref-format "refs/heads/$target"; then
-            echo "::error::The PR API returned an invalid target branch."
-            exit 1
-          fi
-          printf 'pr=%s\nhead=%s\ntarget=%s\n' "$PR" "$head_sha" "$target" >> "$GITHUB_OUTPUT"
-
-          if ! gh api --method POST "repos/$REPO/statuses/$head_sha" \
-              -f state=pending -f context="$STATUS_CONTEXT" \
-              -f description="Loading and evaluating the reviewer gate" -f target_url="$RUN_URL" >/dev/null; then
-            if [ "$READ_ONLY" = "true" ]; then
-              echo "::warning::Read-only event token: the status was not reset. A maintainer must use Run workflow with pr=$PR after each push or review."
-            else
-              echo "::error::Could not reset the required status; an earlier status may still exist."
-              exit 1
-            fi
-          fi
-
-      - name: Fetch the trusted gate
-        id: fetch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET: ${{ steps.capture.outputs.target }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          encoded_target=$(jq -rn --arg ref "$TARGET" '$ref | @uri')
-          branch=$(gh api "repos/$REPO/git/ref/heads/$encoded_target")
-          if ! base_sha=$(jq -er --arg ref "refs/heads/$TARGET" \
-              'select(.ref == $ref and .object.type == "commit") | .object.sha |
-               select(type == "string" and test("^[0-9a-f]{40}$"))' <<< "$branch"); then
-            echo "::error::Could not resolve the target branch to a commit."
-            exit 1
-          fi
-          gitlink=$(gh api -X GET "repos/$REPO/contents/deps/c-build-tools" -f ref="$base_sha")
-          if ! gate_sha=$(jq -er 'select(.type == "submodule") | .sha |
-              select(type == "string" and test("^[0-9a-f]{40}$"))' <<< "$gitlink"); then
-            echo "::error::deps/c-build-tools on $TARGET is not a valid gitlink."
+            echo "::error::Pass a positive PR number when dispatching manually."
             exit 1
           fi
 
-          upstream=$(gh api "repos/Azure/c-build-tools/git/ref/heads/master")
-          if ! master_sha=$(jq -er 'select(.ref == "refs/heads/master" and .object.type == "commit") |
-              .object.sha | select(type == "string" and test("^[0-9a-f]{40}$"))' <<< "$upstream"); then
-            echo "::error::Could not resolve Azure/c-build-tools master to a commit."
+          base_ref=$(gh api "repos/$REPO/pulls/$PR" --jq .base.ref)
+          # Qualify the branch so a same-named tag cannot select a different gitlink.
+          gate_sha=$(gh api -X GET "repos/$REPO/contents/deps/c-build-tools" \
+            -f ref="refs/heads/$base_ref" --jq 'select(.type == "submodule") | .sha')
+          if ! [[ "$gate_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::deps/c-build-tools on $base_ref is not a valid submodule."
             exit 1
           fi
-          comparison=$(gh api "repos/Azure/c-build-tools/compare/$gate_sha...$master_sha")
-          ancestry=$(jq -r '.status' <<< "$comparison")
+
+          # Auto-approved dependency updates must not select an unmerged gate.
+          master_sha=$(gh api "repos/Azure/c-build-tools/git/ref/heads/master" --jq .object.sha)
+          if ! [[ "$master_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Could not resolve Azure/c-build-tools master."
+            exit 1
+          fi
+          ancestry=$(gh api "repos/Azure/c-build-tools/compare/$gate_sha...$master_sha" --jq .status)
           if [ "$ancestry" != "ahead" ] && [ "$ancestry" != "identical" ]; then
-            echo "::error::deps/c-build-tools on $TARGET pins $gate_sha, which is not on Azure/c-build-tools master."
+            echo "::error::deps/c-build-tools on $base_ref pins $gate_sha, which is not on Azure/c-build-tools master."
             exit 1
           fi
 
           mkdir -p .gate
           if ! gh api -X GET "repos/Azure/c-build-tools/contents/.github/actions/two-human-reviewers/action.yml" \
               -f ref="$gate_sha" -H "Accept: application/vnd.github.raw+json" > .gate/action.yml; then
-            echo "::error::Could not download the gate from Azure/c-build-tools@$gate_sha."
+            echo "::error::Could not fetch the gate from Azure/c-build-tools@$gate_sha. The target branch must pin a commit containing the composite action."
             exit 1
           fi
-          if ! grep -Fxq '# two-human-reviewers-snapshot-contract: 1' .gate/action.yml; then
-            echo "::error::The trusted gate does not support snapshot contract 1. Land or propagate the prerequisite action first."
-            exit 1
-          fi
-          echo "::notice::Gate from Azure/c-build-tools@$gate_sha, pinned by $TARGET at $base_sha."
+          echo "::notice::Gate from Azure/c-build-tools@$gate_sha, pinned by $base_ref."
 
-      - name: Evaluate human approvals
-        id: evaluate
-        uses: ./.gate
+      - uses: ./.gate
         with:
-          pr: ${{ steps.capture.outputs.pr }}
-          expected-head: ${{ steps.capture.outputs.head }}
-          expected-target: ${{ steps.capture.outputs.target }}
-
-      - name: Report gate failure
-        if: ${{ failure() && steps.capture.outputs.head != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD: ${{ steps.capture.outputs.head }}
-          TARGET: ${{ steps.capture.outputs.target }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if ! current_pr=$(gh api "repos/$REPO/pulls/$PR"); then
-            echo "::error::Could not recheck the PR before reporting failure; its status was not changed."
-            exit 1
-          fi
-          if ! jq -e --arg head "$HEAD" --arg target "$TARGET" \
-              '.head.sha == $head and .base.ref == $target' <<< "$current_pr" >/dev/null; then
-            echo "::notice::The PR changed during evaluation; no obsolete failure status was published."
-            exit 0
-          fi
-          if ! gh api --method POST "repos/$REPO/statuses/$HEAD" \
-              -f state=error -f context="$STATUS_CONTEXT" \
-              -f description="Reviewer gate could not be loaded or evaluated; see the workflow run" \
-              -f target_url="$RUN_URL" >/dev/null; then
-            if [ "$READ_ONLY" = "true" ]; then
-              echo "::warning::Read-only event token: failure status was not published. A maintainer must use Run workflow with pr=$PR."
-            else
-              echo "::error::Could not publish the gate failure; check the required status before merging."
-              exit 1
-            fi
-          fi
+          pr: ${{ github.event.pull_request.number || inputs.pr }}

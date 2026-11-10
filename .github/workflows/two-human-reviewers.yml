@@ -1,13 +1,16 @@
 name: Two human reviewers
-# Never check out PR code in this job. On this repository's PRs, run the target branch's gate.
-# Cross-repository calls run the action at the reusable workflow's pinned commit.
-# Require mrbot/two-human-reviewers, not this job's check run. See docs/two_human_reviewers.md.
+# Bot-authored PRs need approvals on the head commit from two distinct humans with push access; the
+# `mrbot/two-human-reviewers` status reports the verdict. The composite action is fetched from a trusted
+# ref: the target branch for this repository's PRs, or the pinned workflow commit for external callers.
+# Repositories with deps/c-build-tools should install the caller in .github/workflow-templates instead.
+# Fork PRs get a read-only token, so they need a manual run (`pull_request_target` is blocked by default).
+# Never check out PR code, and require code owner review on `.github/workflows/**`.
 
 on:
   workflow_call:
     inputs:
       pr:
-        description: PR number to evaluate. Only needed for workflow_dispatch callers.
+        description: PR number to evaluate. Only needed when running from `workflow_dispatch`.
         type: string
         required: false
         default: ''
@@ -16,11 +19,16 @@ on:
         type: number
         required: false
       exempt-bots:
-        description: Comma-separated exempt bots. Replaces the default "dependabot[bot]".
+        description: >-
+          Comma-separated GitHub account names of bots that may merge under the repository's normal
+          rules. Defaults to "dependabot[bot]"; passing this replaces that default rather than adding
+          to it.
         type: string
         required: false
-  # A fork's event token is read-only. A maintainer can publish its status with:
-  # gh workflow run two-human-reviewers.yml -R <owner>/<repo> -f pr=<number>
+  # A manual run uses the default branch's copy with a token that can write, and publishes the status to
+  # the PR's head commit. Start it with "Run workflow" or the command below; re-running a fork PR's own
+  # run keeps its read-only token. Repeat it after each push or review.
+  #   gh workflow run two-human-reviewers.yml -R <owner>/<repo> -f pr=<number>
   workflow_dispatch:
     inputs:
       pr:
@@ -28,7 +36,7 @@ on:
         type: string
         required: true
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, edited]
+    types: [opened, reopened, synchronize, ready_for_review]
   pull_request_review:
     types: [submitted, dismissed]
 
@@ -40,132 +48,51 @@ permissions:
 jobs:
   two-human-reviewers:
     name: two-human-reviewers
-    if: ${{ github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null }}
     runs-on: ubuntu-latest
-    env:
-      REPO: ${{ github.repository }}
-      PR: ${{ github.event.pull_request.number || inputs.pr }}
-      STATUS_CONTEXT: mrbot/two-human-reviewers
-      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      READ_ONLY: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]') }}
     steps:
-      - name: Capture the PR and reset its status
-        id: capture
+      - name: Fetch the gate
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if ! [[ "$PR" =~ ^[1-9][0-9]*$ ]]; then
-            echo "::error::A positive PR number is required."
-            exit 1
-          fi
-          pr_json=$(gh api "repos/$REPO/pulls/$PR")
-          if ! head_sha=$(jq -er '.head.sha | select(type == "string" and test("^[0-9a-f]{40}$"))' <<< "$pr_json"); then
-            echo "::error::The PR API returned an invalid head SHA."
-            exit 1
-          fi
-          if ! target=$(jq -er '.base.ref | select(type == "string" and length > 0)' <<< "$pr_json") ||
-              ! git check-ref-format "refs/heads/$target"; then
-            echo "::error::The PR API returned an invalid target branch."
-            exit 1
-          fi
-          printf 'pr=%s\nhead=%s\ntarget=%s\n' "$PR" "$head_sha" "$target" >> "$GITHUB_OUTPUT"
-
-          if ! gh api --method POST "repos/$REPO/statuses/$head_sha" \
-              -f state=pending -f context="$STATUS_CONTEXT" \
-              -f description="Loading and evaluating the reviewer gate" -f target_url="$RUN_URL" >/dev/null; then
-            if [ "$READ_ONLY" = "true" ]; then
-              echo "::warning::Read-only event token: the status was not reset. A maintainer must use Run workflow with pr=$PR after each push or review."
-            else
-              echo "::error::Could not reset the required status; an earlier status may still exist."
-              exit 1
-            fi
-          fi
-
-      - name: Fetch the trusted gate
-        id: fetch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET: ${{ steps.capture.outputs.target }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
           GATE_REPO: ${{ job.workflow_repository }}
           WORKFLOW_SHA: ${{ job.workflow_sha }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if ! [[ "$GATE_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-            echo "::error::The reusable workflow repository is unavailable or invalid."
+          if ! [[ "$PR" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Pass a positive PR number when dispatching manually."
             exit 1
           fi
+          if ! [[ "$GATE_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::The workflow repository is unavailable or invalid."
+            exit 1
+          fi
+
           if [ "$REPO" = "$GATE_REPO" ]; then
-            encoded_target=$(jq -rn --arg ref "$TARGET" '$ref | @uri')
-            branch=$(gh api "repos/$REPO/git/ref/heads/$encoded_target")
-            if ! gate_sha=$(jq -er --arg ref "refs/heads/$TARGET" \
-                'select(.ref == $ref and .object.type == "commit") | .object.sha |
-                 select(type == "string" and test("^[0-9a-f]{40}$"))' <<< "$branch"); then
-              echo "::error::Could not resolve the target branch to a commit."
+            # c-build-tools has no submodule pointing to itself; use its target branch's action.
+            base_ref=$(gh api "repos/$REPO/pulls/$PR" --jq .base.ref)
+            gate_ref="refs/heads/$base_ref"
+          else
+            # External callers retain the version selected by their pinned reusable-workflow uses.
+            if ! [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::The pinned workflow commit is unavailable or invalid."
               exit 1
             fi
-          else
-            gate_sha=$WORKFLOW_SHA
-          fi
-          if ! [[ "$gate_sha" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::The pinned gate commit is unavailable or invalid."
-            exit 1
+            gate_ref=$WORKFLOW_SHA
           fi
 
           mkdir -p .gate
           if ! gh api -X GET "repos/$GATE_REPO/contents/.github/actions/two-human-reviewers/action.yml" \
-              -f ref="$gate_sha" -H "Accept: application/vnd.github.raw+json" > .gate/action.yml; then
-            echo "::error::Could not download the gate from $GATE_REPO@$gate_sha."
+              -f ref="$gate_ref" -H "Accept: application/vnd.github.raw+json" > .gate/action.yml; then
+            echo "::error::Could not fetch the gate from $GATE_REPO@$gate_ref."
             exit 1
           fi
-          if ! grep -Fxq '# two-human-reviewers-snapshot-contract: 1' .gate/action.yml; then
-            echo "::error::The trusted gate does not support snapshot contract 1. Land or propagate the prerequisite action first."
-            exit 1
-          fi
-          echo "::notice::Gate from $GATE_REPO@$gate_sha."
+          echo "::notice::Gate from $GATE_REPO@$gate_ref."
 
-      - name: Evaluate human approvals
-        id: evaluate
-        uses: ./.gate
+      - uses: ./.gate
         with:
-          pr: ${{ steps.capture.outputs.pr }}
-          expected-head: ${{ steps.capture.outputs.head }}
-          expected-target: ${{ steps.capture.outputs.target }}
-          # An omitted number input is 0; pass empty so the composite action's default applies.
-          required-approvals: ${{ inputs.required-approvals || '' }}
+          pr: ${{ github.event.pull_request.number || inputs.pr }}
+          required-approvals: ${{ inputs.required-approvals || 2 }}
           exempt-bots: ${{ inputs.exempt-bots }}
-
-      - name: Report gate failure
-        if: ${{ failure() && steps.capture.outputs.head != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD: ${{ steps.capture.outputs.head }}
-          TARGET: ${{ steps.capture.outputs.target }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if ! current_pr=$(gh api "repos/$REPO/pulls/$PR"); then
-            echo "::error::Could not recheck the PR before reporting failure; its status was not changed."
-            exit 1
-          fi
-          if ! jq -e --arg head "$HEAD" --arg target "$TARGET" \
-              '.head.sha == $head and .base.ref == $target' <<< "$current_pr" >/dev/null; then
-            echo "::notice::The PR changed during evaluation; no obsolete failure status was published."
-            exit 0
-          fi
-          if ! gh api --method POST "repos/$REPO/statuses/$HEAD" \
-              -f state=error -f context="$STATUS_CONTEXT" \
-              -f description="Reviewer gate could not be loaded or evaluated; see the workflow run" \
-              -f target_url="$RUN_URL" >/dev/null; then
-            if [ "$READ_ONLY" = "true" ]; then
-              echo "::warning::Read-only event token: failure status was not published. A maintainer must use Run workflow with pr=$PR."
-            else
-              echo "::error::Could not publish the gate failure; check the required status before merging."
-              exit 1
-            fi
-          fi
