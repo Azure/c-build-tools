@@ -4,7 +4,6 @@ name: Two human reviewers
 #
 # Copy this into a consuming repository as `.github/workflows/two-human-reviewers.yml` after its target
 # branch's `deps/c-build-tools` contains `.github/actions/two-human-reviewers/action.yml`.
-# Repositories without that submodule can call the reusable workflow at a reviewed full commit SHA.
 #
 # It is a template and deliberately lives outside `.github/workflows/` here, because anything in that
 # directory runs, and this repository already gates its own pull requests with the reusable workflow
