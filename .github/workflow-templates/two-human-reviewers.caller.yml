@@ -11,7 +11,6 @@ name: Two human reviewers
 #
 # END template-only
 # Runs the gate pinned by the target branch's deps/c-build-tools, never the PR's proposed pointer.
-# Dependency updates therefore do not need to edit this workflow or widen dependency auto-approval.
 # Keep `pull_request_review`, or approvals never re-run it. A fork's PR gets a read-only token
 # (`pull_request_target` is blocked by default), so a maintainer publishes its status with "Run workflow"
 # or the command below, again after each push or review. Never check out PR code.
