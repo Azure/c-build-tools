@@ -2,7 +2,8 @@ name: Two human reviewers
 # Bot-authored PRs need approvals on the head commit from two distinct humans with push access; the
 # `mrbot/two-human-reviewers` status reports the verdict. The composite action is fetched from a trusted
 # ref: the target branch for this repository's PRs, or the pinned workflow commit for external callers.
-# Repositories with deps/c-build-tools should install the caller in .github/workflow-templates instead.
+# Repositories with deps/c-build-tools should install the caller from
+# .github/workflow-templates/two-human-reviewers.caller.yml instead.
 # Fork PRs get a read-only token, so they need a manual run (`pull_request_target` is blocked by default).
 # Never check out PR code, and require code owner review on `.github/workflows/**`.
 
