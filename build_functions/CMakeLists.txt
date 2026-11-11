@@ -97,8 +97,12 @@ macro(set_default_build_options)
 
     # On MSVC, CMake maps C++23 to /std:c++latest, which also enables post-C++23 features.
     # Use /std:c++23 (MSVC 19.52+) or /std:c++23preview (MSVC 19.43-19.51) instead.
+    # Visual Studio generators keep the C++ standard off C sources only when the option maps to the
+    # LanguageStandard property. CMake maps -std:c++23preview to stdcpp23 (which MSBuild emits as
+    # /std:c++23 where supported), but passes -std:c++23 through AdditionalOptions to every source,
+    # so C files in mixed targets get /std:c17 and /std:c++23 (D8016).
     if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.52)
+        if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.52 AND NOT CMAKE_GENERATOR MATCHES "^Visual Studio")
             set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "-std:c++23")
             set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "-std:c++23")
         elseif (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.43)

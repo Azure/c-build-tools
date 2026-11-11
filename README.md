@@ -1,7 +1,7 @@
 
 # Build defaults
 
-`set_default_build_options()` uses C17 and at least C++23; a newer caller-selected C++ standard is kept. MSVC uses `/std:c++23` (19.52+) or `/std:c++23preview` (19.43-19.51).
+`set_default_build_options()` uses C17 and at least C++23; a newer caller-selected C++ standard is kept. MSVC uses `/std:c++23` (19.52+) or `/std:c++23preview` (19.43-19.51). Visual Studio generators set the project's C++ Language Standard to `stdcpp23` instead, which MSBuild applies only to C++ sources and emits as `/std:c++23` on toolsets that support it.
 
 # Contributing
 
