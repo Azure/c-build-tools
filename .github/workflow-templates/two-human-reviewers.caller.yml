@@ -2,15 +2,14 @@ name: Two human reviewers
 # BEGIN template-only - Deploy-GitHubReviewPolicy.ps1 strips this block when it installs the file, since
 # it describes the template rather than the workflow, and would be wrong in the copy that runs.
 #
-# Copy this into a consuming repository as `.github/workflows/two-human-reviewers.yml` after its target
-# branch's `deps/c-build-tools` contains `.github/actions/two-human-reviewers/action.yml`.
+# Copy this into a consuming repository as `.github/workflows/two-human-reviewers.yml`.
 #
 # It is a template and deliberately lives outside `.github/workflows/` here, because anything in that
 # directory runs, and this repository already gates its own pull requests with the reusable workflow
 # directly.
 #
 # END template-only
-# Runs the gate pinned by the target branch's deps/c-build-tools, never the PR's proposed pointer.
+# Runs the gate pinned by the target branch's deps/c-build-tools.
 # Keep `pull_request_review`, or approvals never re-run it. A fork's PR gets a read-only token
 # (`pull_request_target` is blocked by default), so a maintainer publishes its status with "Run workflow"
 # or the command below, again after each push or review. Never check out PR code.
