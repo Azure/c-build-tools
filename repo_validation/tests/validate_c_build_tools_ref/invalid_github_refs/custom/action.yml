@@ -1,0 +1,7 @@
+name: Invalid composite action
+description: Test action
+runs:
+  using: composite
+  steps:
+    - uses: 'Azure/c-build-tools/actions/example@deadbeefdeadbeefdeadbeefdeadbeefdeadbeef' # preserve action comment
+    - uses: actions/checkout@v4

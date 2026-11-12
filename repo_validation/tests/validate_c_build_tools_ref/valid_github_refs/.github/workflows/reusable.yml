@@ -1,0 +1,5 @@
+name: Reusable workflow caller
+
+jobs:
+  reviewer:
+    uses: "Azure/c-build-tools/.github/workflows/two-human-reviewers.yml@aabbccdd00112233445566778899aabbccddeeff" # matches submodule

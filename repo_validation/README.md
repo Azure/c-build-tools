@@ -603,6 +603,16 @@ Test functions with violations: 2
 [VALIDATION FAILED]
 ```
 
+### c-build-tools Ref Validation
+
+**Check:** `c_build_tools_ref`
+
+**Purpose:** Ensures pinned c-build-tools refs match the `deps/c-build-tools` submodule:
+- Every `uses: Azure/c-build-tools/...@<ref>` line in `.github/workflows/` and in composite `action.yml`/`action.yaml` files (including hidden directories) must pin the full SHA of the `deps/c-build-tools` gitlink in `HEAD`. Branches, tags, and short or mismatched SHAs fail. When the submodule or gitlink is missing, each ref is reported with its file and line.
+- Azure DevOps `c_build_tools` repository resources must use `ref: refs/heads/master` or the submodule SHA.
+
+**Fix Mode:** Rewrites mismatched refs to the submodule SHA, keeping quotes and comments.
+
 ## Adding New Validations
 
 To add a new validation script:
