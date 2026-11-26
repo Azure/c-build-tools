@@ -11,7 +11,7 @@ parameters:
     type: string
   - name: pool_name
     type: string
-    default: "Azure-MessagingStore-Win-x64-MiCell-v05"
+    default: "Azure-MessagingStore-Win-x64-MiCell-v07"
 
 jobs:
 - job: run_master_check
